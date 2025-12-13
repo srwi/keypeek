@@ -39,16 +39,28 @@ pub struct KeyboardInfo {
 
 impl KeyboardInfo {
     fn collect_layout_keys(layout: &Value) -> Result<Vec<Key>, Box<dyn std::error::Error>> {
-        let layout = layout["layout"].as_array().expect("No layout array found.");
+        let layout = layout["layout"]
+            .as_array()
+            .ok_or_else(|| Box::<dyn std::error::Error>::from("No layout array found."))?;
 
         let mut keys = Vec::new();
         for key in layout {
-            let matrix: Vec<usize> = key["matrix"]
-                .as_array()
-                .expect("Unable to find 'matrix' array in key definition.")
+            let matrix_values = key["matrix"].as_array().ok_or_else(|| {
+                Box::<dyn std::error::Error>::from(
+                    "Unable to find 'matrix' array in key definition.",
+                )
+            })?;
+
+            let matrix_u64 = matrix_values
                 .iter()
-                .map(|v| v.as_u64().expect("Unable to parse 'matrix' value.") as usize)
-                .collect();
+                .map(|v| {
+                    v.as_u64().ok_or_else(|| {
+                        Box::<dyn std::error::Error>::from("Unable to parse 'matrix' value.")
+                    })
+                })
+                .collect::<Result<Vec<u64>, Box<dyn std::error::Error>>>()?;
+
+            let matrix: Vec<usize> = matrix_u64.into_iter().map(|n| n as usize).collect();
 
             let x = key["x"].as_f64().unwrap_or(0.0) as f32;
             let y = key["y"].as_f64().unwrap_or(0.0) as f32;
@@ -69,14 +81,24 @@ impl KeyboardInfo {
     }
 
     pub fn new(json_path: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let file = File::open(json_path).expect("Failed to open keyboard info JSON.");
+        let file = File::open(json_path).map_err(|e| {
+            Box::<dyn std::error::Error>::from(format!(
+                "Failed to open keyboard info JSON '{}': {}",
+                json_path, e
+            ))
+        })?;
         let reader = BufReader::new(file);
-        let json: Value = serde_json::from_reader(reader)?;
+        let json: Value = serde_json::from_reader(reader).map_err(|e| {
+            Box::<dyn std::error::Error>::from(format!(
+                "Failed to parse JSON '{}': {}",
+                json_path, e
+            ))
+        })?;
 
         let mut layouts = Vec::new();
-        let raw_layouts = json["layouts"]
-            .as_object()
-            .expect("No layouts found in keyboard info JSON.");
+        let raw_layouts = json["layouts"].as_object().ok_or_else(|| {
+            Box::<dyn std::error::Error>::from("No layouts found in keyboard info JSON.")
+        })?;
         for layout_name in raw_layouts.keys() {
             let raw_layout = &raw_layouts[layout_name];
             let keys = Self::collect_layout_keys(raw_layout)?;
@@ -94,40 +116,56 @@ impl KeyboardInfo {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         let row_multiplier = if is_split_keyboard { 2 } else { 1 };
-        let matrix_pins = json
-            .get("matrix_pins")
-            .expect("Unable to find 'matrix_pins' in keyboard info JSON.");
+        let matrix_pins = json.get("matrix_pins").ok_or_else(|| {
+            Box::<dyn std::error::Error>::from(
+                "Unable to find 'matrix_pins' in keyboard info JSON.",
+            )
+        })?;
         let rows = matrix_pins
             .get("rows")
-            .expect("Unable to find 'rows' in 'matrix_pins'.")
+            .ok_or_else(|| {
+                Box::<dyn std::error::Error>::from("Unable to find 'rows' in 'matrix_pins'.")
+            })?
             .as_array()
-            .expect("Rows in matrix_pins is not an array.")
+            .ok_or_else(|| {
+                Box::<dyn std::error::Error>::from("Rows in matrix_pins is not an array.")
+            })?
             .len()
             * row_multiplier;
         let cols = matrix_pins
             .get("cols")
-            .expect("Unable to find 'cols' in 'matrix_pins'.")
+            .ok_or_else(|| {
+                Box::<dyn std::error::Error>::from("Unable to find 'cols' in 'matrix_pins'.")
+            })?
             .as_array()
-            .expect("Cols in matrix_pins is not an array.")
+            .ok_or_else(|| {
+                Box::<dyn std::error::Error>::from("Cols in matrix_pins is not an array.")
+            })?
             .len();
 
-        let usb = json
-            .get("usb")
-            .expect("Unable to find 'usb' in keyboard info JSON.");
-        let vid = Self::hex_to_u16(
-            usb.get("vid")
-                .expect("Unable to find 'vid' in 'usb'.")
-                .as_str()
-                .expect("Unable to convert 'vid' to string."),
-        )
-        .expect("Invalid value for 'vid'.");
-        let pid = Self::hex_to_u16(
-            usb.get("pid")
-                .expect("Unable to find 'pid' in 'usb'.")
-                .as_str()
-                .expect("Unable to convert 'pid' to string."),
-        )
-        .expect("Invalid value for 'pid'.");
+        let usb = json.get("usb").ok_or_else(|| {
+            Box::<dyn std::error::Error>::from("Unable to find 'usb' in keyboard info JSON.")
+        })?;
+        let vid_str = usb
+            .get("vid")
+            .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to find 'vid' in 'usb'."))?
+            .as_str()
+            .ok_or_else(|| {
+                Box::<dyn std::error::Error>::from("Unable to convert 'vid' to string.")
+            })?;
+        let vid = Self::hex_to_u16(vid_str).map_err(|e| {
+            Box::<dyn std::error::Error>::from(format!("Invalid value for 'vid': {}", e))
+        })?;
+        let pid_str = usb
+            .get("pid")
+            .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to find 'pid' in 'usb'."))?
+            .as_str()
+            .ok_or_else(|| {
+                Box::<dyn std::error::Error>::from("Unable to convert 'pid' to string.")
+            })?;
+        let pid = Self::hex_to_u16(pid_str).map_err(|e| {
+            Box::<dyn std::error::Error>::from(format!("Invalid value for 'pid': {}", e))
+        })?;
 
         Ok(KeyboardInfo {
             vid,
