@@ -1,11 +1,10 @@
-use qmk_via_api::api::{self};
 use qmk_via_api::keycodes::Keycode;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::key_matrix::KeyMatrix;
-use crate::keyboard_info::{KeyboardInfo, KeyboardLayout};
+use crate::protocols::{KeyboardLayout, KeyboardProtocol};
 
 pub struct Keyboard {
     pub layout: KeyboardLayout,
@@ -17,29 +16,29 @@ pub struct Keyboard {
 
 impl Keyboard {
     pub fn new(
-        keyboard_info: KeyboardInfo,
+        protocol: Box<dyn KeyboardProtocol>,
         layout_name: String,
         timeout: u64,
     ) -> Result<Self, String> {
-        let layout = keyboard_info
+        let definition = protocol.get_layout_definition();
+
+        let layout = definition
             .get_layout(&layout_name)
             .map_err(|_| "Failed to get layout".to_string())?;
 
-        let api = Self::try_get_api(keyboard_info.vid, keyboard_info.pid)?;
-
-        let layers = api
+        let layers = protocol
             .get_layer_count()
-            .map_err(|_| "Failed to get layer count".to_string())? as usize;
-        let keycodes =
-            Self::get_keycodes_from_device(&api, layers, keyboard_info.rows, keyboard_info.cols);
+            .map_err(|e| format!("Failed to get layer count: {e}"))?;
+
+        let keycodes = protocol.read_all_keycodes(layers, definition.rows, definition.cols);
 
         let layer_state = Arc::new(Mutex::new(0));
         let default_layer_state = Arc::new(Mutex::new(0));
         let time_to_hide_overlay = Arc::new(Mutex::new(Some(Instant::now())));
         let matrix = Arc::new(Mutex::new(KeyMatrix::new(
             keycodes,
-            keyboard_info.rows,
-            keyboard_info.cols,
+            definition.rows,
+            definition.cols,
         )));
 
         let keyboard = Keyboard {
@@ -56,7 +55,7 @@ impl Keyboard {
         let matrix_clone = Arc::clone(&matrix);
 
         thread::spawn(move || loop {
-            if let Ok(response) = api.hid_read() {
+            if let Ok(response) = protocol.hid_read() {
                 if response[0] == 0xff {
                     let size = response[1] as usize;
 
@@ -91,31 +90,6 @@ impl Keyboard {
         Ok(keyboard)
     }
 
-    fn get_keycodes_from_device(
-        api: &api::KeyboardApi,
-        layers: usize,
-        rows: usize,
-        cols: usize,
-    ) -> Vec<Vec<Vec<u16>>> {
-        let mut keycodes = vec![vec![vec![0; cols]; rows]; layers];
-        let matrix_info = api::MatrixInfo {
-            rows: rows as u8,
-            cols: cols as u8,
-        };
-
-        for layer in 0..layers {
-            if let Ok(raw_matrix) = api.read_raw_matrix(matrix_info, layer as u8) {
-                for (i, keycode) in raw_matrix.iter().enumerate() {
-                    let row = i / cols;
-                    let col = i % cols;
-                    keycodes[layer][row][col] = *keycode;
-                }
-            }
-        }
-
-        keycodes
-    }
-
     pub fn get_effective_key_layer(&self, row: usize, col: usize) -> (u8, bool) {
         let layer_state = *self.layer_state.lock().unwrap();
         let default_layer_state = *self.default_layer_state.lock().unwrap();
@@ -147,21 +121,5 @@ impl Keyboard {
 
     pub fn is_key_pressed(&self, row: usize, col: usize) -> bool {
         self.matrix.lock().unwrap().is_pressed(row, col)
-    }
-
-    pub fn try_get_api(vid: u16, pid: u16) -> Result<api::KeyboardApi, String> {
-        let api = api::KeyboardApi::new(vid, pid, 0xff60)
-            .map_err(|e| format!("Failed to connect to device ({vid:04x}:{pid:04x}): {e}"))?;
-
-        let protocol_version = api
-            .get_protocol_version()
-            .map_err(|e| format!("Failed to get protocol version: {e}"))?;
-        if protocol_version < 12 {
-            return Err(format!(
-                "Unsupported protocol version: {}. Minimum required version is 12.",
-                protocol_version
-            ));
-        }
-        Ok(api)
     }
 }

@@ -1,10 +1,13 @@
-use crate::keyboard::Keyboard;
-use crate::keyboard_info::KeyboardInfo;
+use crate::protocols::qmk_json_parser;
+use crate::protocols::via::ViaProtocol;
+use crate::protocols::vial::VialProtocol;
+use crate::protocols::KeyboardProtocol;
+use crate::settings::ProtocolType;
 use crate::settings::Settings;
 use crate::settings::WindowPosition;
 
 use eframe::egui::{self};
-use std::path::Path;
+use qmk_via_api::scan::{scan_keyboards, KeyboardDeviceInfo};
 use std::sync::{Arc, Mutex};
 
 pub struct SettingsApp {
@@ -12,59 +15,119 @@ pub struct SettingsApp {
     shared: Arc<Mutex<Settings>>,
     error: Option<String>,
     layout_names: Vec<String>,
+    available_devices: Vec<KeyboardDeviceInfo>,
+    selected_device_index: Option<usize>,
+    connected: bool,
+    is_vial_device: bool,
+    json_path: String,
 }
 
 impl SettingsApp {
     pub fn new(shared: Arc<Mutex<Settings>>) -> Self {
         let current = shared.lock().map(|s| s.clone()).unwrap_or_default();
-        Self {
+        let mut app = Self {
+            json_path: current.device_identifier.clone(),
             current,
             shared,
             error: None,
             layout_names: Vec::new(),
+            available_devices: Vec::new(),
+            selected_device_index: None,
+            connected: false,
+            is_vial_device: false,
+        };
+        app.refresh_devices();
+        app
+    }
+
+    fn refresh_devices(&mut self) {
+        self.available_devices = scan_keyboards();
+        self.selected_device_index = None;
+        self.connected = false;
+        self.is_vial_device = false;
+        self.layout_names.clear();
+    }
+
+    fn select_device(&mut self, index: usize) {
+        if let Some(device) = self.available_devices.get(index) {
+            self.selected_device_index = Some(index);
+            self.connected = false;
+            self.layout_names.clear();
+
+            let vial_result = VialProtocol::connect(device.vendor_id, device.product_id);
+            self.is_vial_device = vial_result.is_ok();
+            drop(vial_result); // Explicitly drop to release HID handle
+
+            if self.is_vial_device {
+                self.json_path = format!("{:04x}:{:04x}", device.vendor_id, device.product_id);
+            } else {
+                self.json_path = String::new();
+            }
+            self.error = None;
         }
     }
 
-
-    fn handle_picked_file(&mut self, picked: String) {
-        self.current.keyboard_config_path = picked;
-
-        let keyboard_info = match KeyboardInfo::new(&self.current.keyboard_config_path) {
-            Ok(info) => info,
-            Err(err) => {
-                self.error = Some(format!(
-                    "Failed to parse keyboard info from the selected JSON: {err}"
-                ));
-                return;
-            }
+    fn connect(&mut self) {
+        let Some(device) = self
+            .selected_device_index
+            .and_then(|i| self.available_devices.get(i))
+        else {
+            self.error = Some("No device selected".to_string());
+            return;
         };
 
-        if let Err(err) = Keyboard::try_get_api(keyboard_info.vid, keyboard_info.pid) {
-            self.error = Some(format!(
-                "Failed to initialize keyboard from the selected JSON: {err}"
-            ));
-            return;
+        if self.is_vial_device {
+            match VialProtocol::connect(device.vendor_id, device.product_id) {
+                Ok(vial) => {
+                    self.current.protocol_type = ProtocolType::Vial;
+                    self.current.device_identifier =
+                        format!("{:04x}:{:04x}", device.vendor_id, device.product_id);
+                    self.layout_names = vial.get_layout_definition().get_layout_names();
+                    self.connected = true;
+                    self.error = None;
+                }
+                Err(e) => {
+                    self.error = Some(format!("Failed to connect via VIAL: {e}"));
+                }
+            }
+        } else {
+            let path = self.json_path.trim();
+            if path.is_empty() {
+                self.error = Some("Please provide a JSON config file path".to_string());
+                return;
+            }
+
+            match qmk_json_parser::parse_qmk_json(path) {
+                Ok(definition) => {
+                    if let Err(e) = ViaProtocol::connect(path) {
+                        self.error = Some(format!("Failed to connect via VIA: {e}"));
+                        return;
+                    }
+                    self.current.protocol_type = ProtocolType::Via;
+                    self.current.device_identifier = path.to_string();
+                    self.layout_names = definition.get_layout_names();
+                    self.connected = true;
+                    self.error = None;
+                }
+                Err(e) => {
+                    self.error = Some(format!("Failed to parse JSON config: {e}"));
+                }
+            }
         }
 
-        match keyboard_info.get_layout_names() {
-            Ok(names) => {
-                self.layout_names = names;
-                if let Some(first) = self.layout_names.first() {
-                    if !self
-                        .layout_names
-                        .iter()
-                        .any(|n| n == &self.current.layout_name)
-                    {
-                        self.current.layout_name = first.clone();
-                    }
-                }
-                self.error = None;
-            }
-            Err(err) => {
-                self.layout_names.clear();
-                self.error = Some(err.to_string());
+        // Set default layout if needed
+        if let Some(first) = self.layout_names.first() {
+            if !self.layout_names.contains(&self.current.layout_name) {
+                self.current.layout_name = first.clone();
             }
         }
+    }
+
+    fn device_display_name(device: &KeyboardDeviceInfo) -> String {
+        device
+            .product
+            .clone()
+            .unwrap_or_else(|| format!("{:04X}:{:04X}", device.vendor_id, device.product_id))
     }
 }
 
@@ -91,28 +154,98 @@ impl eframe::App for SettingsApp {
                         .striped(true)
                         .spacing([25.0, 14.0])
                         .show(ui, |ui| {
-                            ui.label("Keyboard info JSON");
-                            ui.add_sized(
-                                ui.available_size(),
-                                egui::TextEdit::singleline(&mut self.current.keyboard_config_path),
-                            );
+                            // Device selector
+                            ui.label("Device");
+                            ui.horizontal(|ui| {
+                                let combo_width = ui.available_width() - 80.0;
+
+                                let selected_text = self
+                                    .selected_device_index
+                                    .and_then(|i| self.available_devices.get(i))
+                                    .map(|d| Self::device_display_name(d))
+                                    .unwrap_or_else(|| "Select device...".to_string());
+
+                                egui::ComboBox::from_id_salt("device_combo")
+                                    .width(combo_width)
+                                    .selected_text(selected_text)
+                                    .show_ui(ui, |ui| {
+                                        let device_count = self.available_devices.len();
+                                        for idx in 0..device_count {
+                                            let device = &self.available_devices[idx];
+                                            let is_selected =
+                                                self.selected_device_index == Some(idx);
+                                            if ui
+                                                .selectable_label(
+                                                    is_selected,
+                                                    Self::device_display_name(device),
+                                                )
+                                                .clicked()
+                                            {
+                                                self.select_device(idx);
+                                            }
+                                        }
+                                        if self.available_devices.is_empty() {
+                                            ui.weak("No devices found");
+                                        }
+                                    });
+
+                                if ui
+                                    .add_sized([70.0, 20.0], egui::Button::new("Refresh"))
+                                    .clicked()
+                                {
+                                    self.refresh_devices();
+                                }
+                            });
                             ui.end_row();
 
-                            ui.label("Layout");
-                            if self.layout_names.is_empty() {
-                                let enabled = !self.current.keyboard_config_path.trim().is_empty();
-                                ui.add_enabled_ui(enabled, |ui| {
+                            // Config / Connect row
+                            ui.label(if self.is_vial_device {
+                                "Device ID"
+                            } else {
+                                "JSON Config"
+                            });
+                            ui.horizontal(|ui| {
+                                let input_width = ui.available_width() - 90.0;
+
+                                let input_interactive = !self.is_vial_device && !self.connected;
+                                ui.add_sized(
+                                    [input_width, 20.0],
+                                    egui::TextEdit::singleline(&mut self.json_path)
+                                        .hint_text("Path to keyboard info JSON")
+                                        .interactive(input_interactive),
+                                );
+
+                                let connect_enabled =
+                                    self.selected_device_index.is_some() && !self.connected;
+                                let button_text = if self.connected {
+                                    "Connected"
+                                } else {
+                                    "Connect"
+                                };
+
+                                ui.add_enabled_ui(connect_enabled, |ui| {
                                     if ui
-                                        .add_sized(ui.available_size(), egui::Button::new("Load layouts..."))
+                                        .add_sized([80.0, 20.0], egui::Button::new(button_text))
                                         .clicked()
                                     {
-                                        self.handle_picked_file(self.current.keyboard_config_path.trim().to_string());
+                                        self.connect();
                                     }
                                 });
-                            } else {
+                            });
+                            ui.end_row();
+
+                            // Layout selection
+                            ui.label("Layout");
+                            let layout_enabled = !self.layout_names.is_empty();
+                            ui.add_enabled_ui(layout_enabled, |ui| {
+                                let selected_text = if self.layout_names.is_empty() {
+                                    "Connect to device first".to_string()
+                                } else {
+                                    self.current.layout_name.clone()
+                                };
                                 egui::ComboBox::from_id_salt("layout_combo")
                                     .width(ui.available_width())
-                                    .selected_text(self.current.layout_name.as_str())
+                                    .selected_text(selected_text)
                                     .show_ui(ui, |ui| {
                                         for name in &self.layout_names {
                                             ui.selectable_value(
@@ -122,7 +255,7 @@ impl eframe::App for SettingsApp {
                                             );
                                         }
                                     });
-                            }
+                            });
                             ui.end_row();
 
                             let position_label = self.current.position.to_string();
@@ -179,17 +312,18 @@ impl eframe::App for SettingsApp {
                             );
                             ui.end_row();
                         });
+
                     ui.add_space(20.0);
                     ui.checkbox(&mut self.current.save_settings, "Remember settings");
                     ui.add_space(5.0);
-                    ui.add_enabled_ui(!self.layout_names.is_empty(), |ui| {
+                    ui.add_enabled_ui(self.connected && !self.layout_names.is_empty(), |ui| {
                         if ui
                             .add_sized([90.0, 28.0], egui::Button::new("Start"))
                             .clicked()
                         {
                             if let Ok(mut settings) = self.shared.lock() {
-                                settings.keyboard_config_path =
-                                    self.current.keyboard_config_path.trim().to_string();
+                                settings.protocol_type = self.current.protocol_type;
+                                settings.device_identifier = self.current.device_identifier.clone();
                                 settings.layout_name = self.current.layout_name.clone();
                                 settings.size = self.current.size;
                                 settings.position = self.current.position;

@@ -2,6 +2,41 @@ use ini::Ini;
 use std::fmt;
 use std::str::FromStr;
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum ProtocolType {
+    #[default]
+    Via,
+    Vial,
+}
+
+impl fmt::Display for ProtocolType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                ProtocolType::Via => "via",
+                ProtocolType::Vial => "vial",
+            }
+        )
+    }
+}
+
+#[derive(Debug)]
+pub struct ParseSettingsError;
+
+impl FromStr for ProtocolType {
+    type Err = ParseSettingsError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.to_lowercase().as_str() {
+            "via" => Ok(ProtocolType::Via),
+            "vial" => Ok(ProtocolType::Vial),
+            _ => Err(ParseSettingsError),
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum WindowPosition {
     TopLeft,
@@ -29,11 +64,8 @@ impl fmt::Display for WindowPosition {
     }
 }
 
-#[derive(Debug)]
-pub struct ParseWindowPositionError;
-
 impl FromStr for WindowPosition {
-    type Err = ParseWindowPositionError;
+    type Err = ParseSettingsError;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
@@ -43,14 +75,15 @@ impl FromStr for WindowPosition {
             "Bottom Right" => Ok(WindowPosition::BottomRight),
             "Bottom" => Ok(WindowPosition::Bottom),
             "Top" => Ok(WindowPosition::Top),
-            _ => Err(ParseWindowPositionError),
+            _ => Err(ParseSettingsError),
         }
     }
 }
 
 #[derive(Clone)]
 pub struct Settings {
-    pub keyboard_config_path: String,
+    pub protocol_type: ProtocolType,
+    pub device_identifier: String,
     pub layout_name: String,
     pub size: i32,
     pub position: WindowPosition,
@@ -63,7 +96,8 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            keyboard_config_path: String::new(),
+            protocol_type: ProtocolType::default(),
+            device_identifier: String::new(),
             layout_name: "LAYOUT".to_string(),
             size: 60,
             position: WindowPosition::BottomRight,
@@ -79,7 +113,8 @@ impl Settings {
     pub fn save_to_file(&self, path: &str) -> std::io::Result<()> {
         let mut conf = Ini::new();
         let mut section = conf.with_section(Some("settings"));
-        section.set("keyboard_config_path", &self.keyboard_config_path);
+        section.set("protocol_type", self.protocol_type.to_string());
+        section.set("device_identifier", &self.device_identifier);
         section.set("layout_name", &self.layout_name);
         section.set("size", self.size.to_string());
         section.set("position", self.position.to_string());
@@ -92,8 +127,13 @@ impl Settings {
         let conf = Ini::load_from_file(path).ok()?;
         let section = conf.section(Some("settings"))?;
         let mut s = Settings::default();
-        if let Some(val) = section.get("keyboard_config_path") {
-            s.keyboard_config_path = val.to_string();
+        if let Some(val) = section.get("protocol_type") {
+            if let Ok(parsed) = val.parse() {
+                s.protocol_type = parsed;
+            }
+        }
+        if let Some(val) = section.get("device_identifier") {
+            s.device_identifier = val.to_string();
         }
         if let Some(val) = section.get("layout_name") {
             s.layout_name = val.to_string();

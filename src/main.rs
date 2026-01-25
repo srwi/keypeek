@@ -1,18 +1,20 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 mod key_matrix;
 mod keyboard;
-mod keyboard_info;
 mod keycode_labels;
 mod overlay_window;
+mod protocols;
 mod settings;
 mod settings_window;
 mod tray;
 
 use eframe::egui::{self, IconData};
 use keyboard::Keyboard;
-use keyboard_info::KeyboardInfo;
 use overlay_window::Overlay;
-use settings::Settings;
+use protocols::via::ViaProtocol;
+use protocols::vial::VialProtocol;
+use protocols::KeyboardProtocol;
+use settings::{ProtocolType, Settings};
 use settings_window::SettingsApp;
 use std::sync::{Arc, Mutex};
 
@@ -57,8 +59,8 @@ fn show_settings_window() -> Option<Settings> {
             .into_rgba8();
         let (width, height) = image.dimensions();
         IconData {
-            width: width,
-            height: height,
+            width,
+            height,
             rgba: image.into_raw(),
         }
     };
@@ -66,7 +68,7 @@ fn show_settings_window() -> Option<Settings> {
         run_and_return: true,
         viewport: egui::ViewportBuilder::default()
             .with_decorations(true)
-            .with_inner_size([480.0, 360.0])
+            .with_inner_size([500.0, 420.0])
             .with_resizable(false)
             .with_maximize_button(false)
             .with_icon(icon),
@@ -98,18 +100,50 @@ fn show_settings_window() -> Option<Settings> {
 }
 
 fn try_to_launch_overlay(settings: &Settings) -> bool {
-    let keyboard_info = match KeyboardInfo::new(&settings.keyboard_config_path) {
-        Ok(info) => info,
-        Err(_) => return false,
+    let protocol: Box<dyn KeyboardProtocol> = match settings.protocol_type {
+        ProtocolType::Vial => {
+            let parts: Vec<&str> = settings.device_identifier.split(':').collect();
+            if parts.len() != 2 {
+                eprintln!("Invalid VIAL device ID format: {}", settings.device_identifier);
+                return false;
+            }
+            let vid = match u16::from_str_radix(parts[0], 16) {
+                Ok(v) => v,
+                Err(_) => return false,
+            };
+            let pid = match u16::from_str_radix(parts[1], 16) {
+                Ok(p) => p,
+                Err(_) => return false,
+            };
+            match VialProtocol::connect(vid, pid) {
+                Ok(p) => Box::new(p),
+                Err(e) => {
+                    eprintln!("Failed to connect to VIAL device: {e}");
+                    return false;
+                }
+            }
+        }
+        ProtocolType::Via => {
+            match ViaProtocol::connect(&settings.device_identifier) {
+                Ok(p) => Box::new(p),
+                Err(e) => {
+                    eprintln!("Failed to connect to VIA device: {e}");
+                    return false;
+                }
+            }
+        }
     };
 
     let keyboard = match Keyboard::new(
-        keyboard_info.clone(),
+        protocol,
         settings.layout_name.clone(),
         settings.timeout,
     ) {
         Ok(kb) => kb,
-        Err(_) => return false,
+        Err(e) => {
+            eprintln!("Failed to create keyboard: {e}");
+            return false;
+        }
     };
 
     let _ = run_overlay_app(keyboard, settings);

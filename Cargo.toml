@@ -19,3 +19,5 @@ serde = { version = "1.0.228", features = ["derive"] }
 winit = "0.30.12"
 image = "0.25.9"
 egui-phosphor = "0.10"
+lzma-rs = "0.3"
+hidapi = "2.6"
