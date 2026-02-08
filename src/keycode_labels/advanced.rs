@@ -18,7 +18,7 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
                 .find(|(_, v)| *v == input_modifiers)
             {
                 return Some(LayoutKey {
-                    tap: format!("{}({})", name, keycode_str).into(),
+                    tap: Label::new(format!("{}({})", name, keycode_str)),
                     kind: KeycodeKind::Modifier,
                     ..Default::default()
                 });
@@ -63,7 +63,7 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
                 }
 
                 return Some(LayoutKey {
-                    tap: nested_mods.into(),
+                    tap: Label::new(nested_mods),
                     kind: KeycodeKind::Modifier,
                     ..Default::default()
                 });
@@ -83,7 +83,7 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
                 .unwrap_or_else(|| format!("0x{:02X}", keycode));
 
             Some(LayoutKey {
-                tap: format!("MT({},{})", mod_str, keycode_str).into(),
+                tap: Label::new(format!("MT({},{})", mod_str, keycode_str)),
                 kind: KeycodeKind::Modifier,
                 ..Default::default()
             })
@@ -99,7 +99,7 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             let mod_str = mod_value_to_string(mod_value);
 
             Some(LayoutKey {
-                tap: format!("LM({},{})", layer, mod_str).into(),
+                tap: Label::new(format!("LM({},{})", layer, mod_str)),
                 kind: KeycodeKind::Modifier,
                 layer_ref: Some(layer as u8),
                 ..Default::default()
@@ -111,7 +111,7 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             let mod_str = mod_value_to_string(remainder);
 
             Some(LayoutKey {
-                tap: format!("OSM({})", mod_str).into(),
+                tap: Label::new(format!("OSM({})", mod_str)),
                 kind: KeycodeKind::Modifier,
                 ..Default::default()
             })
@@ -127,7 +127,7 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
                 .unwrap_or_else(|| format!("0x{:02X}", keycode));
 
             Some(LayoutKey {
-                tap: format!("LT({},{})", layer, keycode_str).into(),
+                tap: Label::new(format!("LT({},{})", layer, keycode_str)),
                 kind: KeycodeKind::Modifier,
                 layer_ref: Some(layer as u8),
                 ..Default::default()

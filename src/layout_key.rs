@@ -55,18 +55,6 @@ impl Label {
     }
 }
 
-impl From<&str> for Label {
-    fn from(s: &str) -> Self {
-        s.into()
-    }
-}
-
-impl From<String> for Label {
-    fn from(s: String) -> Self {
-        s.into()
-    }
-}
-
 /// A key's display representation, containing all label variants and metadata.
 ///
 /// This struct is firmware-agnostic: both QMK keycodes and ZMK bindings

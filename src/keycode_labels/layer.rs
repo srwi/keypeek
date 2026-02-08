@@ -39,7 +39,7 @@ pub fn get_layer_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
     };
 
     Some(LayoutKey {
-        tap: tap_label.into(),
+        tap: Label::new(tap_label),
         layer_ref,
         ..Default::default()
     })

@@ -17,7 +17,7 @@ pub fn get_layout_key(bytes: u16) -> Option<LayoutKey> {
 
 fn get_hex_layout_key(keycode_bytes: u16) -> LayoutKey {
     LayoutKey {
-        tap: format!("0x{:04X}", keycode_bytes).into(),
+        tap: Label::new(format!("0x{:04X}", keycode_bytes)),
         ..Default::default()
     }
 }
