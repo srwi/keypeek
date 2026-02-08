@@ -7,6 +7,7 @@ pub enum ProtocolType {
     #[default]
     Via,
     Vial,
+    Zmk,
 }
 
 impl fmt::Display for ProtocolType {
@@ -17,6 +18,7 @@ impl fmt::Display for ProtocolType {
             match self {
                 ProtocolType::Via => "via",
                 ProtocolType::Vial => "vial",
+                ProtocolType::Zmk => "zmk",
             }
         )
     }
@@ -32,6 +34,7 @@ impl FromStr for ProtocolType {
         match value.to_lowercase().as_str() {
             "via" => Ok(ProtocolType::Via),
             "vial" => Ok(ProtocolType::Vial),
+            "zmk" => Ok(ProtocolType::Zmk),
             _ => Err(ParseSettingsError),
         }
     }
@@ -84,6 +87,7 @@ impl FromStr for WindowPosition {
 pub struct Settings {
     pub protocol_type: ProtocolType,
     pub device_identifier: String,
+    pub keymap_path: String,
     pub layout_name: String,
     pub size: i32,
     pub position: WindowPosition,
@@ -98,6 +102,7 @@ impl Default for Settings {
         Self {
             protocol_type: ProtocolType::default(),
             device_identifier: String::new(),
+            keymap_path: String::new(),
             layout_name: "LAYOUT".to_string(),
             size: 60,
             position: WindowPosition::BottomRight,
@@ -115,6 +120,7 @@ impl Settings {
         let mut section = conf.with_section(Some("settings"));
         section.set("protocol_type", self.protocol_type.to_string());
         section.set("device_identifier", &self.device_identifier);
+        section.set("keymap_path", &self.keymap_path);
         section.set("layout_name", &self.layout_name);
         section.set("size", self.size.to_string());
         section.set("position", self.position.to_string());
@@ -134,6 +140,9 @@ impl Settings {
         }
         if let Some(val) = section.get("device_identifier") {
             s.device_identifier = val.to_string();
+        }
+        if let Some(val) = section.get("keymap_path") {
+            s.keymap_path = val.to_string();
         }
         if let Some(val) = section.get("layout_name") {
             s.layout_name = val.to_string();

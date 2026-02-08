@@ -2,8 +2,10 @@ pub mod kle_parser;
 pub mod qmk_json_parser;
 pub mod via;
 pub mod vial;
+pub mod zmk;
 pub mod zmk_parser;
 
+use crate::layout_key::LayoutKey;
 use std::error::Error;
 
 pub type Row = usize;
@@ -64,4 +66,10 @@ pub trait KeyboardProtocol: Send {
     fn read_all_keycodes(&self, layers: usize, rows: usize, cols: usize) -> Vec<Vec<Vec<u16>>>;
 
     fn hid_read(&self) -> Result<Vec<u8>, Box<dyn Error>>;
+
+    /// Return pre-parsed LayoutKey data if available (e.g., from ZMK keymap files).
+    /// When Some, Keyboard::new() will use this instead of read_all_keycodes().
+    fn get_layout_keys(&self) -> Option<Vec<Vec<Vec<Option<LayoutKey>>>>> {
+        None
+    }
 }

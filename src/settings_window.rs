@@ -1,6 +1,7 @@
 use crate::protocols::qmk_json_parser;
 use crate::protocols::via::ViaProtocol;
 use crate::protocols::vial::VialProtocol;
+use crate::protocols::zmk_parser;
 use crate::protocols::KeyboardProtocol;
 use crate::settings::ProtocolType;
 use crate::settings::Settings;
@@ -18,8 +19,9 @@ pub struct SettingsApp {
     available_devices: Vec<KeyboardDeviceInfo>,
     selected_device_index: Option<usize>,
     connected: bool,
-    is_vial_device: bool,
+    protocol_type: ProtocolType,
     json_path: String,
+    zmk_config_path: String,
 }
 
 impl SettingsApp {
@@ -27,6 +29,8 @@ impl SettingsApp {
         let current = shared.lock().map(|s| s.clone()).unwrap_or_default();
         let mut app = Self {
             json_path: current.device_identifier.clone(),
+            zmk_config_path: current.keymap_path.clone(),
+            protocol_type: current.protocol_type,
             current,
             shared,
             error: None,
@@ -34,7 +38,6 @@ impl SettingsApp {
             available_devices: Vec::new(),
             selected_device_index: None,
             connected: false,
-            is_vial_device: false,
         };
         app.refresh_devices();
         app
@@ -44,7 +47,6 @@ impl SettingsApp {
         self.available_devices = scan_keyboards();
         self.selected_device_index = None;
         self.connected = false;
-        self.is_vial_device = false;
         self.layout_names.clear();
     }
 
@@ -54,14 +56,21 @@ impl SettingsApp {
             self.connected = false;
             self.layout_names.clear();
 
-            let vial_result = VialProtocol::connect(device.vendor_id, device.product_id);
-            self.is_vial_device = vial_result.is_ok();
-            drop(vial_result); // Explicitly drop to release HID handle
-
-            if self.is_vial_device {
-                self.json_path = format!("{:04x}:{:04x}", device.vendor_id, device.product_id);
+            // Auto-detect VIAL unless user has manually selected ZMK
+            if self.protocol_type != ProtocolType::Zmk {
+                let vial_result = VialProtocol::connect(device.vendor_id, device.product_id);
+                if vial_result.is_ok() {
+                    self.protocol_type = ProtocolType::Vial;
+                    self.json_path =
+                        format!("{:04x}:{:04x}", device.vendor_id, device.product_id);
+                } else {
+                    self.protocol_type = ProtocolType::Via;
+                    self.json_path = String::new();
+                }
+                drop(vial_result);
             } else {
-                self.json_path = String::new();
+                self.json_path =
+                    format!("{:04x}:{:04x}", device.vendor_id, device.product_id);
             }
             self.error = None;
         }
@@ -76,41 +85,68 @@ impl SettingsApp {
             return;
         };
 
-        if self.is_vial_device {
-            match VialProtocol::connect(device.vendor_id, device.product_id) {
-                Ok(vial) => {
-                    self.current.protocol_type = ProtocolType::Vial;
-                    self.current.device_identifier =
-                        format!("{:04x}:{:04x}", device.vendor_id, device.product_id);
-                    self.layout_names = vial.get_layout_definition().get_layout_names();
-                    self.connected = true;
-                    self.error = None;
-                }
-                Err(e) => {
-                    self.error = Some(format!("Failed to connect via VIAL: {e}"));
-                }
-            }
-        } else {
-            let path = self.json_path.trim();
-            if path.is_empty() {
-                self.error = Some("Please provide a JSON config file path".to_string());
-                return;
-            }
-
-            match qmk_json_parser::parse_qmk_json(path) {
-                Ok(definition) => {
-                    if let Err(e) = ViaProtocol::connect(path) {
-                        self.error = Some(format!("Failed to connect via VIA: {e}"));
-                        return;
+        match self.protocol_type {
+            ProtocolType::Vial => {
+                match VialProtocol::connect(device.vendor_id, device.product_id) {
+                    Ok(vial) => {
+                        self.current.protocol_type = ProtocolType::Vial;
+                        self.current.device_identifier =
+                            format!("{:04x}:{:04x}", device.vendor_id, device.product_id);
+                        self.layout_names = vial.get_layout_definition().get_layout_names();
+                        self.connected = true;
+                        self.error = None;
                     }
-                    self.current.protocol_type = ProtocolType::Via;
-                    self.current.device_identifier = path.to_string();
-                    self.layout_names = definition.get_layout_names();
-                    self.connected = true;
-                    self.error = None;
+                    Err(e) => {
+                        self.error = Some(format!("Failed to connect via VIAL: {e}"));
+                    }
                 }
-                Err(e) => {
-                    self.error = Some(format!("Failed to parse JSON config: {e}"));
+            }
+            ProtocolType::Via => {
+                let path = self.json_path.trim();
+                if path.is_empty() {
+                    self.error = Some("Please provide a JSON config file path".to_string());
+                    return;
+                }
+
+                match qmk_json_parser::parse_qmk_json(path) {
+                    Ok(definition) => {
+                        if let Err(e) = ViaProtocol::connect(path) {
+                            self.error = Some(format!("Failed to connect via VIA: {e}"));
+                            return;
+                        }
+                        self.current.protocol_type = ProtocolType::Via;
+                        self.current.device_identifier = path.to_string();
+                        self.layout_names = definition.get_layout_names();
+                        self.connected = true;
+                        self.error = None;
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to parse JSON config: {e}"));
+                    }
+                }
+            }
+            ProtocolType::Zmk => {
+                let config_dir = self.zmk_config_path.trim();
+                if config_dir.is_empty() {
+                    self.error = Some("Please provide a ZMK config directory path".to_string());
+                    return;
+                }
+
+                match zmk_parser::parse_zmk_config_dir(config_dir) {
+                    Ok((physical_layout, _keymap)) => {
+                        let definition = physical_layout
+                            .to_keyboard_definition(device.vendor_id, device.product_id);
+                        self.current.protocol_type = ProtocolType::Zmk;
+                        self.current.device_identifier =
+                            format!("{:04x}:{:04x}", device.vendor_id, device.product_id);
+                        self.current.keymap_path = config_dir.to_string();
+                        self.layout_names = definition.get_layout_names();
+                        self.connected = true;
+                        self.error = None;
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to parse ZMK config: {e}"));
+                    }
                 }
             }
         }
@@ -154,6 +190,54 @@ impl eframe::App for SettingsApp {
                         .striped(true)
                         .spacing([25.0, 14.0])
                         .show(ui, |ui| {
+                            // Protocol type selector
+                            ui.label("Protocol");
+                            ui.horizontal(|ui| {
+                                egui::ComboBox::from_id_salt("protocol_combo")
+                                    .width(ui.available_width())
+                                    .selected_text(match self.protocol_type {
+                                        ProtocolType::Via => "VIA",
+                                        ProtocolType::Vial => "VIAL",
+                                        ProtocolType::Zmk => "ZMK",
+                                    })
+                                    .show_ui(ui, |ui| {
+                                        if ui
+                                            .selectable_value(
+                                                &mut self.protocol_type,
+                                                ProtocolType::Vial,
+                                                "VIAL (auto-detect)",
+                                            )
+                                            .clicked()
+                                        {
+                                            self.connected = false;
+                                            self.layout_names.clear();
+                                        }
+                                        if ui
+                                            .selectable_value(
+                                                &mut self.protocol_type,
+                                                ProtocolType::Via,
+                                                "VIA",
+                                            )
+                                            .clicked()
+                                        {
+                                            self.connected = false;
+                                            self.layout_names.clear();
+                                        }
+                                        if ui
+                                            .selectable_value(
+                                                &mut self.protocol_type,
+                                                ProtocolType::Zmk,
+                                                "ZMK",
+                                            )
+                                            .clicked()
+                                        {
+                                            self.connected = false;
+                                            self.layout_names.clear();
+                                        }
+                                    });
+                            });
+                            ui.end_row();
+
                             // Device selector
                             ui.label("Device");
                             ui.horizontal(|ui| {
@@ -199,19 +283,24 @@ impl eframe::App for SettingsApp {
                             ui.end_row();
 
                             // Config / Connect row
-                            ui.label(if self.is_vial_device {
-                                "Device ID"
-                            } else {
-                                "JSON Config"
-                            });
+                            let config_label = match self.protocol_type {
+                                ProtocolType::Vial => "Device ID",
+                                ProtocolType::Via => "JSON Config",
+                                ProtocolType::Zmk => "Device ID",
+                            };
+                            ui.label(config_label);
                             ui.horizontal(|ui| {
                                 let input_width = ui.available_width() - 90.0;
 
-                                let input_interactive = !self.is_vial_device && !self.connected;
+                                let input_interactive = self.protocol_type == ProtocolType::Via
+                                    && !self.connected;
                                 ui.add_sized(
                                     [input_width, 20.0],
                                     egui::TextEdit::singleline(&mut self.json_path)
-                                        .hint_text("Path to keyboard info JSON")
+                                        .hint_text(match self.protocol_type {
+                                            ProtocolType::Via => "Path to keyboard info JSON",
+                                            _ => "Auto-filled from device",
+                                        })
                                         .interactive(input_interactive),
                                 );
 
@@ -233,6 +322,18 @@ impl eframe::App for SettingsApp {
                                 });
                             });
                             ui.end_row();
+
+                            // ZMK config directory input (only shown for ZMK)
+                            if self.protocol_type == ProtocolType::Zmk {
+                                ui.label("ZMK Config Dir");
+                                ui.add_sized(
+                                    [ui.available_width(), 20.0],
+                                    egui::TextEdit::singleline(&mut self.zmk_config_path)
+                                        .hint_text("Path to ZMK config directory")
+                                        .interactive(!self.connected),
+                                );
+                                ui.end_row();
+                            }
 
                             // Layout selection
                             ui.label("Layout");
@@ -324,6 +425,7 @@ impl eframe::App for SettingsApp {
                             if let Ok(mut settings) = self.shared.lock() {
                                 settings.protocol_type = self.current.protocol_type;
                                 settings.device_identifier = self.current.device_identifier.clone();
+                                settings.keymap_path = self.current.keymap_path.clone();
                                 settings.layout_name = self.current.layout_name.clone();
                                 settings.size = self.current.size;
                                 settings.position = self.current.position;

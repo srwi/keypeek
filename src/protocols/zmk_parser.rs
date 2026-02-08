@@ -21,7 +21,10 @@ use regex::Regex;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
+
+use super::{Key, KeyboardDefinition, KeyboardLayout};
 
 /// Parsed ZMK keymap containing layers and combos
 #[derive(Debug, Clone)]
@@ -194,6 +197,222 @@ impl ZmkKeymap {
     pub fn keys_per_layer(&self) -> usize {
         self.layers.values().next().map(|v| v.len()).unwrap_or(0)
     }
+
+    /// Convert the keymap to a 3D key matrix placed at proper (row, col) positions.
+    ///
+    /// Uses the physical key list to map the i-th binding to its (row, col) in the matrix.
+    /// The resulting shape is [layer][row][col], matching VIA/VIAL format.
+    pub fn to_matrix(
+        &self,
+        physical_keys: &[Key],
+        rows: usize,
+        cols: usize,
+    ) -> Vec<Vec<Vec<Option<LayoutKey>>>> {
+        self.layer_order
+            .iter()
+            .map(|name| {
+                let bindings = self.layers.get(name).cloned().unwrap_or_default();
+                let mut layer_matrix: Vec<Vec<Option<LayoutKey>>> = vec![vec![None; cols]; rows];
+
+                for (i, key_def) in physical_keys.iter().enumerate() {
+                    if let Some(layout_key) = bindings.get(i).cloned().flatten() {
+                        if key_def.row < rows && key_def.col < cols {
+                            layer_matrix[key_def.row][key_def.col] = Some(layout_key);
+                        }
+                    }
+                }
+
+                layer_matrix
+            })
+            .collect()
+    }
+}
+
+/// Physical layout data parsed from a ZMK .overlay file
+#[derive(Debug, Clone)]
+pub struct ZmkPhysicalLayout {
+    /// Physical key definitions with position, size, and matrix coordinates
+    pub keys: Vec<Key>,
+    /// Matrix row count from the matrix transform
+    pub rows: usize,
+    /// Matrix column count from the matrix transform
+    pub cols: usize,
+}
+
+impl ZmkPhysicalLayout {
+    /// Parse a physical layout from a .overlay file content
+    pub fn parse(content: &str) -> Result<Self, Box<dyn Error>> {
+        let (rows, cols) = parse_matrix_transform(content)?;
+        let keys = parse_physical_keys(content)?;
+
+        if keys.is_empty() {
+            return Err("No physical key definitions found in overlay".into());
+        }
+
+        Ok(ZmkPhysicalLayout { keys, rows, cols })
+    }
+
+    /// Parse from a file path
+    pub fn parse_file(path: &str) -> Result<Self, Box<dyn Error>> {
+        let content = fs::read_to_string(path)?;
+        Self::parse(&content)
+    }
+
+    /// Build a KeyboardDefinition from the physical layout
+    pub fn to_keyboard_definition(&self, vid: u16, pid: u16) -> KeyboardDefinition {
+        let layout = KeyboardLayout {
+            name: "Default Layout".to_string(),
+            keys: self.keys.clone(),
+        };
+
+        KeyboardDefinition {
+            vid,
+            pid,
+            rows: self.rows,
+            cols: self.cols,
+            layouts: vec![layout],
+        }
+    }
+}
+
+/// Parse matrix transform rows/columns from overlay content
+///
+/// Looks for: compatible = "zmk,matrix-transform"; columns = <N>; rows = <N>;
+fn parse_matrix_transform(content: &str) -> Result<(usize, usize), Box<dyn Error>> {
+    let transform_re = Regex::new(
+        r#"(?s)compatible\s*=\s*"zmk,matrix-transform"[^}]*columns\s*=\s*<(\d+)>[^}]*rows\s*=\s*<(\d+)>"#,
+    )
+    .unwrap();
+
+    // Try columns-then-rows order first
+    if let Some(cap) = transform_re.captures(content) {
+        let cols: usize = cap.get(1).unwrap().as_str().parse()?;
+        let rows: usize = cap.get(2).unwrap().as_str().parse()?;
+        return Ok((rows, cols));
+    }
+
+    // Try rows-then-columns order
+    let transform_re2 = Regex::new(
+        r#"(?s)compatible\s*=\s*"zmk,matrix-transform"[^}]*rows\s*=\s*<(\d+)>[^}]*columns\s*=\s*<(\d+)>"#,
+    )
+    .unwrap();
+
+    if let Some(cap) = transform_re2.captures(content) {
+        let rows: usize = cap.get(1).unwrap().as_str().parse()?;
+        let cols: usize = cap.get(2).unwrap().as_str().parse()?;
+        return Ok((rows, cols));
+    }
+
+    Err("Could not find matrix transform with rows/columns in overlay".into())
+}
+
+/// Parse key_physical_attrs entries from overlay content
+///
+/// Format: &key_physical_attrs WIDTH HEIGHT X Y ROTATION ROW COL
+/// Width/Height/X/Y are in centi-units (100 = 1 key unit)
+fn parse_physical_keys(content: &str) -> Result<Vec<Key>, Box<dyn Error>> {
+    let key_re =
+        Regex::new(r"&key_physical_attrs\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)")
+            .unwrap();
+
+    let keys: Vec<Key> = key_re
+        .captures_iter(content)
+        .map(|cap| {
+            let w_centi: f32 = cap[1].parse().unwrap();
+            let h_centi: f32 = cap[2].parse().unwrap();
+            let x_centi: f32 = cap[3].parse().unwrap();
+            let y_centi: f32 = cap[4].parse().unwrap();
+            // cap[5] is rotation - not used for now
+            let row: usize = cap[6].parse().unwrap();
+            let col: usize = cap[7].parse().unwrap();
+
+            Key {
+                row,
+                col,
+                x: x_centi / 100.0,
+                y: y_centi / 100.0,
+                w: w_centi / 100.0,
+                h: h_centi / 100.0,
+            }
+        })
+        .collect();
+
+    Ok(keys)
+}
+
+/// Discover and parse ZMK config files from a config directory.
+///
+/// Scans the directory structure for:
+/// - `.overlay` files in `boards/shields/*/` for physical layout
+/// - `.keymap` files in `config/` for key assignments
+///
+/// Returns the physical layout and keymap.
+pub fn parse_zmk_config_dir(
+    config_dir: &str,
+) -> Result<(ZmkPhysicalLayout, ZmkKeymap), Box<dyn Error>> {
+    let base = Path::new(config_dir);
+
+    if !base.is_dir() {
+        return Err(format!("ZMK config directory not found: {}", config_dir).into());
+    }
+
+    // Find .overlay file in boards/shields/*/
+    let overlay_path = find_file_with_extension(base, &["boards", "shields"], "overlay")?;
+
+    // Find .keymap file in config/
+    let keymap_path = find_file_with_extension(base, &["config"], "keymap")?;
+
+    let physical_layout = ZmkPhysicalLayout::parse_file(
+        overlay_path
+            .to_str()
+            .ok_or("Invalid overlay path encoding")?,
+    )?;
+
+    let keymap =
+        ZmkKeymap::parse_file(keymap_path.to_str().ok_or("Invalid keymap path encoding")?)?;
+
+    Ok((physical_layout, keymap))
+}
+
+/// Find the first file with a given extension under a subdirectory path.
+fn find_file_with_extension(
+    base: &Path,
+    subdirs: &[&str],
+    extension: &str,
+) -> Result<PathBuf, Box<dyn Error>> {
+    let mut search_dir = base.to_path_buf();
+    for sub in subdirs {
+        search_dir = search_dir.join(sub);
+    }
+
+    if !search_dir.is_dir() {
+        return Err(format!("Directory not found: {}", search_dir.display()).into());
+    }
+
+    // Search recursively for files with the given extension
+    find_file_recursive(&search_dir, extension)?.ok_or_else(|| {
+        format!(
+            "No .{} file found under {}",
+            extension,
+            search_dir.display()
+        )
+        .into()
+    })
+}
+
+fn find_file_recursive(dir: &Path, extension: &str) -> Result<Option<PathBuf>, Box<dyn Error>> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            if let Some(found) = find_file_recursive(&path, extension)? {
+                return Ok(Some(found));
+            }
+        } else if path.extension().and_then(|e| e.to_str()) == Some(extension) {
+            return Ok(Some(path));
+        }
+    }
+    Ok(None)
 }
 
 /// Registry of custom behaviors extracted from the keymap
@@ -417,7 +636,10 @@ fn binding_to_layout_key(
                     ..Default::default()
                 })
             } else {
-                Some(LayoutKey {tap: Label::new("mt?"), ..Default::default() })
+                Some(LayoutKey {
+                    tap: Label::new("mt?"),
+                    ..Default::default()
+                })
             }
         }
 
@@ -435,7 +657,10 @@ fn binding_to_layout_key(
                     ..Default::default()
                 })
             } else {
-                Some(LayoutKey {tap: Label::new("lt?"), ..Default::default()})
+                Some(LayoutKey {
+                    tap: Label::new("lt?"),
+                    ..Default::default()
+                })
             }
         }
 
@@ -795,5 +1020,101 @@ mod tests {
         assert_eq!(zmk_key_to_label("SPACE"), "Space");
         assert_eq!(zmk_key_to_label("LSHIFT"), "LShift");
         assert_eq!(zmk_key_to_label("BSPC"), "Bksp");
+    }
+
+    #[test]
+    fn test_parse_physical_keys() {
+        let content = r#"
+            keys = <&key_physical_attrs 100 100    0    0 0 0 0>
+                 , <&key_physical_attrs 100 100  100    0 0 0 1>
+                 , <&key_physical_attrs 150 100  200  100 0 1 0>;
+        "#;
+
+        let keys = parse_physical_keys(content).unwrap();
+        assert_eq!(keys.len(), 3);
+        assert_eq!(keys[0].row, 0);
+        assert_eq!(keys[0].col, 0);
+        assert!((keys[0].x - 0.0).abs() < 0.01);
+        assert!((keys[0].w - 1.0).abs() < 0.01);
+        assert_eq!(keys[1].col, 1);
+        assert!((keys[1].x - 1.0).abs() < 0.01);
+        assert_eq!(keys[2].row, 1);
+        assert!((keys[2].w - 1.5).abs() < 0.01);
+        assert!((keys[2].y - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_parse_matrix_transform() {
+        let content = r#"
+            transform {
+                compatible = "zmk,matrix-transform";
+                columns = <4>;
+                rows = <3>;
+                map = <RC(0,0) RC(0,1)>;
+            };
+        "#;
+
+        let (rows, cols) = parse_matrix_transform(content).unwrap();
+        assert_eq!(rows, 3);
+        assert_eq!(cols, 4);
+    }
+
+    #[test]
+    fn test_to_matrix() {
+        let content = r#"
+            keymap {
+                compatible = "zmk,keymap";
+
+                default_layer {
+                    bindings = <&kp A &kp B &kp C &kp D>;
+                };
+            };
+        "#;
+
+        let keymap = ZmkKeymap::parse(content).unwrap();
+
+        let physical_keys = vec![
+            Key {
+                row: 0,
+                col: 0,
+                x: 0.0,
+                y: 0.0,
+                w: 1.0,
+                h: 1.0,
+            },
+            Key {
+                row: 0,
+                col: 1,
+                x: 1.0,
+                y: 0.0,
+                w: 1.0,
+                h: 1.0,
+            },
+            Key {
+                row: 1,
+                col: 0,
+                x: 0.0,
+                y: 1.0,
+                w: 1.0,
+                h: 1.0,
+            },
+            Key {
+                row: 1,
+                col: 1,
+                x: 1.0,
+                y: 1.0,
+                w: 1.0,
+                h: 1.0,
+            },
+        ];
+
+        let matrix = keymap.to_matrix(&physical_keys, 2, 2);
+        assert_eq!(matrix.len(), 1); // 1 layer
+        assert_eq!(matrix[0].len(), 2); // 2 rows
+        assert_eq!(matrix[0][0].len(), 2); // 2 cols
+        assert_eq!(matrix[0][0][0].as_ref().unwrap().tap.full, "A");
+        assert_eq!(matrix[0][0][1].as_ref().unwrap().tap.full, "B");
+        assert_eq!(matrix[0][1][0].as_ref().unwrap().tap.full, "C");
+        assert_eq!(matrix[0][1][1].as_ref().unwrap().tap.full, "D");
     }
 }

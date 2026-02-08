@@ -30,16 +30,18 @@ impl Keyboard {
             .get_layer_count()
             .map_err(|e| format!("Failed to get layer count: {e}"))?;
 
-        let keycodes = protocol.read_all_keycodes(layers, definition.rows, definition.cols);
+        // Use pre-parsed layout keys if available (ZMK), otherwise read keycodes via HID (VIA/VIAL)
+        let matrix = if let Some(layout_keys) = protocol.get_layout_keys() {
+            KeyMatrix::from_layout_keys(layout_keys, definition.rows, definition.cols)
+        } else {
+            let keycodes = protocol.read_all_keycodes(layers, definition.rows, definition.cols);
+            KeyMatrix::from_qmk_keycodes(keycodes, definition.rows, definition.cols)
+        };
 
         let layer_state = Arc::new(Mutex::new(0));
         let default_layer_state = Arc::new(Mutex::new(0));
         let time_to_hide_overlay = Arc::new(Mutex::new(Some(Instant::now())));
-        let matrix = Arc::new(Mutex::new(KeyMatrix::from_qmk_keycodes(
-            keycodes,
-            definition.rows,
-            definition.cols,
-        )));
+        let matrix = Arc::new(Mutex::new(matrix));
 
         let keyboard = Keyboard {
             layout,
