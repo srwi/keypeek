@@ -1,4 +1,5 @@
-use crate::protocols::{connect_protocol, format_vid_pid};
+use crate::protocols::zmk_studio;
+use crate::protocols::{connect_protocol, connect_zmk_studio, format_vid_pid, parse_vid_pid};
 use crate::settings::ProtocolType;
 use crate::settings::Settings;
 use crate::settings::WindowPosition;
@@ -7,38 +8,60 @@ use eframe::egui::{self};
 use qmk_via_api::scan::{scan_keyboards, KeyboardDeviceInfo};
 use std::sync::{Arc, Mutex};
 
+/// Unified device entry shown in the device dropdown.
+struct DeviceEntry {
+    display_name: String,
+    vid: u16,
+    pid: u16,
+    /// For HID devices (VIA/VIAL)
+    #[allow(dead_code)]
+    hid_info: Option<KeyboardDeviceInfo>,
+    /// For ZMK Studio serial devices
+    serial_port: Option<String>,
+}
+
 pub struct SettingsApp {
     current: Settings,
     shared: Arc<Mutex<Settings>>,
     error: Option<String>,
     layout_names: Vec<String>,
-    available_devices: Vec<KeyboardDeviceInfo>,
+    available_devices: Vec<DeviceEntry>,
     selected_device_index: Option<usize>,
     connected: bool,
     protocol_type: ProtocolType,
     json_path: String,
-    zmk_config_path: String,
+    /// Tracks whether we're showing the unlock prompt
+    zmk_unlock_pending: bool,
+    /// Serial port name for ZMK Studio connection
+    zmk_serial_port: Option<String>,
 }
 
 impl SettingsApp {
     pub fn new(shared: Arc<Mutex<Settings>>) -> Self {
         let current = shared.lock().map(|s| s.clone()).unwrap_or_default();
-        // Split protocol_config into UI fields based on protocol type
-        let (json_path, zmk_config_path) = match current.protocol_type {
-            ProtocolType::Via => (current.protocol_config.clone(), String::new()),
-            ProtocolType::Vial => (current.protocol_config.clone(), String::new()),
+        let json_path = match current.protocol_type {
+            ProtocolType::Via => current.protocol_config.clone(),
+            ProtocolType::Vial => current.protocol_config.clone(),
             ProtocolType::Zmk => {
-                // ZMK config format: "vid:pid|config_dir"
-                if let Some((_vid_pid, config_dir)) = current.protocol_config.split_once('|') {
-                    (current.protocol_config.split('|').next().unwrap_or("").to_string(), config_dir.to_string())
-                } else {
-                    (String::new(), current.protocol_config.clone())
-                }
+                // ZMK config format: "vid:pid|serial_port"
+                current
+                    .protocol_config
+                    .split('|')
+                    .next()
+                    .unwrap_or("")
+                    .to_string()
             }
+        };
+        let zmk_serial_port = if current.protocol_type == ProtocolType::Zmk {
+            current
+                .protocol_config
+                .split_once('|')
+                .map(|(_, p)| p.to_string())
+        } else {
+            None
         };
         let mut app = Self {
             json_path,
-            zmk_config_path,
             protocol_type: current.protocol_type,
             current,
             shared,
@@ -47,16 +70,65 @@ impl SettingsApp {
             available_devices: Vec::new(),
             selected_device_index: None,
             connected: false,
+            zmk_unlock_pending: false,
+            zmk_serial_port,
         };
         app.refresh_devices();
         app
     }
 
     fn refresh_devices(&mut self) {
-        self.available_devices = scan_keyboards();
+        self.available_devices.clear();
         self.selected_device_index = None;
         self.connected = false;
         self.layout_names.clear();
+
+        // Add HID devices (for VIA/VIAL)
+        for dev in scan_keyboards() {
+            self.available_devices.push(DeviceEntry {
+                display_name: dev
+                    .product
+                    .clone()
+                    .unwrap_or_else(|| format!("{:04X}:{:04X}", dev.vendor_id, dev.product_id)),
+                vid: dev.vendor_id,
+                pid: dev.product_id,
+                hid_info: Some(dev),
+                serial_port: None,
+            });
+        }
+
+        // Add ZMK Studio serial devices
+        for sp in zmk_studio::scan_serial_ports() {
+            // Skip if we already have an HID entry with the same VID/PID
+            let already_listed = self
+                .available_devices
+                .iter()
+                .any(|d| d.vid == sp.vid && d.pid == sp.pid);
+
+            let display_name = sp
+                .product
+                .unwrap_or_else(|| format!("{:04X}:{:04X}", sp.vid, sp.pid));
+
+            if already_listed {
+                // Add the serial port info to the existing entry
+                if let Some(entry) = self
+                    .available_devices
+                    .iter_mut()
+                    .find(|d| d.vid == sp.vid && d.pid == sp.pid)
+                {
+                    entry.serial_port = Some(sp.port_name);
+                    entry.display_name = format!("{} (Studio)", entry.display_name);
+                }
+            } else {
+                self.available_devices.push(DeviceEntry {
+                    display_name: format!("{} [{}]", display_name, sp.port_name),
+                    vid: sp.vid,
+                    pid: sp.pid,
+                    hid_info: None,
+                    serial_port: Some(sp.port_name),
+                });
+            }
+        }
     }
 
     fn select_device(&mut self, index: usize) {
@@ -64,13 +136,18 @@ impl SettingsApp {
             self.selected_device_index = Some(index);
             self.connected = false;
             self.layout_names.clear();
+            self.zmk_unlock_pending = false;
 
-            let vid_pid = format_vid_pid(device.vendor_id, device.product_id);
+            let vid_pid = format_vid_pid(device.vid, device.pid);
 
-            // Auto-detect VIAL unless user has manually selected ZMK
-            if self.protocol_type != ProtocolType::Zmk {
-                let vial_result =
-                    connect_protocol(ProtocolType::Vial, &vid_pid);
+            if device.serial_port.is_some() {
+                // ZMK Studio device
+                self.protocol_type = ProtocolType::Zmk;
+                self.json_path = vid_pid;
+                self.zmk_serial_port = device.serial_port.clone();
+            } else if self.protocol_type != ProtocolType::Zmk {
+                // Auto-detect VIAL for HID devices
+                let vial_result = connect_protocol(ProtocolType::Vial, &vid_pid);
                 if vial_result.is_ok() {
                     self.protocol_type = ProtocolType::Vial;
                     self.json_path = vid_pid;
@@ -103,27 +180,68 @@ impl SettingsApp {
                 path.to_string()
             }
             ProtocolType::Zmk => {
-                let config_dir = self.zmk_config_path.trim();
-                if config_dir.is_empty() {
-                    self.error = Some("Please provide a ZMK config directory path".to_string());
-                    return;
-                }
+                let serial_port = match &self.zmk_serial_port {
+                    Some(p) => p.clone(),
+                    None => {
+                        self.error =
+                            Some("No serial port detected for this ZMK device".to_string());
+                        return;
+                    }
+                };
                 let vid_pid = self.json_path.trim();
-                format!("{}|{}", vid_pid, config_dir)
+                format!("{}|{}", vid_pid, serial_port)
             }
         };
 
-        // Use factory to connect and validate
-        match connect_protocol(self.protocol_type, &protocol_config) {
-            Ok(protocol) => {
-                self.current.protocol_type = self.protocol_type;
-                self.current.protocol_config = protocol_config;
-                self.layout_names = protocol.get_layout_definition().get_layout_names();
-                self.connected = true;
-                self.error = None;
+        if self.protocol_type == ProtocolType::Zmk {
+            // ZMK Studio flow: try to fetch data via Studio protocol
+            let serial_port = self.zmk_serial_port.clone().unwrap();
+            match zmk_studio::fetch_studio_data(&serial_port) {
+                Ok(studio_data) => {
+                    // Unlocked and data fetched — build protocol
+                    let (vid, pid) = match parse_vid_pid(self.json_path.trim()) {
+                        Ok(vp) => vp,
+                        Err(e) => {
+                            self.error = Some(format!("Invalid VID:PID: {e}"));
+                            return;
+                        }
+                    };
+                    match connect_zmk_studio(vid, pid, studio_data) {
+                        Ok(protocol) => {
+                            self.current.protocol_type = self.protocol_type;
+                            self.current.protocol_config = protocol_config;
+                            self.layout_names = protocol.get_layout_definition().get_layout_names();
+                            self.connected = true;
+                            self.error = None;
+                            self.zmk_unlock_pending = false;
+                        }
+                        Err(e) => {
+                            self.error = Some(format!("Failed to connect: {e}"));
+                        }
+                    }
+                }
+                Err(e) if e.to_string() == "DEVICE_LOCKED" => {
+                    // Device is locked — show unlock prompt
+                    self.zmk_unlock_pending = true;
+                    self.error = None;
+                }
+                Err(e) => {
+                    self.error = Some(format!("ZMK Studio error: {e}"));
+                }
             }
-            Err(e) => {
-                self.error = Some(format!("Failed to connect: {e}"));
+        } else {
+            // VIA/VIAL: use existing connect flow
+            match connect_protocol(self.protocol_type, &protocol_config) {
+                Ok(protocol) => {
+                    self.current.protocol_type = self.protocol_type;
+                    self.current.protocol_config = protocol_config;
+                    self.layout_names = protocol.get_layout_definition().get_layout_names();
+                    self.connected = true;
+                    self.error = None;
+                }
+                Err(e) => {
+                    self.error = Some(format!("Failed to connect: {e}"));
+                }
             }
         }
 
@@ -135,11 +253,47 @@ impl SettingsApp {
         }
     }
 
-    fn device_display_name(device: &KeyboardDeviceInfo) -> String {
-        device
-            .product
-            .clone()
-            .unwrap_or_else(|| format!("{:04X}:{:04X}", device.vendor_id, device.product_id))
+    fn try_zmk_unlock_and_connect(&mut self) {
+        let serial_port = match &self.zmk_serial_port {
+            Some(p) => p.clone(),
+            None => return,
+        };
+
+        // Check if unlocked now
+        match zmk_studio::fetch_studio_data(&serial_port) {
+            Ok(studio_data) => {
+                let (vid, pid) = match parse_vid_pid(self.json_path.trim()) {
+                    Ok(vp) => vp,
+                    Err(e) => {
+                        self.error = Some(format!("Invalid VID:PID: {e}"));
+                        self.zmk_unlock_pending = false;
+                        return;
+                    }
+                };
+                let protocol_config = format!("{}|{}", self.json_path.trim(), serial_port);
+                match connect_zmk_studio(vid, pid, studio_data) {
+                    Ok(protocol) => {
+                        self.current.protocol_type = self.protocol_type;
+                        self.current.protocol_config = protocol_config;
+                        self.layout_names = protocol.get_layout_definition().get_layout_names();
+                        self.connected = true;
+                        self.zmk_unlock_pending = false;
+                        self.error = None;
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to connect: {e}"));
+                        self.zmk_unlock_pending = false;
+                    }
+                }
+            }
+            Err(e) if e.to_string() == "DEVICE_LOCKED" => {
+                // Still locked — keep showing prompt
+            }
+            Err(e) => {
+                self.error = Some(format!("ZMK Studio error: {e}"));
+                self.zmk_unlock_pending = false;
+            }
+        }
     }
 }
 
@@ -222,7 +376,7 @@ impl eframe::App for SettingsApp {
                                 let selected_text = self
                                     .selected_device_index
                                     .and_then(|i| self.available_devices.get(i))
-                                    .map(|d| Self::device_display_name(d))
+                                    .map(|d| d.display_name.clone())
                                     .unwrap_or_else(|| "Select device...".to_string());
 
                                 egui::ComboBox::from_id_salt("device_combo")
@@ -237,7 +391,7 @@ impl eframe::App for SettingsApp {
                                             if ui
                                                 .selectable_label(
                                                     is_selected,
-                                                    Self::device_display_name(device),
+                                                    device.display_name.clone(),
                                                 )
                                                 .clicked()
                                             {
@@ -268,8 +422,8 @@ impl eframe::App for SettingsApp {
                             ui.horizontal(|ui| {
                                 let input_width = ui.available_width() - 90.0;
 
-                                let input_interactive = self.protocol_type == ProtocolType::Via
-                                    && !self.connected;
+                                let input_interactive =
+                                    self.protocol_type == ProtocolType::Via && !self.connected;
                                 ui.add_sized(
                                     [input_width, 20.0],
                                     egui::TextEdit::singleline(&mut self.json_path)
@@ -298,18 +452,6 @@ impl eframe::App for SettingsApp {
                                 });
                             });
                             ui.end_row();
-
-                            // ZMK config directory input (only shown for ZMK)
-                            if self.protocol_type == ProtocolType::Zmk {
-                                ui.label("ZMK Config Dir");
-                                ui.add_sized(
-                                    [ui.available_width(), 20.0],
-                                    egui::TextEdit::singleline(&mut self.zmk_config_path)
-                                        .hint_text("Path to ZMK config directory")
-                                        .interactive(!self.connected),
-                                );
-                                ui.end_row();
-                            }
 
                             // Layout selection
                             ui.label("Layout");
@@ -414,6 +556,29 @@ impl eframe::App for SettingsApp {
                     });
                 });
             });
+
+        // ZMK unlock popup
+        if self.zmk_unlock_pending {
+            egui::Window::new("Unlock ZMK Device")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ctx, |ui| {
+                    ui.label("Your ZMK keyboard is locked.");
+                    ui.add_space(5.0);
+                    ui.label("Press the Studio unlock key combination on your keyboard.");
+                    ui.add_space(10.0);
+                    ui.spinner();
+                    ui.add_space(10.0);
+                    if ui.button("Cancel").clicked() {
+                        self.zmk_unlock_pending = false;
+                    }
+                });
+
+            // Poll for unlock every frame (repaint is requested automatically)
+            self.try_zmk_unlock_and_connect();
+            ctx.request_repaint_after(std::time::Duration::from_millis(500));
+        }
 
         if let Some(error_message) = self.error.clone() {
             egui::Window::new("Error")

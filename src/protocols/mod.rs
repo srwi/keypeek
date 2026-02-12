@@ -3,7 +3,8 @@ pub mod qmk_json_parser;
 pub mod via;
 pub mod vial;
 pub mod zmk;
-pub mod zmk_parser;
+pub mod zmk_proto;
+pub mod zmk_studio;
 
 use crate::layout_key::LayoutKey;
 use crate::settings::ProtocolType;
@@ -16,7 +17,7 @@ use self::zmk::ZmkProtocol;
 pub type Row = usize;
 pub type Column = usize;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Key {
     pub row: Row,
     pub col: Column,
@@ -26,7 +27,7 @@ pub struct Key {
     pub h: f32,
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct KeyboardLayout {
     pub name: String,
     pub keys: Vec<Key>,
@@ -40,7 +41,7 @@ impl KeyboardLayout {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct KeyboardDefinition {
     pub vid: u16,
     pub pid: u16,
@@ -99,13 +100,14 @@ pub fn format_vid_pid(vid: u16, pid: u16) -> String {
     format!("{:04x}:{:04x}", vid, pid)
 }
 
-/// Parse a ZMK protocol config string into (vid, pid, config_dir).
+/// Parse a ZMK protocol config string into (vid, pid, serial_port).
+/// Format: "vid:pid|serial_port" e.g. "1234:5678|COM5"
 fn parse_zmk_config(config: &str) -> Result<(u16, u16, &str), Box<dyn Error>> {
-    let (vid_pid, config_dir) = config
+    let (vid_pid, serial_port) = config
         .split_once('|')
-        .ok_or("Invalid ZMK config format: expected 'vid:pid|config_dir'")?;
+        .ok_or("Invalid ZMK config format: expected 'vid:pid|serial_port'")?;
     let (vid, pid) = parse_vid_pid(vid_pid)?;
-    Ok((vid, pid, config_dir))
+    Ok((vid, pid, serial_port))
 }
 
 /// Create a connected protocol instance from protocol type and config string.
@@ -113,7 +115,7 @@ fn parse_zmk_config(config: &str) -> Result<(u16, u16, &str), Box<dyn Error>> {
 /// Config string format per protocol:
 /// - VIA: path to QMK keyboard info JSON
 /// - VIAL: "vid:pid" hex string
-/// - ZMK: "vid:pid|/path/to/zmk-config"
+/// - ZMK: "vid:pid|serial_port" — tries cache first, then Studio protocol
 pub fn connect_protocol(
     protocol_type: ProtocolType,
     protocol_config: &str,
@@ -129,9 +131,26 @@ pub fn connect_protocol(
             Ok(Box::new(protocol))
         }
         ProtocolType::Zmk => {
-            let (vid, pid, config_dir) = parse_zmk_config(protocol_config)?;
-            let protocol = ZmkProtocol::connect(vid, pid, config_dir)?;
-            Ok(Box::new(protocol))
+            let (vid, pid, _serial_port) = parse_zmk_config(protocol_config)?;
+            // Try cached data first (no Studio/unlock needed)
+            match ZmkProtocol::connect_cached(vid, pid) {
+                Ok(protocol) => Ok(Box::new(protocol)),
+                Err(_) => {
+                    // No cache — caller needs to use connect_zmk_studio() instead
+                    Err("No cached ZMK data. Use the settings window to connect via ZMK Studio.".into())
+                }
+            }
         }
     }
+}
+
+/// Connect to a ZMK device via Studio protocol with pre-fetched data.
+/// Called from the settings window after the unlock flow succeeds.
+pub fn connect_zmk_studio(
+    vid: u16,
+    pid: u16,
+    studio_data: zmk_studio::StudioData,
+) -> Result<Box<dyn KeyboardProtocol>, Box<dyn Error>> {
+    let protocol = ZmkProtocol::connect_studio(vid, pid, studio_data)?;
+    Ok(Box::new(protocol))
 }

@@ -12,7 +12,7 @@
 // ...existing code...
 
 /// Visual classification for key coloring.
-#[derive(PartialEq, Eq, Clone, Copy, Debug, Default)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub enum KeycodeKind {
     #[default]
     Basic,
@@ -23,7 +23,7 @@ pub enum KeycodeKind {
 /// A text label with optional short variant.
 ///
 /// Used for both tap and hold labels in `LayoutKey`.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub struct Label {
     /// Full label text (e.g., "Enter", "Shift")
     pub full: String,
@@ -59,7 +59,7 @@ impl Label {
 ///
 /// This struct is firmware-agnostic: both QMK keycodes and ZMK bindings
 /// are converted into this unified format for rendering.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LayoutKey {
     /// Primary key action label (e.g., "A", "Enter", "L1")
     pub tap: Label,

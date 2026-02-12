@@ -1,0 +1,21 @@
+// Copyright (c) 2024 The ZMK Contributors
+// SPDX-License-Identifier: MIT
+
+syntax = "proto3";
+
+package zmk.meta;
+
+enum ErrorConditions {
+    GENERIC = 0;
+    UNLOCK_REQUIRED = 1;
+    RPC_NOT_FOUND = 2;
+    MSG_DECODE_FAILED = 3;
+    MSG_ENCODE_FAILED = 4;
+}
+
+message Response {
+    oneof response_type {
+        bool no_response = 1;
+        ErrorConditions simple_error = 2;
+    }
+}
