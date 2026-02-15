@@ -1,11 +1,5 @@
-use crate::keycode_labels::get_basic_layout_key;
 use crate::layout_key::{KeycodeKind, Label, LayoutKey};
 use zmk_studio_api::{Behavior, Keycode};
-
-const PAGE_KEYBOARD: u32 = 0x0007;
-const PAGE_KEYBOARD_SHIFTED: u32 = 0x0207;
-const PAGE_CONSUMER: u32 = 0x000C;
-const PAGE_SYSTEM: u32 = 0x0001;
 
 pub fn behavior_to_layout_key(behavior: &Behavior) -> Option<LayoutKey> {
     match behavior {
@@ -181,32 +175,11 @@ fn layer_layout_key(abbreviation: &str, layer_id: u32) -> LayoutKey {
 }
 
 fn keycode_to_layout_key(keycode: &Keycode) -> LayoutKey {
-    let raw = keycode.to_hid_usage();
-    let page = (raw >> 16) & 0xFFFF;
-    let usage_id = raw & 0xFFFF;
-
-    if page == PAGE_KEYBOARD && usage_id <= 0xFF {
-        // We reuse basic qmk keycodes here
-        if let Some(key) = get_basic_layout_key(usage_id as u16) {
-            return key;
-        }
-    }
-    if page == PAGE_KEYBOARD_SHIFTED {
-        if let Some(key) = shifted_key_label(usage_id) {
-            return key;
-        }
-    }
-    if page == PAGE_CONSUMER {
-        if let Some(key) = consumer_key_label(usage_id) {
-            return key;
-        }
-    }
-    if page == PAGE_SYSTEM {
-        if let Some(key) = system_key_label(usage_id) {
-            return key;
-        }
+    if let Some(key) = keycode_label(keycode) {
+        return key;
     }
 
+    // Fallback: Use the canonical ZMK name
     let name = keycode.to_name();
     LayoutKey {
         tap: Label::new(name),
@@ -214,226 +187,1358 @@ fn keycode_to_layout_key(keycode: &Keycode) -> LayoutKey {
     }
 }
 
-fn shifted_key_label(usage_id: u32) -> Option<LayoutKey> {
-    let (full, short, symbol): (&str, &str, Option<&str>) = match usage_id {
-        0x1E => ("!", "!", None),
-        0x1F => ("@", "@", None),
-        0x20 => ("#", "#", None),
-        0x21 => ("$", "$", None),
-        0x22 => ("%", "%", None),
-        0x23 => ("^", "^", None),
-        0x24 => ("&", "&", None),
-        0x25 => ("*", "*", None),
-        0x2D => ("_", "_", None),
-        0x2E => ("+", "+", None),
-        0x31 => ("|", "|", None),
-        0x32 => ("~", "~", None),
-        0x33 => (":", ":", None),
-        0x35 => ("~", "~", None),
-        0x36 => ("<", "<", None),
-        0x38 => ("?", "?", None),
-        0x53 => ("Clear", "Clr", None),
-        0x64 => ("|", "|", None),
-        _ => return None,
-    };
-
-    Some(LayoutKey {
-        tap: Label::with_short(full, short),
-        symbol: symbol.map(String::from),
-        ..Default::default()
-    })
-}
-
-fn consumer_key_label(usage_id: u32) -> Option<LayoutKey> {
-    // Labels and symbols match QMK basic.rs where possible
-    match usage_id {
-        // Power / Sleep
-        0x0030 => Some(LayoutKey {
+fn keycode_label(keycode: &Keycode) -> Option<LayoutKey> {
+    match keycode {
+        Keycode::SYSTEM_POWER => Some(LayoutKey {
             tap: Label::new("Power"),
             ..Default::default()
         }),
-        0x0032 => Some(LayoutKey {
+        Keycode::SYSTEM_SLEEP => Some(LayoutKey {
             tap: Label::new("Sleep"),
             ..Default::default()
         }),
-        // Menu
-        0x0040 => Some(LayoutKey {
-            tap: Label::new("Menu"),
+        Keycode::SYSTEM_WAKE_UP => Some(LayoutKey {
+            tap: Label::new("Wake"),
             ..Default::default()
         }),
-        // Transport controls
-        0x00B0 => Some(LayoutKey {
-            tap: Label::new("Play"),
+        Keycode::A => Some(LayoutKey {
+            tap: Label::new("A"),
             ..Default::default()
         }),
-        0x00B1 => Some(LayoutKey {
-            tap: Label::new("Pause"),
+        Keycode::B => Some(LayoutKey {
+            tap: Label::new("B"),
             ..Default::default()
         }),
-        0x00B2 => Some(LayoutKey {
-            tap: Label::with_short("Record", "Rec"),
+        Keycode::C => Some(LayoutKey {
+            tap: Label::new("C"),
             ..Default::default()
         }),
-        0x00B3 => Some(LayoutKey {
-            symbol: Some(egui_phosphor::regular::FAST_FORWARD.to_string()),
+        Keycode::D => Some(LayoutKey {
+            tap: Label::new("D"),
             ..Default::default()
         }),
-        0x00B4 => Some(LayoutKey {
-            symbol: Some(egui_phosphor::regular::REWIND.to_string()),
+        Keycode::E => Some(LayoutKey {
+            tap: Label::new("E"),
             ..Default::default()
         }),
-        0x00B5 => Some(LayoutKey {
-            symbol: Some(egui_phosphor::regular::SKIP_FORWARD.to_string()),
+        Keycode::F => Some(LayoutKey {
+            tap: Label::new("F"),
             ..Default::default()
         }),
-        0x00B6 => Some(LayoutKey {
-            symbol: Some(egui_phosphor::regular::SKIP_BACK.to_string()),
+        Keycode::G => Some(LayoutKey {
+            tap: Label::new("G"),
             ..Default::default()
         }),
-        0x00B7 => Some(LayoutKey {
-            symbol: Some(egui_phosphor::regular::STOP.to_string()),
+        Keycode::H => Some(LayoutKey {
+            tap: Label::new("H"),
             ..Default::default()
         }),
-        0x00B8 => Some(LayoutKey {
-            tap: Label::with_short("Eject", "Ejct"),
+        Keycode::I => Some(LayoutKey {
+            tap: Label::new("I"),
             ..Default::default()
         }),
-        0x00CD => Some(LayoutKey {
-            symbol: Some(egui_phosphor::regular::PLAY_PAUSE.to_string()),
+        Keycode::J => Some(LayoutKey {
+            tap: Label::new("J"),
             ..Default::default()
         }),
-        // Volume
-        0x00E2 => Some(LayoutKey {
-            symbol: Some(egui_phosphor::regular::SPEAKER_X.to_string()),
+        Keycode::K => Some(LayoutKey {
+            tap: Label::new("K"),
             ..Default::default()
         }),
-        0x00E9 => Some(LayoutKey {
-            symbol: Some(egui_phosphor::regular::SPEAKER_HIGH.to_string()),
+        Keycode::L => Some(LayoutKey {
+            tap: Label::new("L"),
             ..Default::default()
         }),
-        0x00EA => Some(LayoutKey {
-            symbol: Some(egui_phosphor::regular::SPEAKER_LOW.to_string()),
+        Keycode::M => Some(LayoutKey {
+            tap: Label::new("M"),
             ..Default::default()
         }),
-        // Application launch
-        0x0183 => Some(LayoutKey {
-            tap: Label::with_short("Select", "Sel"),
+        Keycode::N => Some(LayoutKey {
+            tap: Label::new("N"),
             ..Default::default()
         }),
-        0x018A => Some(LayoutKey {
-            tap: Label::new("Mail"),
+        Keycode::O => Some(LayoutKey {
+            tap: Label::new("O"),
             ..Default::default()
         }),
-        0x0192 => Some(LayoutKey {
-            tap: Label::new("Calc"),
+        Keycode::P => Some(LayoutKey {
+            tap: Label::new("P"),
             ..Default::default()
         }),
-        0x0196 => Some(LayoutKey {
-            tap: Label::new("WWW"),
+        Keycode::Q => Some(LayoutKey {
+            tap: Label::new("Q"),
             ..Default::default()
         }),
-        0x0201 => Some(LayoutKey {
-            tap: Label::new("New"),
+        Keycode::R => Some(LayoutKey {
+            tap: Label::new("R"),
             ..Default::default()
         }),
-        0x0202 => Some(LayoutKey {
-            tap: Label::new("Open"),
+        Keycode::S => Some(LayoutKey {
+            tap: Label::new("S"),
             ..Default::default()
         }),
-        0x0203 => Some(LayoutKey {
-            tap: Label::new("Close"),
+        Keycode::T => Some(LayoutKey {
+            tap: Label::new("T"),
             ..Default::default()
         }),
-        0x0204 => Some(LayoutKey {
-            tap: Label::new("Exit"),
+        Keycode::U => Some(LayoutKey {
+            tap: Label::new("U"),
             ..Default::default()
         }),
-        0x0207 => Some(LayoutKey {
-            tap: Label::new("Save"),
+        Keycode::V => Some(LayoutKey {
+            tap: Label::new("V"),
             ..Default::default()
         }),
-        0x0208 => Some(LayoutKey {
-            tap: Label::new("Print"),
+        Keycode::W => Some(LayoutKey {
+            tap: Label::new("W"),
             ..Default::default()
         }),
-        0x021A => Some(LayoutKey {
-            tap: Label::new("Undo"),
+        Keycode::X => Some(LayoutKey {
+            tap: Label::new("X"),
             ..Default::default()
         }),
-        0x021B => Some(LayoutKey {
-            tap: Label::new("Copy"),
+        Keycode::Y => Some(LayoutKey {
+            tap: Label::new("Y"),
             ..Default::default()
         }),
-        0x021C => Some(LayoutKey {
-            tap: Label::new("Cut"),
+        Keycode::Z => Some(LayoutKey {
+            tap: Label::new("Z"),
             ..Default::default()
         }),
-        0x021D => Some(LayoutKey {
-            tap: Label::new("Paste"),
+        Keycode::NUMBER_1 => Some(LayoutKey {
+            tap: Label::new("!\n1"),
             ..Default::default()
         }),
-        0x021F => Some(LayoutKey {
-            tap: Label::new("Find"),
+        Keycode::NUMBER_2 => Some(LayoutKey {
+            tap: Label::new("@\n2"),
             ..Default::default()
         }),
-        0x0221 => Some(LayoutKey {
-            tap: Label::new("Search"),
+        Keycode::NUMBER_3 => Some(LayoutKey {
+            tap: Label::new("#\n3"),
             ..Default::default()
         }),
-        0x0222 => Some(LayoutKey {
-            tap: Label::with_short("Go To", "GoTo"),
+        Keycode::NUMBER_4 => Some(LayoutKey {
+            tap: Label::new("$\n4"),
             ..Default::default()
         }),
-        0x0223 => Some(LayoutKey {
+        Keycode::NUMBER_5 => Some(LayoutKey {
+            tap: Label::new("%\n5"),
+            ..Default::default()
+        }),
+        Keycode::NUMBER_6 => Some(LayoutKey {
+            tap: Label::new("^\n6"),
+            ..Default::default()
+        }),
+        Keycode::NUMBER_7 => Some(LayoutKey {
+            tap: Label::new("&\n7"),
+            ..Default::default()
+        }),
+        Keycode::NUMBER_8 => Some(LayoutKey {
+            tap: Label::new("*\n8"),
+            ..Default::default()
+        }),
+        Keycode::NUMBER_9 => Some(LayoutKey {
+            tap: Label::new("(\n9"),
+            ..Default::default()
+        }),
+        Keycode::NUMBER_0 => Some(LayoutKey {
+            tap: Label::new(")\n0"),
+            ..Default::default()
+        }),
+        Keycode::RETURN => Some(LayoutKey {
+            tap: Label::new("Enter"),
+            symbol: Some(egui_phosphor::regular::ARROW_ELBOW_DOWN_LEFT.to_string()),
+            kind: KeycodeKind::Special,
+            ..Default::default()
+        }),
+        Keycode::ESCAPE => Some(LayoutKey {
+            tap: Label::new("Esc"),
+            kind: KeycodeKind::Special,
+            ..Default::default()
+        }),
+        Keycode::BACKSPACE => Some(LayoutKey {
+            tap: Label::new("Backspace"),
+            symbol: Some(egui_phosphor::regular::BACKSPACE.to_string()),
+            kind: KeycodeKind::Modifier,
+            ..Default::default()
+        }),
+        Keycode::TAB => Some(LayoutKey {
+            tap: Label::new("Tab"),
+            symbol: Some(egui_phosphor::regular::ARROWS_LEFT_RIGHT.to_string()),
+            kind: KeycodeKind::Modifier,
+            ..Default::default()
+        }),
+        Keycode::SPACE => Some(LayoutKey {
+            tap: Label::with_short("Space", "Spc"),
+            ..Default::default()
+        }),
+        Keycode::MINUS => Some(LayoutKey {
+            tap: Label::new("_\n-"),
+            ..Default::default()
+        }),
+        Keycode::EQUAL => Some(LayoutKey {
+            tap: Label::new("+\n="),
+            ..Default::default()
+        }),
+        Keycode::BACKSLASH => Some(LayoutKey {
+            tap: Label::new("|\n\\"),
+            ..Default::default()
+        }),
+        Keycode::NON_US_HASH => Some(LayoutKey {
+            tap: Label::new("NUHS"),
+            ..Default::default()
+        }),
+        Keycode::SEMICOLON => Some(LayoutKey {
+            tap: Label::new(":\n;"),
+            ..Default::default()
+        }),
+        Keycode::SINGLE_QUOTE => Some(LayoutKey {
+            tap: Label::new("\"\n\'"),
+            ..Default::default()
+        }),
+        Keycode::GRAVE => Some(LayoutKey {
+            tap: Label::new("~\n`"),
+            ..Default::default()
+        }),
+        Keycode::COMMA => Some(LayoutKey {
+            tap: Label::new("<\n,"),
+            ..Default::default()
+        }),
+        Keycode::PERIOD => Some(LayoutKey {
+            tap: Label::new(">\n."),
+            ..Default::default()
+        }),
+        Keycode::SLASH => Some(LayoutKey {
+            tap: Label::new("?\n/"),
+            ..Default::default()
+        }),
+        Keycode::CAPSLOCK => Some(LayoutKey {
+            tap: Label::with_short("Capslock", "Caps"),
+            symbol: Some(egui_phosphor::regular::ARROW_FAT_LINE_UP.to_string()),
+            kind: KeycodeKind::Modifier,
+            ..Default::default()
+        }),
+        Keycode::F1 => Some(LayoutKey {
+            tap: Label::new("F1"),
+            ..Default::default()
+        }),
+        Keycode::F2 => Some(LayoutKey {
+            tap: Label::new("F2"),
+            ..Default::default()
+        }),
+        Keycode::F3 => Some(LayoutKey {
+            tap: Label::new("F3"),
+            ..Default::default()
+        }),
+        Keycode::F4 => Some(LayoutKey {
+            tap: Label::new("F4"),
+            ..Default::default()
+        }),
+        Keycode::F5 => Some(LayoutKey {
+            tap: Label::new("F5"),
+            ..Default::default()
+        }),
+        Keycode::F6 => Some(LayoutKey {
+            tap: Label::new("F6"),
+            ..Default::default()
+        }),
+        Keycode::F7 => Some(LayoutKey {
+            tap: Label::new("F7"),
+            ..Default::default()
+        }),
+        Keycode::F8 => Some(LayoutKey {
+            tap: Label::new("F8"),
+            ..Default::default()
+        }),
+        Keycode::F9 => Some(LayoutKey {
+            tap: Label::new("F9"),
+            ..Default::default()
+        }),
+        Keycode::F10 => Some(LayoutKey {
+            tap: Label::new("F10"),
+            ..Default::default()
+        }),
+        Keycode::F11 => Some(LayoutKey {
+            tap: Label::new("F11"),
+            ..Default::default()
+        }),
+        Keycode::F12 => Some(LayoutKey {
+            tap: Label::new("F12"),
+            ..Default::default()
+        }),
+        Keycode::PRINTSCREEN => Some(LayoutKey {
+            tap: Label::with_short("Print Screen", "PrtSc"),
+            ..Default::default()
+        }),
+        Keycode::SCROLLLOCK => Some(LayoutKey {
+            tap: Label::with_short("Scroll Lock", "ScrLk"),
+            ..Default::default()
+        }),
+        Keycode::PAUSE_BREAK => Some(LayoutKey {
+            tap: Label::with_short("Pause", "Paus"),
+            ..Default::default()
+        }),
+        Keycode::INSERT => Some(LayoutKey {
+            tap: Label::with_short("Insert", "Ins"),
+            ..Default::default()
+        }),
+        Keycode::HOME => Some(LayoutKey {
             tap: Label::new("Home"),
             ..Default::default()
         }),
-        0x0224 => Some(LayoutKey {
-            tap: Label::new("Back"),
+        Keycode::PAGE_UP => Some(LayoutKey {
+            tap: Label::with_short("Page Up", "PgUp"),
             ..Default::default()
         }),
-        0x0225 => Some(LayoutKey {
-            tap: Label::new("Forward"),
+        Keycode::DELETE => Some(LayoutKey {
+            tap: Label::with_short("Delete", "Del"),
             ..Default::default()
         }),
-        0x0226 => Some(LayoutKey {
+        Keycode::END => Some(LayoutKey {
+            tap: Label::new("End"),
+            ..Default::default()
+        }),
+        Keycode::PAGE_DOWN => Some(LayoutKey {
+            tap: Label::with_short("Page Down", "PgDn"),
+            ..Default::default()
+        }),
+        Keycode::RIGHT_ARROW => Some(LayoutKey {
+            tap: Label::default(),
+            symbol: Some(egui_phosphor::regular::ARROW_RIGHT.to_string()),
+            kind: KeycodeKind::Modifier,
+            ..Default::default()
+        }),
+        Keycode::LEFT_ARROW => Some(LayoutKey {
+            tap: Label::default(),
+            symbol: Some(egui_phosphor::regular::ARROW_LEFT.to_string()),
+            kind: KeycodeKind::Modifier,
+            ..Default::default()
+        }),
+        Keycode::DOWN_ARROW => Some(LayoutKey {
+            tap: Label::default(),
+            symbol: Some(egui_phosphor::regular::ARROW_DOWN.to_string()),
+            kind: KeycodeKind::Modifier,
+            ..Default::default()
+        }),
+        Keycode::UP_ARROW => Some(LayoutKey {
+            tap: Label::default(),
+            symbol: Some(egui_phosphor::regular::ARROW_UP.to_string()),
+            kind: KeycodeKind::Modifier,
+            ..Default::default()
+        }),
+        Keycode::KP_NUMLOCK => Some(LayoutKey {
+            tap: Label::with_short("Num\nLock", "NumLk"),
+            ..Default::default()
+        }),
+        Keycode::KP_DIVIDE => Some(LayoutKey {
+            tap: Label::new("÷"),
+            ..Default::default()
+        }),
+        Keycode::KP_ASTERISK => Some(LayoutKey {
+            tap: Label::new("×"),
+            ..Default::default()
+        }),
+        Keycode::KP_SUBTRACT => Some(LayoutKey {
+            tap: Label::new("-"),
+            ..Default::default()
+        }),
+        Keycode::KP_PLUS => Some(LayoutKey {
+            tap: Label::new("+"),
+            ..Default::default()
+        }),
+        Keycode::KP_ENTER => Some(LayoutKey {
+            tap: Label::new("Enter"),
+            symbol: Some(egui_phosphor::regular::ARROW_ELBOW_DOWN_LEFT.to_string()),
+            ..Default::default()
+        }),
+        Keycode::KP_NUMBER_1 => Some(LayoutKey {
+            tap: Label::new("1"),
+            ..Default::default()
+        }),
+        Keycode::KP_NUMBER_2 => Some(LayoutKey {
+            tap: Label::new("2"),
+            ..Default::default()
+        }),
+        Keycode::KP_NUMBER_3 => Some(LayoutKey {
+            tap: Label::new("3"),
+            ..Default::default()
+        }),
+        Keycode::KP_NUMBER_4 => Some(LayoutKey {
+            tap: Label::new("4"),
+            ..Default::default()
+        }),
+        Keycode::KP_NUMBER_5 => Some(LayoutKey {
+            tap: Label::new("5"),
+            ..Default::default()
+        }),
+        Keycode::KP_NUMBER_6 => Some(LayoutKey {
+            tap: Label::new("6"),
+            ..Default::default()
+        }),
+        Keycode::KP_NUMBER_7 => Some(LayoutKey {
+            tap: Label::new("7"),
+            ..Default::default()
+        }),
+        Keycode::KP_NUMBER_8 => Some(LayoutKey {
+            tap: Label::new("8"),
+            ..Default::default()
+        }),
+        Keycode::KP_NUMBER_9 => Some(LayoutKey {
+            tap: Label::new("9"),
+            ..Default::default()
+        }),
+        Keycode::KP_NUMBER_0 => Some(LayoutKey {
+            tap: Label::new("0"),
+            ..Default::default()
+        }),
+        Keycode::KP_DOT => Some(LayoutKey {
+            tap: Label::new("."),
+            ..Default::default()
+        }),
+        Keycode::KP_LEFT_PARENTHESIS => Some(LayoutKey {
+            tap: Label::new("("),
+            ..Default::default()
+        }),
+        Keycode::KP_RIGHT_PARENTHESIS => Some(LayoutKey {
+            tap: Label::new(")"),
+            ..Default::default()
+        }),
+        Keycode::KP_CLEAR => Some(LayoutKey {
+            tap: Label::new("Clear"),
+            ..Default::default()
+        }),
+        Keycode::KP_COMMA => Some(LayoutKey {
+            tap: Label::new(","),
+            ..Default::default()
+        }),
+        Keycode::KP_EQUAL_AS400 => Some(LayoutKey {
+            tap: Label::new("="),
+            ..Default::default()
+        }),
+        Keycode::KP_EQUAL => Some(LayoutKey {
+            tap: Label::new("="),
+            ..Default::default()
+        }),
+        Keycode::K_CONTEXT_MENU => Some(LayoutKey {
+            tap: Label::new("Menu"),
+            symbol: Some(egui_phosphor::regular::LIST.to_string()),
+            ..Default::default()
+        }),
+        Keycode::K_POWER => Some(LayoutKey {
+            tap: Label::new("Power"),
+            symbol: Some(egui_phosphor::regular::POWER.to_string()),
+            ..Default::default()
+        }),
+        Keycode::F13 => Some(LayoutKey {
+            tap: Label::new("F13"),
+            ..Default::default()
+        }),
+        Keycode::F14 => Some(LayoutKey {
+            tap: Label::new("F14"),
+            ..Default::default()
+        }),
+        Keycode::F15 => Some(LayoutKey {
+            tap: Label::new("F15"),
+            ..Default::default()
+        }),
+        Keycode::F16 => Some(LayoutKey {
+            tap: Label::new("F16"),
+            ..Default::default()
+        }),
+        Keycode::F17 => Some(LayoutKey {
+            tap: Label::new("F17"),
+            ..Default::default()
+        }),
+        Keycode::F18 => Some(LayoutKey {
+            tap: Label::new("F18"),
+            ..Default::default()
+        }),
+        Keycode::F19 => Some(LayoutKey {
+            tap: Label::new("F19"),
+            ..Default::default()
+        }),
+        Keycode::F20 => Some(LayoutKey {
+            tap: Label::new("F20"),
+            ..Default::default()
+        }),
+        Keycode::F21 => Some(LayoutKey {
+            tap: Label::new("F21"),
+            ..Default::default()
+        }),
+        Keycode::F22 => Some(LayoutKey {
+            tap: Label::new("F22"),
+            ..Default::default()
+        }),
+        Keycode::F23 => Some(LayoutKey {
+            tap: Label::new("F23"),
+            ..Default::default()
+        }),
+        Keycode::F24 => Some(LayoutKey {
+            tap: Label::new("F24"),
+            ..Default::default()
+        }),
+        Keycode::K_EXECUTE => Some(LayoutKey {
+            tap: Label::new("Exec"),
+            ..Default::default()
+        }),
+        Keycode::K_HELP => Some(LayoutKey {
+            tap: Label::new("Help"),
+            ..Default::default()
+        }),
+        Keycode::K_MENU => Some(LayoutKey {
+            tap: Label::new("Menu"),
+            ..Default::default()
+        }),
+        Keycode::K_SELECT => Some(LayoutKey {
+            tap: Label::new("Select"),
+            ..Default::default()
+        }),
+        Keycode::K_STOP => Some(LayoutKey {
             tap: Label::new("Stop"),
             ..Default::default()
         }),
-        0x0227 => Some(LayoutKey {
+        Keycode::K_AGAIN => Some(LayoutKey {
+            tap: Label::new("Again"),
+            ..Default::default()
+        }),
+        Keycode::K_UNDO => Some(LayoutKey {
+            tap: Label::new("Undo"),
+            ..Default::default()
+        }),
+        Keycode::K_CUT => Some(LayoutKey {
+            tap: Label::new("Cut"),
+            ..Default::default()
+        }),
+        Keycode::K_COPY => Some(LayoutKey {
+            tap: Label::new("Copy"),
+            ..Default::default()
+        }),
+        Keycode::K_PASTE => Some(LayoutKey {
+            tap: Label::new("Paste"),
+            ..Default::default()
+        }),
+        Keycode::K_FIND => Some(LayoutKey {
+            tap: Label::new("Find"),
+            ..Default::default()
+        }),
+        Keycode::K_MUTE => Some(LayoutKey {
+            symbol: Some(egui_phosphor::regular::SPEAKER_X.to_string()),
+            ..Default::default()
+        }),
+        Keycode::K_VOLUME_UP => Some(LayoutKey {
+            symbol: Some(egui_phosphor::regular::SPEAKER_HIGH.to_string()),
+            ..Default::default()
+        }),
+        Keycode::K_VOLUME_DOWN => Some(LayoutKey {
+            symbol: Some(egui_phosphor::regular::SPEAKER_LOW.to_string()),
+            ..Default::default()
+        }),
+        Keycode::LOCKING_CAPS => Some(LayoutKey {
+            tap: Label::with_short("Locking Caps Lock", "LCaps"),
+            ..Default::default()
+        }),
+        Keycode::LOCKING_NUM => Some(LayoutKey {
+            tap: Label::with_short("Locking Num Lock", "LNum"),
+            ..Default::default()
+        }),
+        Keycode::LOCKING_SCROLL => Some(LayoutKey {
+            tap: Label::with_short("Locking Scroll Lock", "LScrl"),
+            ..Default::default()
+        }),
+        Keycode::INTERNATIONAL_1 => Some(LayoutKey {
+            tap: Label::new("Int1"),
+            ..Default::default()
+        }),
+        Keycode::INT_KATAKANAHIRAGANA => Some(LayoutKey {
+            tap: Label::new("Int2"),
+            ..Default::default()
+        }),
+        Keycode::INTERNATIONAL_3 => Some(LayoutKey {
+            tap: Label::new("Int3"),
+            ..Default::default()
+        }),
+        Keycode::INTERNATIONAL_4 => Some(LayoutKey {
+            tap: Label::new("Int4"),
+            ..Default::default()
+        }),
+        Keycode::INTERNATIONAL_5 => Some(LayoutKey {
+            tap: Label::new("Int5"),
+            ..Default::default()
+        }),
+        Keycode::INTERNATIONAL_6 => Some(LayoutKey {
+            tap: Label::new("Int6"),
+            ..Default::default()
+        }),
+        Keycode::INTERNATIONAL_7 => Some(LayoutKey {
+            tap: Label::new("Int7"),
+            ..Default::default()
+        }),
+        Keycode::INTERNATIONAL_8 => Some(LayoutKey {
+            tap: Label::new("Int8"),
+            ..Default::default()
+        }),
+        Keycode::INTERNATIONAL_9 => Some(LayoutKey {
+            tap: Label::new("Int9"),
+            ..Default::default()
+        }),
+        Keycode::LANG_HANGEUL => Some(LayoutKey {
+            tap: Label::new("Lang1"),
+            ..Default::default()
+        }),
+        Keycode::LANG_HANJA => Some(LayoutKey {
+            tap: Label::new("Lang2"),
+            ..Default::default()
+        }),
+        Keycode::LANG_KATAKANA => Some(LayoutKey {
+            tap: Label::new("Lang3"),
+            ..Default::default()
+        }),
+        Keycode::LANG_HIRAGANA => Some(LayoutKey {
+            tap: Label::new("Lang4"),
+            ..Default::default()
+        }),
+        Keycode::LANG_ZENKAKUHANKAKU => Some(LayoutKey {
+            tap: Label::new("Lang5"),
+            ..Default::default()
+        }),
+        Keycode::LANGUAGE_6 => Some(LayoutKey {
+            tap: Label::new("Lang6"),
+            ..Default::default()
+        }),
+        Keycode::LANGUAGE_7 => Some(LayoutKey {
+            tap: Label::new("Lang7"),
+            ..Default::default()
+        }),
+        Keycode::LANGUAGE_8 => Some(LayoutKey {
+            tap: Label::new("Lang8"),
+            ..Default::default()
+        }),
+        Keycode::LANGUAGE_9 => Some(LayoutKey {
+            tap: Label::new("Lang9"),
+            ..Default::default()
+        }),
+        Keycode::ALT_ERASE => Some(LayoutKey {
+            tap: Label::new("Alt Erase"),
+            ..Default::default()
+        }),
+        Keycode::ATTENTION => Some(LayoutKey {
+            tap: Label::new("SysReq"),
+            ..Default::default()
+        }),
+        Keycode::K_CANCEL => Some(LayoutKey {
+            tap: Label::new("Cancel"),
+            ..Default::default()
+        }),
+        Keycode::CLEAR => Some(LayoutKey {
+            tap: Label::new("Clear"),
+            ..Default::default()
+        }),
+        Keycode::PRIOR => Some(LayoutKey {
+            tap: Label::new("Prior"),
+            ..Default::default()
+        }),
+        Keycode::RETURN2 => Some(LayoutKey {
+            tap: Label::new("Return"),
+            ..Default::default()
+        }),
+        Keycode::SEPARATOR => Some(LayoutKey {
+            tap: Label::new("Separator"),
+            ..Default::default()
+        }),
+        Keycode::OUT => Some(LayoutKey {
+            tap: Label::new("Out"),
+            ..Default::default()
+        }),
+        Keycode::OPER => Some(LayoutKey {
+            tap: Label::new("Oper"),
+            ..Default::default()
+        }),
+        Keycode::CLEAR_AGAIN => Some(LayoutKey {
+            tap: Label::new("Clear Again"),
+            ..Default::default()
+        }),
+        Keycode::CRSEL => Some(LayoutKey {
+            tap: Label::new("CrSel"),
+            ..Default::default()
+        }),
+        Keycode::EXSEL => Some(LayoutKey {
+            tap: Label::new("ExSel"),
+            ..Default::default()
+        }),
+        Keycode::LEFT_CONTROL => Some(LayoutKey {
+            tap: Label::new("Ctrl"),
+            kind: KeycodeKind::Modifier,
+            ..Default::default()
+        }),
+        Keycode::LEFT_SHIFT => Some(LayoutKey {
+            tap: Label::new("Shift"),
+            symbol: Some(egui_phosphor::regular::ARROW_FAT_UP.to_string()),
+            kind: KeycodeKind::Modifier,
+            ..Default::default()
+        }),
+        Keycode::LEFT_ALT => Some(LayoutKey {
+            tap: Label::new("Alt"),
+            kind: KeycodeKind::Modifier,
+            ..Default::default()
+        }),
+        Keycode::LEFT_COMMAND => Some(LayoutKey {
+            tap: Label::new("Win"),
+            symbol: Some(egui_phosphor::regular::WINDOWS_LOGO.to_string()),
+            kind: KeycodeKind::Modifier,
+            ..Default::default()
+        }),
+        Keycode::RIGHT_CONTROL => Some(LayoutKey {
+            tap: Label::new("Ctrl"),
+            kind: KeycodeKind::Modifier,
+            ..Default::default()
+        }),
+        Keycode::RIGHT_SHIFT => Some(LayoutKey {
+            tap: Label::new("Shift"),
+            symbol: Some(egui_phosphor::regular::ARROW_FAT_UP.to_string()),
+            kind: KeycodeKind::Modifier,
+            ..Default::default()
+        }),
+        Keycode::RIGHT_ALT => Some(LayoutKey {
+            tap: Label::new("Alt"),
+            kind: KeycodeKind::Modifier,
+            ..Default::default()
+        }),
+        Keycode::RIGHT_COMMAND => Some(LayoutKey {
+            tap: Label::new("Win"),
+            symbol: Some(egui_phosphor::regular::WINDOWS_LOGO.to_string()),
+            kind: KeycodeKind::Modifier,
+            ..Default::default()
+        }),
+        // These are keyboard-page HID usage codes that don't exist in QMK.
+        Keycode::K_PLAY_PAUSE => Some(LayoutKey {
+            symbol: Some(egui_phosphor::regular::PLAY_PAUSE.to_string()),
+            ..Default::default()
+        }),
+        Keycode::K_STOP2 => Some(LayoutKey {
+            symbol: Some(egui_phosphor::regular::STOP.to_string()),
+            ..Default::default()
+        }),
+        Keycode::K_PREVIOUS => Some(LayoutKey {
+            symbol: Some(egui_phosphor::regular::SKIP_BACK.to_string()),
+            ..Default::default()
+        }),
+        Keycode::K_NEXT => Some(LayoutKey {
+            symbol: Some(egui_phosphor::regular::SKIP_FORWARD.to_string()),
+            ..Default::default()
+        }),
+        Keycode::K_EJECT => Some(LayoutKey {
+            tap: Label::with_short("Eject", "Ejct"),
+            ..Default::default()
+        }),
+        Keycode::K_VOLUME_UP2 => Some(LayoutKey {
+            symbol: Some(egui_phosphor::regular::SPEAKER_HIGH.to_string()),
+            ..Default::default()
+        }),
+        Keycode::K_VOLUME_DOWN2 => Some(LayoutKey {
+            symbol: Some(egui_phosphor::regular::SPEAKER_LOW.to_string()),
+            ..Default::default()
+        }),
+        Keycode::K_MUTE2 => Some(LayoutKey {
+            symbol: Some(egui_phosphor::regular::SPEAKER_X.to_string()),
+            ..Default::default()
+        }),
+        Keycode::K_WWW => Some(LayoutKey {
+            tap: Label::new("WWW"),
+            ..Default::default()
+        }),
+        Keycode::K_BACK => Some(LayoutKey {
+            tap: Label::new("Back"),
+            ..Default::default()
+        }),
+        Keycode::K_FORWARD => Some(LayoutKey {
+            tap: Label::new("Forward"),
+            ..Default::default()
+        }),
+        Keycode::K_STOP3 => Some(LayoutKey {
+            tap: Label::new("Stop"),
+            ..Default::default()
+        }),
+        Keycode::K_FIND2 => Some(LayoutKey {
+            tap: Label::new("Find"),
+            ..Default::default()
+        }),
+        Keycode::K_SCROLL_UP => Some(LayoutKey {
+            tap: Label::with_short("Scroll Up", "Scr↑"),
+            ..Default::default()
+        }),
+        Keycode::K_SCROLL_DOWN => Some(LayoutKey {
+            tap: Label::with_short("Scroll Down", "Scr↓"),
+            ..Default::default()
+        }),
+        Keycode::K_EDIT => Some(LayoutKey {
+            tap: Label::new("Edit"),
+            ..Default::default()
+        }),
+        Keycode::K_SLEEP => Some(LayoutKey {
+            tap: Label::new("Sleep"),
+            ..Default::default()
+        }),
+        Keycode::K_SCREENSAVER => Some(LayoutKey {
+            tap: Label::with_short("Screensaver", "Lock"),
+            ..Default::default()
+        }),
+        Keycode::K_REFRESH => Some(LayoutKey {
             tap: Label::new("Refresh"),
             ..Default::default()
         }),
-        0x022A => Some(LayoutKey {
+        Keycode::K_CALCULATOR => Some(LayoutKey {
+            tap: Label::new("Calc"),
+            ..Default::default()
+        }),
+        Keycode::EXCLAMATION => Some(LayoutKey {
+            tap: Label::new("!"),
+            ..Default::default()
+        }),
+        Keycode::AT_SIGN => Some(LayoutKey {
+            tap: Label::new("@"),
+            ..Default::default()
+        }),
+        Keycode::POUND => Some(LayoutKey {
+            tap: Label::new("#"),
+            ..Default::default()
+        }),
+        Keycode::DOLLAR => Some(LayoutKey {
+            tap: Label::new("$"),
+            ..Default::default()
+        }),
+        Keycode::PERCENT => Some(LayoutKey {
+            tap: Label::new("%"),
+            ..Default::default()
+        }),
+        Keycode::CARET => Some(LayoutKey {
+            tap: Label::new("^"),
+            ..Default::default()
+        }),
+        Keycode::AMPERSAND => Some(LayoutKey {
+            tap: Label::new("&"),
+            ..Default::default()
+        }),
+        Keycode::ASTERISK => Some(LayoutKey {
+            tap: Label::new("*"),
+            ..Default::default()
+        }),
+        Keycode::UNDERSCORE => Some(LayoutKey {
+            tap: Label::new("_"),
+            ..Default::default()
+        }),
+        Keycode::PLUS => Some(LayoutKey {
+            tap: Label::new("+"),
+            ..Default::default()
+        }),
+        Keycode::PIPE => Some(LayoutKey {
+            tap: Label::new("|"),
+            ..Default::default()
+        }),
+        Keycode::TILDE2 => Some(LayoutKey {
+            tap: Label::new("~"),
+            ..Default::default()
+        }),
+        Keycode::COLON => Some(LayoutKey {
+            tap: Label::new(":"),
+            ..Default::default()
+        }),
+        Keycode::TILDE => Some(LayoutKey {
+            tap: Label::new("~"),
+            ..Default::default()
+        }),
+        Keycode::LESS_THAN => Some(LayoutKey {
+            tap: Label::new("<"),
+            ..Default::default()
+        }),
+        Keycode::QUESTION => Some(LayoutKey {
+            tap: Label::new("?"),
+            ..Default::default()
+        }),
+        Keycode::CLEAR2 => Some(LayoutKey {
+            tap: Label::new("Clear"),
+            ..Default::default()
+        }),
+        Keycode::PIPE2 => Some(LayoutKey {
+            tap: Label::new("|"),
+            ..Default::default()
+        }),
+        Keycode::C_POWER => Some(LayoutKey {
+            tap: Label::new("Power"),
+            ..Default::default()
+        }),
+        Keycode::C_RESET => Some(LayoutKey {
+            tap: Label::new("Reset"),
+            ..Default::default()
+        }),
+        Keycode::C_SLEEP => Some(LayoutKey {
+            tap: Label::new("Sleep"),
+            ..Default::default()
+        }),
+        Keycode::C_SLEEP_MODE => Some(LayoutKey {
+            tap: Label::with_short("Sleep Mode", "Slp"),
+            ..Default::default()
+        }),
+        Keycode::C_MENU => Some(LayoutKey {
+            tap: Label::new("Menu"),
+            ..Default::default()
+        }),
+        Keycode::C_MENU_SELECT => Some(LayoutKey {
+            tap: Label::with_short("Menu Select", "MSel"),
+            ..Default::default()
+        }),
+        Keycode::C_MENU_UP => Some(LayoutKey {
+            tap: Label::with_short("Menu Up", "M↑"),
+            ..Default::default()
+        }),
+        Keycode::C_MENU_DOWN => Some(LayoutKey {
+            tap: Label::with_short("Menu Down", "M↓"),
+            ..Default::default()
+        }),
+        Keycode::C_MENU_LEFT => Some(LayoutKey {
+            tap: Label::with_short("Menu Left", "M←"),
+            ..Default::default()
+        }),
+        Keycode::C_MENU_RIGHT => Some(LayoutKey {
+            tap: Label::with_short("Menu Right", "M→"),
+            ..Default::default()
+        }),
+        Keycode::C_MENU_ESCAPE => Some(LayoutKey {
+            tap: Label::with_short("Menu Escape", "MEsc"),
+            ..Default::default()
+        }),
+        Keycode::C_MENU_INCREASE => Some(LayoutKey {
+            tap: Label::with_short("Menu Increase", "M+"),
+            ..Default::default()
+        }),
+        Keycode::C_MENU_DECREASE => Some(LayoutKey {
+            tap: Label::with_short("Menu Decrease", "M-"),
+            ..Default::default()
+        }),
+        Keycode::C_DATA_ON_SCREEN => Some(LayoutKey {
+            tap: Label::with_short("Data on Screen", "OSD"),
+            ..Default::default()
+        }),
+        Keycode::C_SUBTITLES => Some(LayoutKey {
+            tap: Label::with_short("Subtitles", "Sub"),
+            ..Default::default()
+        }),
+        Keycode::C_SNAPSHOT => Some(LayoutKey {
+            tap: Label::with_short("Snapshot", "Snap"),
+            ..Default::default()
+        }),
+        Keycode::C_PIP => Some(LayoutKey {
+            tap: Label::new("PIP"),
+            ..Default::default()
+        }),
+        Keycode::C_RED_BUTTON => Some(LayoutKey {
+            tap: Label::new("Red"),
+            ..Default::default()
+        }),
+        Keycode::C_GREEN_BUTTON => Some(LayoutKey {
+            tap: Label::new("Green"),
+            ..Default::default()
+        }),
+        Keycode::C_BLUE_BUTTON => Some(LayoutKey {
+            tap: Label::new("Blue"),
+            ..Default::default()
+        }),
+        Keycode::C_YELLOW_BUTTON => Some(LayoutKey {
+            tap: Label::new("Yellow"),
+            ..Default::default()
+        }),
+        Keycode::C_ASPECT => Some(LayoutKey {
+            tap: Label::with_short("Aspect", "Asp"),
+            ..Default::default()
+        }),
+        Keycode::C_MEDIA_STEP => Some(LayoutKey {
+            tap: Label::with_short("Mode Step", "Step"),
+            ..Default::default()
+        }),
+        Keycode::C_RECALL_LAST => Some(LayoutKey {
+            tap: Label::with_short("Last Channel", "Last"),
+            ..Default::default()
+        }),
+        Keycode::C_MEDIA_TV => Some(LayoutKey {
+            tap: Label::new("TV"),
+            ..Default::default()
+        }),
+        Keycode::C_MEDIA_WWW => Some(LayoutKey {
+            tap: Label::new("WWW"),
+            ..Default::default()
+        }),
+        Keycode::C_MEDIA_DVD => Some(LayoutKey {
+            tap: Label::new("DVD"),
+            ..Default::default()
+        }),
+        Keycode::C_MEDIA_PHONE => Some(LayoutKey {
+            tap: Label::new("Phone"),
+            ..Default::default()
+        }),
+        Keycode::C_MEDIA_GAMES => Some(LayoutKey {
+            tap: Label::new("Games"),
+            ..Default::default()
+        }),
+        Keycode::C_MEDIA_CD => Some(LayoutKey {
+            tap: Label::new("CD"),
+            ..Default::default()
+        }),
+        Keycode::C_MEDIA_VCR => Some(LayoutKey {
+            tap: Label::new("VCR"),
+            ..Default::default()
+        }),
+        Keycode::C_MEDIA_TUNER => Some(LayoutKey {
+            tap: Label::new("Tuner"),
+            ..Default::default()
+        }),
+        Keycode::C_QUIT => Some(LayoutKey {
+            tap: Label::new("Quit"),
+            ..Default::default()
+        }),
+        Keycode::C_HELP => Some(LayoutKey {
+            tap: Label::new("Help"),
+            ..Default::default()
+        }),
+        Keycode::C_MEDIA_TAPE => Some(LayoutKey {
+            tap: Label::new("Tape"),
+            ..Default::default()
+        }),
+        Keycode::C_MEDIA_CABLE => Some(LayoutKey {
+            tap: Label::new("Cable"),
+            ..Default::default()
+        }),
+        Keycode::C_MEDIA_HOME => Some(LayoutKey {
+            tap: Label::with_short("Media Home", "Home"),
+            ..Default::default()
+        }),
+        Keycode::C_CHANNEL_INC => Some(LayoutKey {
+            tap: Label::with_short("Channel +", "Ch+"),
+            ..Default::default()
+        }),
+        Keycode::C_CHANNEL_DEC => Some(LayoutKey {
+            tap: Label::with_short("Channel -", "Ch-"),
+            ..Default::default()
+        }),
+        Keycode::C_MEDIA_VCR_PLUS => Some(LayoutKey {
+            tap: Label::with_short("VCR Plus", "VCR+"),
+            ..Default::default()
+        }),
+        Keycode::C_PLAY => Some(LayoutKey {
+            tap: Label::new("Play"),
+            ..Default::default()
+        }),
+        Keycode::C_PAUSE => Some(LayoutKey {
+            tap: Label::new("Pause"),
+            ..Default::default()
+        }),
+        Keycode::C_RECORD => Some(LayoutKey {
+            tap: Label::with_short("Record", "Rec"),
+            ..Default::default()
+        }),
+        Keycode::C_FAST_FORWARD => Some(LayoutKey {
+            symbol: Some(egui_phosphor::regular::FAST_FORWARD.to_string()),
+            ..Default::default()
+        }),
+        Keycode::C_REWIND => Some(LayoutKey {
+            symbol: Some(egui_phosphor::regular::REWIND.to_string()),
+            ..Default::default()
+        }),
+        Keycode::C_NEXT => Some(LayoutKey {
+            symbol: Some(egui_phosphor::regular::SKIP_FORWARD.to_string()),
+            ..Default::default()
+        }),
+        Keycode::C_PREVIOUS => Some(LayoutKey {
+            symbol: Some(egui_phosphor::regular::SKIP_BACK.to_string()),
+            ..Default::default()
+        }),
+        Keycode::C_STOP => Some(LayoutKey {
+            symbol: Some(egui_phosphor::regular::STOP.to_string()),
+            ..Default::default()
+        }),
+        Keycode::C_EJECT => Some(LayoutKey {
+            tap: Label::with_short("Eject", "Ejct"),
+            ..Default::default()
+        }),
+        Keycode::C_RANDOM_PLAY => Some(LayoutKey {
+            tap: Label::with_short("Shuffle", "Shfl"),
+            symbol: Some(egui_phosphor::regular::SHUFFLE.to_string()),
+            ..Default::default()
+        }),
+        Keycode::C_REPEAT => Some(LayoutKey {
+            tap: Label::with_short("Repeat", "Rpt"),
+            symbol: Some(egui_phosphor::regular::REPEAT.to_string()),
+            ..Default::default()
+        }),
+        Keycode::C_SLOW_TRACKING => Some(LayoutKey {
+            tap: Label::new("Slow"),
+            ..Default::default()
+        }),
+        Keycode::C_STOP_EJECT => Some(LayoutKey {
+            tap: Label::with_short("Stop/Eject", "StEj"),
+            ..Default::default()
+        }),
+        Keycode::C_PLAY_PAUSE => Some(LayoutKey {
+            symbol: Some(egui_phosphor::regular::PLAY_PAUSE.to_string()),
+            ..Default::default()
+        }),
+        Keycode::C_VOICE_COMMAND => Some(LayoutKey {
+            tap: Label::with_short("Voice Command", "Voice"),
+            symbol: Some(egui_phosphor::regular::MICROPHONE.to_string()),
+            ..Default::default()
+        }),
+        Keycode::C_MUTE => Some(LayoutKey {
+            symbol: Some(egui_phosphor::regular::SPEAKER_X.to_string()),
+            ..Default::default()
+        }),
+        Keycode::C_BASS_BOOST => Some(LayoutKey {
+            tap: Label::with_short("Bass Boost", "Bass"),
+            ..Default::default()
+        }),
+        Keycode::C_VOLUME_UP => Some(LayoutKey {
+            symbol: Some(egui_phosphor::regular::SPEAKER_HIGH.to_string()),
+            ..Default::default()
+        }),
+        Keycode::C_VOLUME_DOWN => Some(LayoutKey {
+            symbol: Some(egui_phosphor::regular::SPEAKER_LOW.to_string()),
+            ..Default::default()
+        }),
+        Keycode::C_SLOW => Some(LayoutKey {
+            tap: Label::new("Slow"),
+            ..Default::default()
+        }),
+        Keycode::C_AL_WORD => Some(LayoutKey {
+            tap: Label::new("Word"),
+            ..Default::default()
+        }),
+        Keycode::C_AL_TEXT_EDITOR => Some(LayoutKey {
+            tap: Label::with_short("Text Editor", "Edit"),
+            ..Default::default()
+        }),
+        Keycode::C_AL_SPREADSHEET => Some(LayoutKey {
+            tap: Label::with_short("Spreadsheet", "Sheet"),
+            ..Default::default()
+        }),
+        Keycode::C_AL_DATABASE => Some(LayoutKey {
+            tap: Label::new("DB"),
+            ..Default::default()
+        }),
+        Keycode::C_AL_EMAIL => Some(LayoutKey {
+            tap: Label::new("Mail"),
+            ..Default::default()
+        }),
+        Keycode::C_AL_NEWS => Some(LayoutKey {
+            tap: Label::new("News"),
+            ..Default::default()
+        }),
+        Keycode::C_AL_VOICEMAIL => Some(LayoutKey {
+            tap: Label::with_short("Voicemail", "VMail"),
+            ..Default::default()
+        }),
+        Keycode::C_AL_CALENDAR => Some(LayoutKey {
+            tap: Label::with_short("Calendar", "Cal"),
+            ..Default::default()
+        }),
+        Keycode::C_AL_JOURNAL => Some(LayoutKey {
+            tap: Label::with_short("Journal", "Jrnl"),
+            ..Default::default()
+        }),
+        Keycode::C_AL_FINANCE => Some(LayoutKey {
+            tap: Label::with_short("Finance", "Fin"),
+            ..Default::default()
+        }),
+        Keycode::C_AL_CALCULATOR => Some(LayoutKey {
+            tap: Label::new("Calc"),
+            ..Default::default()
+        }),
+        Keycode::C_AL_WWW => Some(LayoutKey {
+            tap: Label::new("WWW"),
+            ..Default::default()
+        }),
+        Keycode::C_AL_NETWORK_CHAT => Some(LayoutKey {
+            tap: Label::new("Chat"),
+            ..Default::default()
+        }),
+        Keycode::C_AL_LOGOFF => Some(LayoutKey {
+            tap: Label::with_short("Log Off", "LogOff"),
+            ..Default::default()
+        }),
+        Keycode::C_AL_CONTROL_PANEL => Some(LayoutKey {
+            tap: Label::with_short("Control Panel", "Ctrl P"),
+            ..Default::default()
+        }),
+        Keycode::C_AL_HELP => Some(LayoutKey {
+            tap: Label::new("Help"),
+            ..Default::default()
+        }),
+        Keycode::C_AL_DOCUMENTS => Some(LayoutKey {
+            tap: Label::new("Docs"),
+            ..Default::default()
+        }),
+        Keycode::C_AL_SPELLCHECK => Some(LayoutKey {
+            tap: Label::with_short("Spellcheck", "Spell"),
+            ..Default::default()
+        }),
+        Keycode::C_AL_SCREEN_SAVER => Some(LayoutKey {
+            tap: Label::with_short("Screen Saver", "ScrSv"),
+            ..Default::default()
+        }),
+        Keycode::C_AL_FILE_BROWSER => Some(LayoutKey {
+            tap: Label::new("Files"),
+            ..Default::default()
+        }),
+        Keycode::C_AL_IMAGE_BROWSER => Some(LayoutKey {
+            tap: Label::new("Images"),
+            ..Default::default()
+        }),
+        Keycode::C_AL_AUDIO_BROWSER => Some(LayoutKey {
+            tap: Label::new("Audio"),
+            ..Default::default()
+        }),
+        Keycode::C_AL_MOVIE_BROWSER => Some(LayoutKey {
+            tap: Label::new("Movies"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_NEW => Some(LayoutKey {
+            tap: Label::new("New"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_OPEN => Some(LayoutKey {
+            tap: Label::new("Open"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_CLOSE => Some(LayoutKey {
+            tap: Label::new("Close"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_EXIT => Some(LayoutKey {
+            tap: Label::new("Exit"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_SAVE => Some(LayoutKey {
+            tap: Label::new("Save"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_PRINT => Some(LayoutKey {
+            tap: Label::new("Print"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_PROPERTIES => Some(LayoutKey {
+            tap: Label::with_short("Properties", "Props"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_UNDO => Some(LayoutKey {
+            tap: Label::new("Undo"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_COPY => Some(LayoutKey {
+            tap: Label::new("Copy"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_CUT => Some(LayoutKey {
+            tap: Label::new("Cut"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_PASTE => Some(LayoutKey {
+            tap: Label::new("Paste"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_FIND => Some(LayoutKey {
+            tap: Label::new("Find"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_SEARCH => Some(LayoutKey {
+            tap: Label::new("Search"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_GOTO => Some(LayoutKey {
+            tap: Label::with_short("Go To", "GoTo"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_HOME => Some(LayoutKey {
+            tap: Label::new("Home"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_BACK => Some(LayoutKey {
+            tap: Label::new("Back"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_FORWARD => Some(LayoutKey {
+            tap: Label::new("Forward"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_STOP => Some(LayoutKey {
+            tap: Label::new("Stop"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_REFRESH => Some(LayoutKey {
+            tap: Label::new("Refresh"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_FAVOURITES => Some(LayoutKey {
             tap: Label::new("Favorites"),
             ..Default::default()
         }),
-        0x022D => Some(LayoutKey {
+        Keycode::C_AC_ZOOM_IN => Some(LayoutKey {
             tap: Label::with_short("Zoom In", "Z+"),
             ..Default::default()
         }),
-        0x022E => Some(LayoutKey {
+        Keycode::C_AC_ZOOM_OUT => Some(LayoutKey {
             tap: Label::with_short("Zoom Out", "Z-"),
             ..Default::default()
         }),
-        0x029D => Some(LayoutKey {
-            symbol: Some(egui_phosphor::regular::SUN.to_string()),
+        Keycode::C_AC_ZOOM => Some(LayoutKey {
+            tap: Label::new("Zoom"),
             ..Default::default()
         }),
+        Keycode::C_AC_VIEW_TOGGLE => Some(LayoutKey {
+            tap: Label::with_short("View Toggle", "View"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_SCROLL_UP => Some(LayoutKey {
+            tap: Label::with_short("Scroll Up", "Scr↑"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_SCROLL_DOWN => Some(LayoutKey {
+            tap: Label::with_short("Scroll Down", "Scr↓"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_EDIT => Some(LayoutKey {
+            tap: Label::new("Edit"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_CANCEL => Some(LayoutKey {
+            tap: Label::new("Cancel"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_INSERT => Some(LayoutKey {
+            tap: Label::with_short("Insert", "Ins"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_DEL => Some(LayoutKey {
+            tap: Label::with_short("Delete", "Del"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_REDO => Some(LayoutKey {
+            tap: Label::new("Redo"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_REPLY => Some(LayoutKey {
+            tap: Label::new("Reply"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_FORWARD_MAIL => Some(LayoutKey {
+            tap: Label::with_short("Forward Mail", "Fwd"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_SEND => Some(LayoutKey {
+            tap: Label::new("Send"),
+            ..Default::default()
+        }),
+        Keycode::C_AC_NEXT_KEYBOARD_LAYOUT_SELECT => Some(LayoutKey {
+            tap: Label::new("Globe"),
+            symbol: Some(egui_phosphor::regular::GLOBE.to_string()),
+            ..Default::default()
+        }),
+        #[allow(unreachable_patterns)]
         _ => None,
     }
-}
-
-fn system_key_label(usage_id: u32) -> Option<LayoutKey> {
-    let label: &str = match usage_id {
-        0x81 => "Power",
-        0x82 => "Sleep",
-        0x83 => "Wake",
-        _ => return None,
-    };
-
-    Some(LayoutKey {
-        tap: Label::new(label),
-        ..Default::default()
-    })
 }
