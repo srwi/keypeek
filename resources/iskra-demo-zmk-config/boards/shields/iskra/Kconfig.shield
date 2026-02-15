@@ -1,2 +1,0 @@
-config SHIELD_ISKRA
-	def_bool $(shields_list_contains,iskra)

@@ -45,54 +45,63 @@ fn frame_encode(payload: &[u8]) -> Vec<u8> {
 /// Deframe state machine — accumulates bytes until a complete frame is found.
 struct Deframer {
     buf: Vec<u8>,
-    in_frame: bool,
-    escaped: bool,
+    state: DeframeState,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum DeframeState {
+    Idle,
+    AwaitingData,
+    Escaped,
 }
 
 impl Deframer {
     fn new() -> Self {
         Self {
             buf: Vec::with_capacity(512),
-            in_frame: false,
-            escaped: false,
+            state: DeframeState::Idle,
         }
     }
 
     /// Feed bytes and return the first complete frame payload, if any.
-    fn feed(&mut self, data: &[u8]) -> Option<Vec<u8>> {
+    ///
+    /// Strictly matches official client behavior:
+    /// - Any byte other than SOF while idle is an error.
+    /// - Unescaped SOF mid-frame is an error.
+    fn feed(&mut self, data: &[u8]) -> Result<Option<Vec<u8>>, Box<dyn Error>> {
         for &b in data {
-            if self.escaped {
-                self.escaped = false;
-                if self.in_frame {
-                    self.buf.push(b);
-                }
-                continue;
-            }
-            match b {
-                SOF => {
-                    self.buf.clear();
-                    self.in_frame = true;
-                    self.escaped = false;
-                }
-                ESC => {
-                    self.escaped = true;
-                }
-                EOF => {
-                    if self.in_frame && !self.buf.is_empty() {
-                        self.in_frame = false;
-                        return Some(std::mem::take(&mut self.buf));
+            match self.state {
+                DeframeState::Idle => match b {
+                    SOF => {
+                        self.buf.clear();
+                        self.state = DeframeState::AwaitingData;
                     }
-                    self.in_frame = false;
-                    self.buf.clear();
-                }
-                _ => {
-                    if self.in_frame {
+                    _ => {
+                        return Err("Framing error: expected SOF to start decoding".into());
+                    }
+                },
+                DeframeState::AwaitingData => match b {
+                    SOF => {
+                        return Err("Framing error: unexpected SOF mid-frame".into());
+                    }
+                    ESC => {
+                        self.state = DeframeState::Escaped;
+                    }
+                    EOF => {
+                        self.state = DeframeState::Idle;
+                        return Ok(Some(std::mem::take(&mut self.buf)));
+                    }
+                    _ => {
                         self.buf.push(b);
                     }
+                },
+                DeframeState::Escaped => {
+                    self.buf.push(b);
+                    self.state = DeframeState::AwaitingData;
                 }
             }
         }
-        None
+        Ok(None)
     }
 }
 
@@ -109,13 +118,14 @@ pub struct StudioRpcClient {
 impl StudioRpcClient {
     /// Open a serial port and create a new RPC client.
     pub fn open(port_name: &str) -> Result<Self, Box<dyn Error>> {
-        let port = serialport::new(port_name, 115_200)
+        // Match the official ZMK Studio TS client serial settings.
+        let port = serialport::new(port_name, 12_500)
             .timeout(Duration::from_secs(5))
             .open()
             .map_err(|e| format!("Failed to open serial port '{port_name}': {e}"))?;
         Ok(Self {
             port,
-            next_request_id: 1,
+            next_request_id: 0,
         })
     }
 
@@ -144,7 +154,7 @@ impl StudioRpcClient {
 
         loop {
             let n = self.port.read(&mut read_buf)?;
-            if let Some(frame_data) = deframer.feed(&read_buf[..n]) {
+            if let Some(frame_data) = deframer.feed(&read_buf[..n])? {
                 let response = studio::Response::decode(frame_data.as_slice())
                     .map_err(|e| format!("Failed to decode Studio response: {e}"))?;
 
@@ -155,6 +165,11 @@ impl StudioRpcClient {
                             if let Some(studio::request_response::Subsystem::Meta(meta_resp)) =
                                 &rr.subsystem
                             {
+                                if let Some(meta::response::ResponseType::NoResponse(_)) =
+                                    &meta_resp.response_type
+                                {
+                                    return Err("ZMK Studio error: no response".into());
+                                }
                                 if let Some(meta::response::ResponseType::SimpleError(code)) =
                                     &meta_resp.response_type
                                 {

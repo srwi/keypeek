@@ -1,6 +1,0 @@
-if SHIELD_ISKRA
-
-config ZMK_KEYBOARD_NAME
-	default "Iskra"
-
-endif
