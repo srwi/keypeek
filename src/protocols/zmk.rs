@@ -11,11 +11,13 @@ use qmk_via_api::api::KeyboardApi;
 use std::error::Error;
 use std::path::PathBuf;
 
+type LayerKeys3d = Vec<Vec<Vec<Option<LayoutKey>>>>;
+
 /// Cached ZMK data that can be serialized to/from JSON.
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct ZmkCache {
     pub definition: KeyboardDefinition,
-    pub layout_keys: Vec<Vec<Vec<Option<LayoutKey>>>>,
+    pub layout_keys: LayerKeys3d,
     pub layer_count: usize,
 }
 
@@ -64,7 +66,7 @@ pub fn save_and_get_layout_names(
 pub struct ZmkProtocol {
     api: KeyboardApi,
     definition: KeyboardDefinition,
-    layout_keys: Vec<Vec<Vec<Option<LayoutKey>>>>,
+    layout_keys: LayerKeys3d,
     layer_count: usize,
 }
 
@@ -118,12 +120,7 @@ impl KeyboardProtocol for ZmkProtocol {
         Ok(self.layer_count)
     }
 
-    fn read_all_keys(
-        &self,
-        _layers: usize,
-        _rows: usize,
-        _cols: usize,
-    ) -> Vec<Vec<Vec<Option<LayoutKey>>>> {
+    fn read_all_keys(&self, _layers: usize, _rows: usize, _cols: usize) -> LayerKeys3d {
         self.layout_keys.clone()
     }
 
@@ -142,7 +139,7 @@ fn build_from_studio_data(
     vid: u16,
     pid: u16,
     data: &StudioData,
-) -> Result<(KeyboardDefinition, Vec<Vec<Vec<Option<LayoutKey>>>>, usize), Box<dyn Error>> {
+) -> Result<(KeyboardDefinition, LayerKeys3d, usize), Box<dyn Error>> {
     let active_idx = data.physical_layouts.active_layout_index as usize;
     let proto_layouts = &data.physical_layouts.layouts;
 

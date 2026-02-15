@@ -85,12 +85,7 @@ pub fn fetch_studio_data(port_name: &str) -> Result<StudioData, Box<dyn Error>> 
     // Convert each Behavior → Option<LayoutKey>
     let layout_keys: Vec<Vec<Option<LayoutKey>>> = resolved_layers
         .iter()
-        .map(|layer| {
-            layer
-                .iter()
-                .map(|behavior| behavior_to_layout_key(behavior))
-                .collect()
-        })
+        .map(|layer| layer.iter().map(behavior_to_layout_key).collect())
         .collect();
 
     // Drop the serial connection and give USB time to settle before

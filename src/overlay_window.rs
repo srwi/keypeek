@@ -240,20 +240,19 @@ impl eframe::App for Overlay {
                 let window_pos = ui.min_rect().min;
 
                 for key in &self.keyboard.layout.keys {
-                    let (effective_layer, is_background_key) = self
-                        .keyboard
-                        .get_effective_key_layer(key.row as usize, key.col as usize);
+                    let (effective_layer, is_background_key) =
+                        self.keyboard.get_effective_key_layer(key.row, key.col);
 
                     // Get the LayoutKey directly (already contains display labels)
                     let layout_key = self
                         .keyboard
-                        .get_key(effective_layer as usize, key.row as usize, key.col as usize)
+                        .get_key(effective_layer as usize, key.row, key.col)
                         .unwrap_or_default();
 
                     // Get layer 0 key's kind for coloring
                     let first_layer_key_kind = self
                         .keyboard
-                        .get_key(0, key.row as usize, key.col as usize)
+                        .get_key(0, key.row, key.col)
                         .map(|k| k.kind)
                         .unwrap_or(KeycodeKind::Basic);
 
@@ -262,8 +261,7 @@ impl eframe::App for Overlay {
                             layout_key.layer_ref.unwrap_or(effective_layer),
                             first_layer_key_kind,
                             is_background_key,
-                            self.keyboard
-                                .is_key_pressed(key.row as usize, key.col as usize),
+                            self.keyboard.is_key_pressed(key.row, key.col),
                         );
 
                     // Draw key background

@@ -1,16 +1,16 @@
 use super::{kle_parser, KeyboardDefinition, KeyboardProtocol};
+use crate::keycode_labels::get_layout_key;
 use crate::layout_key::LayoutKey;
 use qmk_via_api::api::{KeyboardApi, MatrixInfo};
 use std::error::Error;
-use crate::keycode_labels::get_layout_key;
 
 const VIAL_PREFIX: u8 = 0xFE;
 
 #[repr(u8)]
 enum VialCommand {
-    GetKeyboardId = 0x00,
-    GetSize = 0x01,
-    GetDef = 0x02,
+    KeyboardId = 0x00,
+    Size = 0x01,
+    Def = 0x02,
 }
 
 pub struct VialProtocol {
@@ -60,7 +60,7 @@ impl VialProtocol {
     fn vial_get_def_block(api: &KeyboardApi, block: u32) -> Result<Vec<u8>, Box<dyn Error>> {
         let mut msg = vec![0u8; 32];
         msg[0] = VIAL_PREFIX;
-        msg[1] = VialCommand::GetDef as u8;
+        msg[1] = VialCommand::Def as u8;
         msg[2..6].copy_from_slice(&block.to_le_bytes());
 
         api.hid_send(msg)
@@ -71,7 +71,7 @@ impl VialProtocol {
     }
 
     fn get_keyboard_id(api: &KeyboardApi) -> Result<(u32, [u8; 8]), Box<dyn Error>> {
-        let response = Self::vial_command(api, VialCommand::GetKeyboardId, &[])?;
+        let response = Self::vial_command(api, VialCommand::KeyboardId, &[])?;
 
         let protocol_version =
             u32::from_le_bytes([response[0], response[1], response[2], response[3]]);
@@ -83,7 +83,7 @@ impl VialProtocol {
     }
 
     fn get_definition_size(api: &KeyboardApi) -> Result<u32, Box<dyn Error>> {
-        let response = Self::vial_command(api, VialCommand::GetSize, &[])?;
+        let response = Self::vial_command(api, VialCommand::Size, &[])?;
         let size = u32::from_le_bytes([response[0], response[1], response[2], response[3]]);
         Ok(size)
     }
@@ -143,19 +143,24 @@ impl KeyboardProtocol for VialProtocol {
         Ok(count as usize)
     }
 
-    fn read_all_keys(&self, layers: usize, rows: usize, cols: usize) -> Vec<Vec<Vec<Option<LayoutKey>>>> {
+    fn read_all_keys(
+        &self,
+        layers: usize,
+        rows: usize,
+        cols: usize,
+    ) -> Vec<Vec<Vec<Option<LayoutKey>>>> {
         let mut keys = vec![vec![vec![None; cols]; rows]; layers];
         let matrix_info = MatrixInfo {
             rows: rows as u8,
             cols: cols as u8,
         };
 
-        for layer in 0..layers {
+        for (layer, layer_keys) in keys.iter_mut().enumerate().take(layers) {
             if let Ok(raw_matrix) = self.api.read_raw_matrix(matrix_info, layer as u8) {
                 for (i, &keycode) in raw_matrix.iter().enumerate() {
                     let row = i / cols;
                     let col = i % cols;
-                    keys[layer][row][col] = get_layout_key(keycode);
+                    layer_keys[row][col] = get_layout_key(keycode);
                 }
             }
         }

@@ -44,9 +44,9 @@ pub fn parse_qmk_json_value(json: &Value) -> Result<KeyboardDefinition, Box<dyn 
         .unwrap_or(false);
     let row_multiplier = if is_split_keyboard { 2 } else { 1 };
 
-    let matrix_pins = json
-        .get("matrix_pins")
-        .ok_or_else(|| Box::<dyn Error>::from("Unable to find 'matrix_pins' in keyboard info JSON."))?;
+    let matrix_pins = json.get("matrix_pins").ok_or_else(|| {
+        Box::<dyn Error>::from("Unable to find 'matrix_pins' in keyboard info JSON.")
+    })?;
 
     let rows = matrix_pins
         .get("rows")

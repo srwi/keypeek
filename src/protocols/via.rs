@@ -1,8 +1,8 @@
 use super::{qmk_json_parser, KeyboardDefinition, KeyboardProtocol};
+use crate::keycode_labels::get_layout_key;
 use crate::layout_key::LayoutKey;
 use qmk_via_api::api::{KeyboardApi, MatrixInfo};
 use std::error::Error;
-use crate::keycode_labels::get_layout_key;
 
 pub struct ViaProtocol {
     api: KeyboardApi,
@@ -50,19 +50,24 @@ impl KeyboardProtocol for ViaProtocol {
         Ok(count as usize)
     }
 
-    fn read_all_keys(&self, layers: usize, rows: usize, cols: usize) -> Vec<Vec<Vec<Option<LayoutKey>>>> {
+    fn read_all_keys(
+        &self,
+        layers: usize,
+        rows: usize,
+        cols: usize,
+    ) -> Vec<Vec<Vec<Option<LayoutKey>>>> {
         let mut keys = vec![vec![vec![None; cols]; rows]; layers];
         let matrix_info = MatrixInfo {
             rows: rows as u8,
             cols: cols as u8,
         };
 
-        for layer in 0..layers {
+        for (layer, layer_keys) in keys.iter_mut().enumerate().take(layers) {
             if let Ok(raw_matrix) = self.api.read_raw_matrix(matrix_info, layer as u8) {
                 for (i, &keycode) in raw_matrix.iter().enumerate() {
                     let row = i / cols;
                     let col = i % cols;
-                    keys[layer][row][col] = get_layout_key(keycode);
+                    layer_keys[row][col] = get_layout_key(keycode);
                 }
             }
         }

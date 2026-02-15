@@ -1,5 +1,5 @@
 use crate::layout_key::{KeycodeKind, Label, LayoutKey};
-use zmk_studio_api::{Behavior, Keycode};
+use zmk_studio_api::{Behavior, HidUsage, Keycode};
 
 pub fn behavior_to_layout_key(behavior: &Behavior) -> Option<LayoutKey> {
     match behavior {
@@ -9,9 +9,9 @@ pub fn behavior_to_layout_key(behavior: &Behavior) -> Option<LayoutKey> {
             tap: Label::new(""),
             ..Default::default()
         }),
-        Behavior::KeyPress(keycode) => Some(keycode_to_layout_key(keycode)),
+        Behavior::KeyPress(keycode) => Some(hid_usage_to_layout_key(*keycode)),
         Behavior::KeyToggle(keycode) => {
-            let mut key = keycode_to_layout_key(keycode);
+            let mut key = hid_usage_to_layout_key(*keycode);
             key.hold = Some(Label::new("Toggle"));
             Some(key)
         }
@@ -20,7 +20,7 @@ pub fn behavior_to_layout_key(behavior: &Behavior) -> Option<LayoutKey> {
         Behavior::ToLayer { layer_id } => Some(layer_layout_key("TO", *layer_id)),
         Behavior::StickyLayer { layer_id } => Some(layer_layout_key("SL", *layer_id)),
         Behavior::LayerTap { layer_id, tap } => {
-            let tap_key = keycode_to_layout_key(tap);
+            let tap_key = hid_usage_to_layout_key(*tap);
             Some(LayoutKey {
                 tap: tap_key.tap,
                 hold: Some(Label::with_short(
@@ -33,8 +33,8 @@ pub fn behavior_to_layout_key(behavior: &Behavior) -> Option<LayoutKey> {
             })
         }
         Behavior::ModTap { hold, tap } => {
-            let hold_key = keycode_to_layout_key(hold);
-            let tap_key = keycode_to_layout_key(tap);
+            let hold_key = hid_usage_to_layout_key(*hold);
+            let tap_key = hid_usage_to_layout_key(*tap);
             Some(LayoutKey {
                 tap: tap_key.tap,
                 hold: Some(hold_key.tap),
@@ -44,7 +44,7 @@ pub fn behavior_to_layout_key(behavior: &Behavior) -> Option<LayoutKey> {
             })
         }
         Behavior::StickyKey(keycode) => {
-            let key = keycode_to_layout_key(keycode);
+            let key = hid_usage_to_layout_key(*keycode);
             Some(LayoutKey {
                 tap: Label::with_short(
                     format!("OS {}", key.tap.full),
@@ -143,16 +143,17 @@ pub fn behavior_to_layout_key(behavior: &Behavior) -> Option<LayoutKey> {
             kind: KeycodeKind::Special,
             ..Default::default()
         }),
-        Behavior::Raw(binding) => {
-            let label = if binding.param2 != 0 {
-                format!(
-                    "0x{:X} {} {}",
-                    binding.behavior_id, binding.param1, binding.param2
-                )
-            } else if binding.param1 != 0 {
-                format!("0x{:X} {}", binding.behavior_id, binding.param1)
+        Behavior::Unknown {
+            behavior_id,
+            param1,
+            param2,
+        } => {
+            let label = if *param2 != 0 {
+                format!("0x{:X} {} {}", behavior_id, param1, param2)
+            } else if *param1 != 0 {
+                format!("0x{:X} {}", behavior_id, param1)
             } else {
-                format!("0x{:X}", binding.behavior_id)
+                format!("0x{:X}", behavior_id)
             };
             Some(LayoutKey {
                 tap: Label::new(label),
@@ -170,6 +171,41 @@ fn layer_layout_key(abbreviation: &str, layer_id: u32) -> LayoutKey {
         ),
         kind: KeycodeKind::Special,
         layer_ref: Some(layer_id as u8),
+        ..Default::default()
+    }
+}
+
+fn hid_usage_to_layout_key(usage: HidUsage) -> LayoutKey {
+    if usage.modifiers() == 0 {
+        if let Some(keycode) = usage.known_keycode() {
+            return keycode_to_layout_key(&keycode);
+        }
+
+        return LayoutKey {
+            tap: Label::new(format!("0x{:08X}", usage.to_hid_usage())),
+            ..Default::default()
+        };
+    }
+
+    if let Some(named_key) = usage.known_keycode() {
+        return keycode_to_layout_key(&named_key);
+    }
+
+    let base = usage.base();
+    let base_label = if let Some(base_keycode) = base.known_keycode() {
+        keycode_to_layout_key(&base_keycode).tap.full
+    } else {
+        format!("0x{:08X}", base.to_hid_usage())
+    };
+
+    let mut rendered = base_label;
+    for modifier in usage.modifier_labels().iter().rev() {
+        rendered = format!("{modifier}({rendered})");
+    }
+
+    LayoutKey {
+        tap: Label::new(rendered),
+        kind: KeycodeKind::Modifier,
         ..Default::default()
     }
 }

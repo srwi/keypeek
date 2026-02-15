@@ -115,7 +115,11 @@ impl Keyboard {
 
     /// Get the LayoutKey at a position. Returns None for transparent keys.
     pub fn get_key(&self, layer: usize, row: usize, col: usize) -> Option<LayoutKey> {
-        self.matrix.lock().unwrap().get_key(layer, row, col).cloned()
+        self.matrix
+            .lock()
+            .unwrap()
+            .get_key(layer, row, col)
+            .cloned()
     }
 
     pub fn is_key_pressed(&self, row: usize, col: usize) -> bool {
