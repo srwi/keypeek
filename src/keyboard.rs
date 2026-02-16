@@ -12,6 +12,7 @@ pub struct Keyboard {
     matrix: Arc<Mutex<KeyMatrix>>,
     layer_state: Arc<Mutex<u32>>,
     default_layer_state: Arc<Mutex<u32>>,
+    timeout_ms: Arc<Mutex<u64>>,
 }
 
 impl Keyboard {
@@ -36,6 +37,7 @@ impl Keyboard {
         let layer_state = Arc::new(Mutex::new(0));
         let default_layer_state = Arc::new(Mutex::new(0));
         let time_to_hide_overlay = Arc::new(Mutex::new(Some(Instant::now())));
+        let timeout_ms = Arc::new(Mutex::new(timeout));
         let matrix = Arc::new(Mutex::new(matrix));
 
         let keyboard = Keyboard {
@@ -44,11 +46,13 @@ impl Keyboard {
             time_to_hide_overlay: Arc::clone(&time_to_hide_overlay),
             layer_state: Arc::clone(&layer_state),
             default_layer_state: Arc::clone(&default_layer_state),
+            timeout_ms: Arc::clone(&timeout_ms),
         };
 
         let layer_state_clone = Arc::clone(&keyboard.layer_state);
         let default_layer_state_clone = Arc::clone(&keyboard.default_layer_state);
         let time_to_hide_clone = Arc::clone(&keyboard.time_to_hide_overlay);
+        let timeout_clone = Arc::clone(&keyboard.timeout_ms);
         let matrix_clone = Arc::clone(&matrix);
 
         thread::spawn(move || loop {
@@ -67,6 +71,7 @@ impl Keyboard {
                     if layer_state > 1 {
                         *time_to_hide_clone.lock().unwrap() = None;
                     } else {
+                        let timeout = *timeout_clone.lock().unwrap();
                         let time_to_hide = Instant::now() + Duration::from_millis(timeout);
                         *time_to_hide_clone.lock().unwrap() = Some(time_to_hide);
                     }
@@ -124,5 +129,9 @@ impl Keyboard {
 
     pub fn is_key_pressed(&self, row: usize, col: usize) -> bool {
         self.matrix.lock().unwrap().is_pressed(row, col)
+    }
+
+    pub fn set_timeout(&self, timeout: u64) {
+        *self.timeout_ms.lock().unwrap() = timeout;
     }
 }
