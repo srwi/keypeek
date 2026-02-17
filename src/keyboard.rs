@@ -107,7 +107,6 @@ impl Keyboard {
             let is_active_default_layer = (default_layer_state & layer_mask) != 0;
             let is_active_momentary_layer = (layer_state & layer_mask) != 0;
             if is_active_momentary_layer || is_active_default_layer {
-                // Use new LayoutKey-based transparency check
                 if !matrix.is_transparent(i, row, col) {
                     return (i as u8, is_active_default_layer && active_layer_above);
                 }
@@ -118,7 +117,6 @@ impl Keyboard {
         (0, active_layer_above)
     }
 
-    /// Get the LayoutKey at a position. Returns None for transparent keys.
     pub fn get_key(&self, layer: usize, row: usize, col: usize) -> Option<LayoutKey> {
         self.matrix
             .lock()
@@ -133,5 +131,9 @@ impl Keyboard {
 
     pub fn set_timeout(&self, timeout: u64) {
         *self.timeout_ms.lock().unwrap() = timeout;
+    }
+
+    pub fn set_layout(&mut self, layout: KeyboardLayout) {
+        self.layout = layout;
     }
 }

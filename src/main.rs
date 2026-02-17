@@ -2,10 +2,10 @@
 mod device_discovery;
 mod key_matrix;
 mod keyboard;
-mod qmk_keycode_labels;
 mod layout_key;
 mod overlay_window;
 mod protocols;
+mod qmk_keycode_labels;
 mod settings;
 mod tray;
 mod zmk_keycode_labels;

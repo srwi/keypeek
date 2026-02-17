@@ -1,6 +1,6 @@
 use super::{qmk_json_parser, KeyboardDefinition, KeyboardProtocol};
-use crate::qmk_keycode_labels::get_layout_key;
 use crate::layout_key::LayoutKey;
+use crate::qmk_keycode_labels::get_layout_key;
 use qmk_via_api::api::{KeyboardApi, MatrixInfo};
 use std::error::Error;
 

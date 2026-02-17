@@ -1,5 +1,5 @@
-use crate::qmk_keycode_labels::constants::*;
 use crate::layout_key::{Label, LayoutKey};
+use crate::qmk_keycode_labels::constants::*;
 
 pub fn get_layer_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
     let (tap_label, layer_ref) = match keycode_bytes {

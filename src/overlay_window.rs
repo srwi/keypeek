@@ -3,7 +3,7 @@ use crate::keyboard::Keyboard;
 use crate::layout_key::{KeycodeKind, LayoutKey};
 use crate::protocols::zmk;
 use crate::protocols::zmk_studio;
-use crate::protocols::{connect_protocol, format_vid_pid, parse_vid_pid};
+use crate::protocols::{connect_protocol, format_vid_pid, parse_vid_pid, KeyboardDefinition};
 use crate::settings::{ProtocolType, Settings, WindowPosition};
 use crate::tray::TrayCommand;
 
@@ -33,6 +33,7 @@ pub struct OverlayApp {
     ever_connected: bool,
     active_settings: Settings,
     draft_settings: Settings,
+    connected_definition: Option<KeyboardDefinition>,
     layout_names: Vec<String>,
     available_devices: Vec<DiscoveredDevice>,
     selected_device_index: Option<usize>,
@@ -81,6 +82,7 @@ impl OverlayApp {
             ever_connected: false,
             active_settings: base.clone(),
             draft_settings: base,
+            connected_definition: None,
             layout_names: Vec::new(),
             available_devices: Vec::new(),
             selected_device_index: None,
@@ -182,35 +184,30 @@ impl OverlayApp {
                 }
             })?;
 
-            self.layout_names = zmk::save_and_get_layout_names(vid, pid, &studio_data)
+            zmk::save_and_get_layout_names(vid, pid, &studio_data)
                 .map_err(|e| format!("Failed to process ZMK data: {e}"))?;
-
-            if let Some(first) = self.layout_names.first() {
-                if !self.layout_names.contains(&settings.layout_name) {
-                    settings.layout_name = first.clone();
-                }
-            }
 
             connect_protocol(settings.protocol_type, &settings.protocol_config)
                 .map_err(|e| format!("Failed to connect to device: {e}"))?
         } else {
-            let protocol = connect_protocol(settings.protocol_type, &settings.protocol_config)
-                .map_err(|e| format!("Failed to connect to device: {e}"))?;
-
-            self.layout_names = protocol.get_layout_definition().get_layout_names();
-            if let Some(first) = self.layout_names.first() {
-                if !self.layout_names.contains(&settings.layout_name) {
-                    settings.layout_name = first.clone();
-                }
-            }
-            protocol
+            connect_protocol(settings.protocol_type, &settings.protocol_config)
+                .map_err(|e| format!("Failed to connect to device: {e}"))?
         };
+
+        self.layout_names = protocol.get_layout_definition().get_layout_names();
+        if let Some(first) = self.layout_names.first() {
+            if !self.layout_names.contains(&settings.layout_name) {
+                settings.layout_name = first.clone();
+            }
+        };
+        let definition = protocol.get_layout_definition().clone();
 
         let keyboard = Keyboard::new(protocol, settings.layout_name.clone(), settings.timeout)
             .map_err(|e| format!("Failed to create keyboard: {e}"))?;
 
         self.active_settings = settings.clone();
         self.draft_settings = settings;
+        self.connected_definition = Some(definition);
         self.protocol_type = self.active_settings.protocol_type;
         self.connection_state = AppConnectionState::Connected { keyboard };
         self.ever_connected = true;
@@ -295,6 +292,42 @@ impl OverlayApp {
             }
         }
 
+        self.persist_settings();
+    }
+
+    fn apply_live_layout_settings(&mut self) {
+        if self.active_settings.layout_name == self.draft_settings.layout_name {
+            return;
+        }
+
+        if !matches!(self.protocol_type, ProtocolType::Via | ProtocolType::Vial) {
+            self.draft_settings.layout_name = self.active_settings.layout_name.clone();
+            return;
+        }
+
+        let Some(definition) = self.connected_definition.as_ref() else {
+            self.settings_error =
+                Some("Missing keyboard definition for live layout switch".to_string());
+            self.draft_settings.layout_name = self.active_settings.layout_name.clone();
+            return;
+        };
+
+        let selected_layout = self.draft_settings.layout_name.clone();
+        let next_layout = match definition.get_layout(&selected_layout) {
+            Ok(layout) => layout,
+            Err(e) => {
+                self.settings_error = Some(format!("Failed to switch layout: {e}"));
+                self.draft_settings.layout_name = self.active_settings.layout_name.clone();
+                return;
+            }
+        };
+
+        let AppConnectionState::Connected { keyboard } = &mut self.connection_state else {
+            return;
+        };
+
+        keyboard.set_layout(next_layout);
+        self.active_settings.layout_name = selected_layout;
         self.persist_settings();
     }
 
@@ -839,6 +872,7 @@ impl eframe::App for OverlayApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.drain_tray_commands(ctx);
         self.apply_live_visual_settings();
+        self.apply_live_layout_settings();
         self.file_dialog.update(ctx);
 
         if let Some(path) = self.file_dialog.take_picked() {

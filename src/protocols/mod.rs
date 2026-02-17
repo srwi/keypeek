@@ -68,10 +68,6 @@ pub trait KeyboardProtocol: Send {
 
     fn get_layer_count(&self) -> Result<usize, Box<dyn Error>>;
 
-    /// Read all keys from the keyboard, returning LayoutKey data for each position.
-    ///
-    /// VIA/VIAL read raw keycodes via HID and convert them internally.
-    /// ZMK returns pre-parsed data from config files.
     fn read_all_keys(
         &self,
         layers: usize,
@@ -82,7 +78,6 @@ pub trait KeyboardProtocol: Send {
     fn hid_read(&self) -> Result<Vec<u8>, Box<dyn Error>>;
 }
 
-/// Parse a "vid:pid" hex string into (u16, u16).
 pub fn parse_vid_pid(s: &str) -> Result<(u16, u16), Box<dyn Error>> {
     let (vid_str, pid_str) = s
         .split_once(':')
@@ -94,13 +89,10 @@ pub fn parse_vid_pid(s: &str) -> Result<(u16, u16), Box<dyn Error>> {
     Ok((vid, pid))
 }
 
-/// Format a VID:PID pair as a hex string.
 pub fn format_vid_pid(vid: u16, pid: u16) -> String {
     format!("{:04x}:{:04x}", vid, pid)
 }
 
-/// Parse a ZMK protocol config string into (vid, pid, serial_port).
-/// Format: "vid:pid|serial_port" e.g. "1234:5678|COM5"
 fn parse_zmk_config(config: &str) -> Result<(u16, u16, &str), Box<dyn Error>> {
     let (vid_pid, serial_port) = config
         .split_once('|')
@@ -109,12 +101,6 @@ fn parse_zmk_config(config: &str) -> Result<(u16, u16, &str), Box<dyn Error>> {
     Ok((vid, pid, serial_port))
 }
 
-/// Create a connected protocol instance from protocol type and config string.
-///
-/// Config string format per protocol:
-/// - VIA: path to QMK keyboard info JSON
-/// - VIAL: "vid:pid" hex string
-/// - ZMK: "vid:pid|serial_port" — tries cache first, then Studio protocol
 pub fn connect_protocol(
     protocol_type: ProtocolType,
     protocol_config: &str,
@@ -131,16 +117,11 @@ pub fn connect_protocol(
         }
         ProtocolType::Zmk => {
             let (vid, pid, _serial_port) = parse_zmk_config(protocol_config)?;
-            // Try cached data first (no Studio/unlock needed)
             match ZmkProtocol::connect_cached(vid, pid) {
                 Ok(protocol) => Ok(Box::new(protocol)),
-                Err(_) => {
-                    // No cache — caller needs to use connect_zmk_studio() instead
-                    Err(
-                        "No cached ZMK data. Use the settings window to connect via ZMK Studio."
-                            .into(),
-                    )
-                }
+                Err(_) => Err(
+                    "No cached ZMK data. Use the settings window to connect via ZMK Studio.".into(),
+                ),
             }
         }
     }

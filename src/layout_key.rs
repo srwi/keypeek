@@ -1,17 +1,3 @@
-//! Display-oriented key representation.
-//!
-//! `LayoutKey` is the unified abstraction for representing a key's display labels,
-//! independent of the source firmware (QMK, ZMK, etc.). It provides all the information
-//! needed to render a key's label in the overlay.
-//!
-//! # Transparency
-//! Transparent keys are represented as `None` when stored in collections like
-//! `Vec<Vec<Vec<Option<LayoutKey>>>>`. This makes layer fall-through logic simple:
-//! just check `key.is_some()`.
-
-// ...existing code...
-
-/// Visual classification for key coloring.
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub enum KeycodeKind {
     #[default]
@@ -20,9 +6,6 @@ pub enum KeycodeKind {
     Special,
 }
 
-/// A text label with optional short variant.
-///
-/// Used for both tap and hold labels in `LayoutKey`.
 #[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub struct Label {
     /// Full label text (e.g., "Enter", "Shift")
@@ -33,7 +16,6 @@ pub struct Label {
 }
 
 impl Label {
-    /// Create a label with just the full text.
     pub fn new(full: impl Into<String>) -> Self {
         Label {
             full: full.into(),
@@ -41,7 +23,6 @@ impl Label {
         }
     }
 
-    /// Create a label with both full and short text.
     pub fn with_short(full: impl Into<String>, short: impl Into<String>) -> Self {
         Label {
             full: full.into(),
@@ -49,16 +30,11 @@ impl Label {
         }
     }
 
-    /// Check if the label is empty.
     pub fn is_empty(&self) -> bool {
         self.full.is_empty()
     }
 }
 
-/// A key's display representation, containing all label variants and metadata.
-///
-/// This struct is firmware-agnostic: both QMK keycodes and ZMK bindings
-/// are converted into this unified format for rendering.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LayoutKey {
     /// Primary key action label (e.g., "A", "Enter", "L1")
