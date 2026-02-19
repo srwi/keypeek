@@ -17,7 +17,7 @@ use settings::Settings;
 const SETTINGS_FILE: &str = "settings.ini";
 
 fn run_overlay_app(initial_settings: Option<Settings>) -> Result<(), eframe::Error> {
-    let (tray_icon, tray_commands) = tray::create_tray_icon();
+    let _tray_icon = tray::create_tray_icon();
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -39,11 +39,7 @@ fn run_overlay_app(initial_settings: Option<Settings>) -> Result<(), eframe::Err
             egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
             cc.egui_ctx.set_fonts(fonts);
 
-            Ok(Box::new(OverlayApp::new(
-                initial_settings,
-                tray_icon,
-                tray_commands,
-            )))
+            Ok(Box::new(OverlayApp::new(initial_settings)))
         }),
     )
 }

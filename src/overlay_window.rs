@@ -5,13 +5,10 @@ use crate::protocols::zmk;
 use crate::protocols::zmk_studio;
 use crate::protocols::{connect_protocol, format_vid_pid, parse_vid_pid, KeyboardDefinition};
 use crate::settings::{ProtocolType, Settings, WindowPosition};
-use crate::tray::TrayCommand;
 
 use eframe::egui::{self, Align2, Window};
 use egui_file_dialog::FileDialog;
-use std::sync::mpsc::Receiver;
 use std::time::Instant;
-use tray_icon::TrayIcon;
 
 const SETTINGS_FILE: &str = "settings.ini";
 
@@ -41,16 +38,10 @@ pub struct OverlayApp {
     json_path: String,
     file_dialog: FileDialog,
     zmk_serial_port: Option<String>,
-    _tray_icon: TrayIcon,
-    tray_commands: Receiver<TrayCommand>,
 }
 
 impl OverlayApp {
-    pub fn new(
-        initial_settings: Option<Settings>,
-        tray_icon: TrayIcon,
-        tray_commands: Receiver<TrayCommand>,
-    ) -> Self {
+    pub fn new(initial_settings: Option<Settings>) -> Self {
         let base = initial_settings.clone().unwrap_or_default();
         let should_auto_connect = initial_settings
             .as_ref()
@@ -90,8 +81,6 @@ impl OverlayApp {
             json_path,
             file_dialog: FileDialog::new(),
             zmk_serial_port,
-            _tray_icon: tray_icon,
-            tray_commands,
         };
 
         app.available_devices = discover_devices();
@@ -845,19 +834,6 @@ impl OverlayApp {
                 }
             });
     }
-
-    fn drain_tray_commands(&mut self, ctx: &egui::Context) {
-        while let Ok(cmd) = self.tray_commands.try_recv() {
-            match cmd {
-                TrayCommand::ShowSettings => {
-                    self.settings_visible = true;
-                }
-                TrayCommand::Quit => {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                }
-            }
-        }
-    }
 }
 
 impl eframe::App for OverlayApp {
@@ -870,7 +846,6 @@ impl eframe::App for OverlayApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.drain_tray_commands(ctx);
         self.apply_live_visual_settings();
         self.apply_live_layout_settings();
         self.file_dialog.update(ctx);
