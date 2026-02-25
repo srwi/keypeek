@@ -1,5 +1,5 @@
 use crate::connection::{build_connected_state, ConnectedState, ConnectionTask};
-use crate::device_discovery::{discover_devices, DeviceKind, DiscoveredDevice};
+use crate::device_discovery::{DeviceKind, DiscoveredDevice};
 use crate::keyboard::Keyboard;
 use crate::layout_key::{KeycodeKind, LayoutKey};
 use crate::protocols::{
@@ -35,6 +35,8 @@ pub struct OverlayApp {
     settings_error: Option<String>,
     settings_warning: Option<String>,
     ever_connected: bool,
+    #[cfg(target_os = "macos")]
+    macos_maximized: bool,
     active_settings: Settings,
     draft_settings: Settings,
     connected_definition: Option<KeyboardDefinition>,
@@ -49,7 +51,7 @@ pub struct OverlayApp {
 }
 
 impl OverlayApp {
-    pub fn new(initial_settings: Option<Settings>) -> Self {
+    pub fn new(initial_settings: Option<Settings>, available_devices: Vec<DiscoveredDevice>) -> Self {
         let base = initial_settings.clone().unwrap_or_default();
         let should_auto_connect = initial_settings
             .as_ref()
@@ -85,11 +87,13 @@ impl OverlayApp {
             settings_error: None,
             settings_warning: None,
             ever_connected: false,
+            #[cfg(target_os = "macos")]
+            macos_maximized: false,
             active_settings: base.clone(),
             draft_settings: base,
             connected_definition: None,
             layout_names: Vec::new(),
-            available_devices: Vec::new(),
+            available_devices,
             selected_device_index: None,
             protocol_type,
             json_path,
@@ -97,8 +101,6 @@ impl OverlayApp {
             zmk_transport,
             pending_connect: None,
         };
-
-        app.available_devices = discover_devices();
 
         if should_auto_connect {
             let saved = initial_settings.expect("auto-connect requires saved settings");
@@ -934,6 +936,17 @@ impl eframe::App for OverlayApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // On macOS, with_maximized(true) doesn't work for undecorated transparent
+        // windows. Explicitly size the window to fill the monitor on the first frame.
+        #[cfg(target_os = "macos")]
+        if !self.macos_maximized {
+            if let Some(monitor_size) = ctx.input(|i| i.viewport().monitor_size) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(0.0, 0.0)));
+                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(monitor_size));
+                self.macos_maximized = true;
+            }
+        }
+
         self.poll_connect_result();
         self.apply_live_visual_settings();
         self.apply_live_layout_settings();

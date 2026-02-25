@@ -7,6 +7,7 @@
 # configure your local ignore list.
 
 settings.ini
+keyboard_configs/
 
 ## File system
 .DS_Store

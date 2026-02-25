@@ -49,25 +49,27 @@ impl DiscoveredDevice {
 pub fn discover_devices() -> Vec<DiscoveredDevice> {
     let mut hid_devices = Vec::new();
 
-    for dev in scan_keyboards() {
-        let base_name = dev
-            .product
-            .clone()
-            .unwrap_or_else(|| format!("{:04X}:{:04X}", dev.vendor_id, dev.product_id));
-        let kind = if is_vial_device(&dev) {
-            DeviceKind::Vial
-        } else {
-            DeviceKind::Qmk
-        };
+    if let Ok(keyboards) = scan_keyboards() {
+        for dev in keyboards {
+            let base_name = dev
+                .product
+                .clone()
+                .unwrap_or_else(|| format!("{:04X}:{:04X}", dev.vendor_id, dev.product_id));
+            let kind = if is_vial_device(&dev) {
+                DeviceKind::Vial
+            } else {
+                DeviceKind::Qmk
+            };
 
-        hid_devices.push(DiscoveredDevice {
-            base_name,
-            vid: dev.vendor_id,
-            pid: dev.product_id,
-            serial_port: None,
-            ble_device_id: None,
-            kind,
-        });
+            hid_devices.push(DiscoveredDevice {
+                base_name,
+                vid: dev.vendor_id,
+                pid: dev.product_id,
+                serial_port: None,
+                ble_device_id: None,
+                kind,
+            });
+        }
     }
 
     let mut devices = hid_devices.clone();
