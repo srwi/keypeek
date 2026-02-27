@@ -87,7 +87,7 @@ fn run_overlay_app(initial_settings: Option<Settings>) -> Result<(), eframe::Err
     };
 
     eframe::run_native(
-        "QMK Layout Helper",
+        "KeyPeek",
         options,
         Box::new(move |cc| {
             egui_extras::install_image_loaders(&cc.egui_ctx);

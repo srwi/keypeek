@@ -23,7 +23,7 @@ impl OverlayApp {
         let settings_window_size = egui::vec2(450.0, 700.0);
         let settings_window_pos = ctx.viewport_rect().center() - settings_window_size * 0.5;
 
-        Window::new("QMK Layout Helper Settings")
+        Window::new("KeyPeek Settings")
             .open(&mut open)
             .default_size(settings_window_size)
             .default_pos(settings_window_pos)
@@ -264,14 +264,14 @@ impl OverlayApp {
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     ui.add(egui::Hyperlink::from_label_and_url(
-                        egui::RichText::new("github.com/srwi/qmk-layout-helper").weak(),
-                        "https://github.com/srwi/qmk-layout-helper",
+                        egui::RichText::new("github.com/srwi/keypeek").weak(),
+                        "https://github.com/srwi/keypeek",
                     ));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.add(egui::Hyperlink::from_label_and_url(
                             egui::RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION")))
                                 .weak(),
-                            "https://github.com/srwi/qmk-layout-helper/releases",
+                            "https://github.com/srwi/keypeek/releases",
                         ));
                     });
                 });

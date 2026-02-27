@@ -36,13 +36,13 @@ jobs:
         run: echo "VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')" >> $GITHUB_OUTPUT
 
       - name: Rename binary
-        run: mv target/release/qmk-layout-helper target/release/qmk-layout-helper-v${{ steps.get_version.outputs.VERSION }}-linux
+        run: mv target/release/keypeek target/release/keypeek-v${{ steps.get_version.outputs.VERSION }}-linux
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: linux-binary
-          path: target/release/qmk-layout-helper-v${{ steps.get_version.outputs.VERSION }}-linux
+          path: target/release/keypeek-v${{ steps.get_version.outputs.VERSION }}-linux
 
   build-windows:
     runs-on: windows-latest
@@ -67,13 +67,13 @@ jobs:
           echo "VERSION=$version" >> $env:GITHUB_OUTPUT
 
       - name: Rename binary
-        run: move target/release/qmk-layout-helper.exe target/release/qmk-layout-helper-v${{ steps.get_version.outputs.VERSION }}-windows.exe
+        run: move target/release/keypeek.exe target/release/keypeek-v${{ steps.get_version.outputs.VERSION }}-windows.exe
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-binary
-          path: target/release/qmk-layout-helper-v${{ steps.get_version.outputs.VERSION }}-windows.exe
+          path: target/release/keypeek-v${{ steps.get_version.outputs.VERSION }}-windows.exe
 
   build-macos:
     runs-on: macos-latest
@@ -96,13 +96,13 @@ jobs:
         run: echo "VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')" >> $GITHUB_OUTPUT
 
       - name: Rename binary
-        run: mv target/release/qmk-layout-helper target/release/qmk-layout-helper-v${{ steps.get_version.outputs.VERSION }}-macos
+        run: mv target/release/keypeek target/release/keypeek-v${{ steps.get_version.outputs.VERSION }}-macos
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: macos-binary
-          path: target/release/qmk-layout-helper-v${{ steps.get_version.outputs.VERSION }}-macos
+          path: target/release/keypeek-v${{ steps.get_version.outputs.VERSION }}-macos
 
   create-release:
     runs-on: ubuntu-latest

@@ -2644,6 +2644,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "keypeek"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "egui-file-dialog",
+ "egui-phosphor",
+ "egui_extras",
+ "gtk",
+ "hidapi",
+ "image",
+ "lzma-rs",
+ "qmk-via-api",
+ "regex",
+ "rust-ini",
+ "serde",
+ "serde_json",
+ "serialport",
+ "tray-icon",
+ "winit",
+ "zmk-studio-api",
+]
+
+[[package]]
 name = "khronos-egl"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4049,29 +4072,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a3cbdf373972bf78df4d3b518d07003938e2c7d1fb5891e55f9cb6df57009d84"
 dependencies = [
  "num-traits",
-]
-
-[[package]]
-name = "qmk-layout-helper"
-version = "0.1.0"
-dependencies = [
- "eframe",
- "egui-file-dialog",
- "egui-phosphor",
- "egui_extras",
- "gtk",
- "hidapi",
- "image",
- "lzma-rs",
- "qmk-via-api",
- "regex",
- "rust-ini",
- "serde",
- "serde_json",
- "serialport",
- "tray-icon",
- "winit",
- "zmk-studio-api",
 ]
 
 [[package]]

@@ -1,9 +1,9 @@
 [package]
-name = "qmk-layout-helper"
+name = "keypeek"
 license = "GPL-3.0-only"
-description = "QMK layout viewer"
+description = "Keyboard layer overlay for VIA, Vial, and ZMK"
 authors = ["Stephan Rumswinkel"]
-repository = "https://github.com/srwi/qmk-layout-helper"
+repository = "https://github.com/srwi/keypeek"
 readme = "README.md"
 version = "0.1.0"
 edition = "2021"

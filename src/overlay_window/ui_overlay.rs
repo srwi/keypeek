@@ -162,7 +162,7 @@ impl OverlayApp {
         let mut window_open = true;
         let size = self.settings.active.size as f32;
 
-        Window::new("QMK Layout Helper")
+        Window::new("KeyPeek")
             .open(&mut window_open)
             .auto_sized()
             .anchor(anchor_params.0, anchor_params.1)

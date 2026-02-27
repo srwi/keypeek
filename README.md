@@ -1,10 +1,10 @@
-# QMK Layout Helper <img src="resources/icon.svg" align="right" width="15%"/>
+# KeyPeek <img src="resources/icon.svg" align="right" width="15%"/>
 
-QMK Layout Helper provides a live on‑screen overlay of your keyboard, mirroring the active base and momentary layers. It is especially helpful when learning complex multi‑layer layouts or using boards with missing legends. The overlay updates instantly on layer changes, using VIA to query the current keymap and layer state so the view always matches the firmware.
+KeyPeek provides a live on‑screen overlay of your keyboard, mirroring the active base and momentary layers. It is especially helpful when learning complex multi‑layer layouts or using boards with missing legends. The overlay updates instantly on layer changes, using VIA to query the current keymap and layer state so the view always matches the firmware.
 
 It reflects the actual active layer stack, i.e. base and momentary layers, so the shown keys always correspond to the current effective layout.
 
-<img src=".github/assets/demo.gif" alt="QMK Layout Helper in action">
+<img src=".github/assets/demo.gif" alt="KeyPeek in action">
 
 ## Setup
 
@@ -52,11 +52,11 @@ Stock QMK does not expose layer change events to the host, so a minimal firmware
   ```sh
   qmk info -kb <your_keyboard> -m -f json > keyboard_info.json
   ```
-  This is the input file for the QMK Layout Helper containing the keyboard layout information required for rendering the overlay.
+  This is the input file for KeyPeek containing the keyboard layout information required for rendering the overlay.
 
 ## Usage
 
-The only input required for QMK Layout Helper is the keyboard information json file obtained in the previous step. Make sure to select the correct layout for your keyboard.
+The only input required for KeyPeek is the keyboard information json file obtained in the previous step. Make sure to select the correct layout for your keyboard.
 
 <img src=".github/assets/settings_window.png" alt="Settings window screenshot" width="60%">
 

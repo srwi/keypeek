@@ -30,7 +30,7 @@ pub fn create_tray_icon() -> TrayIcon {
     let tray_icon = TrayIconBuilder::new()
         .with_menu(Box::new(menu))
         .with_icon(icon)
-        .with_tooltip("QMK Layout Helper")
+        .with_tooltip("KeyPeek")
         .build()
         .unwrap();
 
