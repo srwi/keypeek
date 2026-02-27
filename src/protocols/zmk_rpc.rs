@@ -3,11 +3,8 @@ use crate::zmk_keycode_labels::behavior_to_layout_key;
 use std::error::Error;
 use std::io::{Read, Write};
 use std::time::Duration;
+use zmk_studio_api::transport::{BleDiscoveryMode, PlatformBleTransport};
 use zmk_studio_api::proto::zmk::{core, keymap};
-#[cfg(not(target_os = "windows"))]
-use zmk_studio_api::transport::ble::BleTransport;
-#[cfg(target_os = "windows")]
-use zmk_studio_api::transport::bluest_transport::BluestTransport;
 use zmk_studio_api::{Behavior, StudioClient};
 
 pub struct ZmkSerialDevice {
@@ -51,24 +48,10 @@ pub fn scan_serial_ports() -> Vec<ZmkSerialDevice> {
         .collect()
 }
 
-#[cfg(not(target_os = "windows"))]
 pub fn scan_ble_devices() -> Result<Vec<ZmkBleDevice>, Box<dyn Error>> {
-    let devices = StudioClient::<BleTransport>::list_ble_devices()?;
-    Ok(devices
-        .into_iter()
-        .map(|device| {
-            let display_name = device.display_name();
-            ZmkBleDevice {
-                device_id: device.device_id,
-                display_name,
-            }
-        })
-        .collect())
-}
-
-#[cfg(target_os = "windows")]
-pub fn scan_ble_devices() -> Result<Vec<ZmkBleDevice>, Box<dyn Error>> {
-    let devices = StudioClient::<BluestTransport>::list_ble_devices()?;
+    let devices = StudioClient::<PlatformBleTransport>::list_ble_devices_with_mode(
+        BleDiscoveryMode::Any,
+    )?;
     Ok(devices
         .into_iter()
         .map(|device| {
@@ -99,16 +82,7 @@ pub fn fetch_zmk_data(transport: &ZmkTransport) -> Result<ZmkData, Box<dyn Error
 }
 
 fn open_zmk_ble_and_fetch(device_id: &str) -> Result<ZmkData, Box<dyn Error>> {
-    #[cfg(not(target_os = "windows"))]
-    let client = StudioClient::<BleTransport>::open_ble(device_id).map_err(|e| {
-        format!(
-            "Failed to open BLE device '{device_id}'. Make sure your adapter is enabled \
-             and the board is advertising: {e}"
-        )
-    })?;
-
-    #[cfg(target_os = "windows")]
-    let client = StudioClient::<BluestTransport>::open_ble(device_id)
+    let client = StudioClient::<PlatformBleTransport>::open_ble(device_id)
         .map_err(|e| format!("Failed to connect to BLE device '{device_id}': {e}"))?;
 
     fetch_zmk_data_from_client(client)
