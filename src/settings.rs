@@ -163,31 +163,21 @@ impl Default for ThemeSettings {
 
 #[derive(Clone)]
 pub struct Settings {
-    pub protocol_type: ProtocolType,
-    pub protocol_config: String,
-    pub layout_name: String,
     pub size: i32,
     pub position: WindowPosition,
     pub timeout: u64,
     pub margin: u32,
     pub theme: ThemeSettings,
-    pub confirmed: bool,
-    pub save_settings: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            protocol_type: ProtocolType::default(),
-            protocol_config: String::new(),
-            layout_name: "LAYOUT".to_string(),
             size: 60,
             position: WindowPosition::BottomRight,
             timeout: 2000,
             margin: 10,
             theme: ThemeSettings::default(),
-            confirmed: false,
-            save_settings: false,
         }
     }
 }
@@ -196,9 +186,6 @@ impl Settings {
     pub fn save_to_file(&self, path: &str) -> std::io::Result<()> {
         let mut conf = Ini::new();
         let mut section = conf.with_section(Some("settings"));
-        section.set("protocol_type", self.protocol_type.to_string());
-        section.set("protocol_config", &self.protocol_config);
-        section.set("layout_name", &self.layout_name);
         section.set("size", self.size.to_string());
         section.set("position", self.position.to_string());
         section.set("timeout", self.timeout.to_string());
@@ -207,7 +194,6 @@ impl Settings {
             section.set(format!("layer_color_{index}"), color.to_string());
         }
         section.set("font_color", self.theme.font_color.to_string());
-        section.set("save_settings", self.save_settings.to_string());
         conf.write_to_file(path)
     }
 
@@ -215,17 +201,6 @@ impl Settings {
         let conf = Ini::load_from_file(path).ok()?;
         let section = conf.section(Some("settings"))?;
         let mut s = Settings::default();
-        if let Some(val) = section.get("protocol_type") {
-            if let Ok(parsed) = val.parse() {
-                s.protocol_type = parsed;
-            }
-        }
-        if let Some(val) = section.get("protocol_config") {
-            s.protocol_config = val.to_string();
-        }
-        if let Some(val) = section.get("layout_name") {
-            s.layout_name = val.to_string();
-        }
         if let Some(val) = section.get("size") {
             s.size = val.parse().unwrap_or(s.size);
         }
@@ -252,10 +227,6 @@ impl Settings {
                 s.theme.font_color = parsed;
             }
         }
-        if let Some(val) = section.get("save_settings") {
-            s.save_settings = val.parse().unwrap_or(s.save_settings);
-        }
-        s.confirmed = true;
         Some(s)
     }
 }

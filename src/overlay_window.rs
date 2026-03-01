@@ -1,4 +1,3 @@
-use crate::connection::ConnectedState;
 use crate::device_discovery::DiscoveredDevice;
 use crate::settings::{ProtocolType, Settings};
 
@@ -23,17 +22,11 @@ pub struct OverlayApp {
 }
 
 impl OverlayApp {
-    pub fn new(
-        base_settings: Settings,
-        available_devices: Vec<DiscoveredDevice>,
-        initial_connected: Option<ConnectedState>,
-        initial_error: Option<String>,
-        settings_visible: bool,
-    ) -> Self {
-        let mut app = Self {
+    pub fn new(base_settings: Settings, available_devices: Vec<DiscoveredDevice>) -> Self {
+        Self {
             ui: UiState {
-                settings_visible,
-                settings_error: initial_error,
+                settings_visible: true,
+                settings_error: None,
                 settings_warning: None,
                 #[cfg(target_os = "macos")]
                 macos_maximized: false,
@@ -48,6 +41,8 @@ impl OverlayApp {
                 ever_connected: false,
                 connected_definition: None,
                 layout_names: Vec::new(),
+                active_layout_name: String::new(),
+                draft_layout_name: String::new(),
             },
             connect: ConnectDraftState {
                 available_devices,
@@ -57,13 +52,7 @@ impl OverlayApp {
                 zmk_transport: ZmkTransportDraft::Serial { port_name: None },
                 pending_connect: None,
             },
-        };
-
-        if let Some(connected) = initial_connected {
-            app.apply_connected_state(connected, false);
         }
-
-        app
     }
 }
 

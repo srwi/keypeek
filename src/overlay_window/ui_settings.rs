@@ -112,7 +112,7 @@ impl OverlayApp {
                                     let selected_text = if self.session.layout_names.is_empty() {
                                         "Connect to device first".to_string()
                                     } else {
-                                        self.settings.draft.layout_name.clone()
+                                        self.session.draft_layout_name.clone()
                                     };
                                     egui::ComboBox::from_id_salt("layout_combo")
                                         .width(layout_width)
@@ -120,23 +120,14 @@ impl OverlayApp {
                                         .show_ui(ui, |ui| {
                                             for name in &self.session.layout_names {
                                                 ui.selectable_value(
-                                                    &mut self.settings.draft.layout_name,
+                                                    &mut self.session.draft_layout_name,
                                                     name.clone(),
                                                     name,
                                                 );
                                             }
                                         });
                                 });
-                                ui.allocate_ui_with_layout(
-                                    egui::vec2(RIGHT_COLUMN_WIDTH, 20.0),
-                                    egui::Layout::left_to_right(egui::Align::Center),
-                                    |ui| {
-                                        ui.add(egui::Checkbox::new(
-                                            &mut self.settings.draft.save_settings,
-                                            "Auto-connect",
-                                        ));
-                                    },
-                                );
+                                ui.allocate_space(egui::vec2(RIGHT_COLUMN_WIDTH, 20.0));
                             });
                             ui.end_row();
                         });

@@ -1,6 +1,6 @@
 use super::state::{AppConnectionState, ZmkTransportDraft};
 use super::{OverlayApp, SETTINGS_FILE};
-use crate::connection::{ConnectedState, ConnectionTask};
+use crate::connection::{ConnectedState, ConnectionRequest, ConnectionTask};
 use crate::device_discovery::DeviceKind;
 use crate::protocols::{format_vid_pid, format_zmk_config, ZmkTransportConfig};
 use crate::settings::ProtocolType;
@@ -10,6 +10,8 @@ impl OverlayApp {
         if let Some(device) = self.connect.available_devices.get(index) {
             self.connect.selected_device_index = Some(index);
             self.session.layout_names.clear();
+            self.session.active_layout_name.clear();
+            self.session.draft_layout_name.clear();
 
             let vid_pid = format_vid_pid(device.vid, device.pid);
             match device.kind {
@@ -76,22 +78,17 @@ impl OverlayApp {
         }
     }
 
-    pub(super) fn apply_connected_state(&mut self, connected: ConnectedState, opened_from_ui: bool) {
+    pub(super) fn apply_connected_state(&mut self, connected: ConnectedState) {
         self.session.layout_names = connected.layout_names;
-        self.settings.active = connected.settings.clone();
-        self.settings.draft = connected.settings;
+        self.session.active_layout_name = connected.selected_layout_name.clone();
+        self.session.draft_layout_name = connected.selected_layout_name;
         self.session.connected_definition = Some(connected.definition);
-        self.connect.protocol_type = self.settings.active.protocol_type;
         self.session.connection = AppConnectionState::Connected {
             keyboard: connected.keyboard,
         };
         self.session.ever_connected = true;
         self.ui.settings_error = None;
         self.ui.settings_warning = None;
-
-        if opened_from_ui {
-            self.ui.settings_visible = true;
-        }
 
         self.persist_settings();
     }
@@ -142,11 +139,18 @@ impl OverlayApp {
             }
         };
 
-        let mut settings = self.settings.draft.clone();
-        settings.protocol_type = self.connect.protocol_type;
-        settings.protocol_config = protocol_config;
+        let request = ConnectionRequest {
+            protocol_type: self.connect.protocol_type,
+            protocol_config,
+            timeout: self.settings.draft.timeout,
+            layout_name: if self.session.draft_layout_name.is_empty() {
+                None
+            } else {
+                Some(self.session.draft_layout_name.clone())
+            },
+        };
 
-        self.connect.pending_connect = Some(ConnectionTask::start(settings));
+        self.connect.pending_connect = Some(ConnectionTask::start(request));
         self.ui.settings_error = None;
     }
 
@@ -158,7 +162,7 @@ impl OverlayApp {
         match task.try_finish() {
             Some(Ok(connected)) => {
                 self.connect.pending_connect = None;
-                self.apply_connected_state(connected, true);
+                self.apply_connected_state(connected);
             }
             Some(Err(e)) => {
                 self.connect.pending_connect = None;

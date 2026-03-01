@@ -11,8 +11,7 @@ impl OverlayApp {
             || self.settings.active.margin != self.settings.draft.margin
             || self.settings.active.position != self.settings.draft.position
             || self.settings.active.timeout != self.settings.draft.timeout
-            || self.settings.active.theme != self.settings.draft.theme
-            || self.settings.active.save_settings != self.settings.draft.save_settings;
+            || self.settings.active.theme != self.settings.draft.theme;
 
         if !changed {
             return;
@@ -23,7 +22,6 @@ impl OverlayApp {
         self.settings.active.position = self.settings.draft.position;
         self.settings.active.timeout = self.settings.draft.timeout;
         self.settings.active.theme = self.settings.draft.theme.clone();
-        self.settings.active.save_settings = self.settings.draft.save_settings;
 
         if let AppConnectionState::Connected { keyboard } = &self.session.connection {
             if old_timeout != self.settings.active.timeout {
@@ -35,7 +33,7 @@ impl OverlayApp {
     }
 
     pub(super) fn apply_live_layout_settings(&mut self) {
-        if self.settings.active.layout_name == self.settings.draft.layout_name {
+        if self.session.active_layout_name == self.session.draft_layout_name {
             return;
         }
 
@@ -43,23 +41,23 @@ impl OverlayApp {
             self.connect.protocol_type,
             ProtocolType::Via | ProtocolType::Vial
         ) {
-            self.settings.draft.layout_name = self.settings.active.layout_name.clone();
+            self.session.draft_layout_name = self.session.active_layout_name.clone();
             return;
         }
 
         let Some(definition) = self.session.connected_definition.as_ref() else {
             self.ui.settings_error =
                 Some("Missing keyboard definition for live layout switch".to_string());
-            self.settings.draft.layout_name = self.settings.active.layout_name.clone();
+            self.session.draft_layout_name = self.session.active_layout_name.clone();
             return;
         };
 
-        let selected_layout = self.settings.draft.layout_name.clone();
+        let selected_layout = self.session.draft_layout_name.clone();
         let next_layout = match definition.get_layout(&selected_layout) {
             Ok(layout) => layout,
             Err(e) => {
                 self.ui.settings_error = Some(format!("Failed to switch layout: {e}"));
-                self.settings.draft.layout_name = self.settings.active.layout_name.clone();
+                self.session.draft_layout_name = self.session.active_layout_name.clone();
                 return;
             }
         };
@@ -69,8 +67,7 @@ impl OverlayApp {
         };
 
         keyboard.set_layout(next_layout);
-        self.settings.active.layout_name = selected_layout;
-        self.persist_settings();
+        self.session.active_layout_name = selected_layout;
     }
 
     pub(super) fn get_anchor_params(&self) -> (Align2, egui::Vec2) {

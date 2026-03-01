@@ -148,13 +148,16 @@ pub fn connect_protocol(
             Ok(Box::new(protocol))
         }
         ProtocolType::Zmk => {
-            let (vid, pid, _transport) = parse_zmk_config(protocol_config)?;
-            match ZmkProtocol::connect_cached(vid, pid) {
-                Ok(protocol) => Ok(Box::new(protocol)),
-                Err(_) => Err(
-                    "No cached ZMK data. Use the settings window to connect via ZMK Studio.".into(),
-                ),
-            }
+            let (vid, pid, transport) = parse_zmk_config(protocol_config)?;
+            let zmk_transport = match transport {
+                ZmkTransportConfig::Serial(port_name) => {
+                    zmk_rpc::ZmkTransport::SerialPort(port_name)
+                }
+                ZmkTransportConfig::Ble(device_id) => zmk_rpc::ZmkTransport::BleDevice(device_id),
+            };
+            let zmk_data = zmk_rpc::fetch_zmk_data(&zmk_transport)?;
+            let protocol = ZmkProtocol::connect_live(vid, pid, &zmk_data)?;
+            Ok(Box::new(protocol))
         }
     }
 }

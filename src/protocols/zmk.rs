@@ -3,52 +3,8 @@ use super::{Key, KeyboardDefinition, KeyboardLayout, KeyboardProtocol};
 use crate::layout_key::LayoutKey;
 use qmk_via_api::api::KeyboardApi;
 use std::error::Error;
-use std::path::PathBuf;
 
 type LayerKeys3d = Vec<Vec<Vec<Option<LayoutKey>>>>;
-
-#[derive(serde::Serialize, serde::Deserialize)]
-pub struct ZmkCache {
-    pub definition: KeyboardDefinition,
-    pub layout_keys: LayerKeys3d,
-    pub layer_count: usize,
-}
-
-impl ZmkCache {
-    pub fn cache_path(vid: u16, pid: u16) -> PathBuf {
-        PathBuf::from(format!("zmk_cache_{:04x}_{:04x}.json", vid, pid))
-    }
-
-    pub fn load(vid: u16, pid: u16) -> Option<Self> {
-        let path = Self::cache_path(vid, pid);
-        let data = std::fs::read_to_string(&path).ok()?;
-        serde_json::from_str(&data).ok()
-    }
-
-    pub fn save(&self, vid: u16, pid: u16) -> Result<(), Box<dyn Error>> {
-        let path = Self::cache_path(vid, pid);
-        let data = serde_json::to_string_pretty(self)?;
-        std::fs::write(&path, data)?;
-        Ok(())
-    }
-}
-
-pub fn save_and_get_layout_names(
-    vid: u16,
-    pid: u16,
-    zmk_data: &ZmkData,
-) -> Result<Vec<String>, Box<dyn Error>> {
-    let (definition, layout_keys, layer_count) = build_from_zmk_data(vid, pid, zmk_data)?;
-
-    let cache = ZmkCache {
-        definition: definition.clone(),
-        layout_keys,
-        layer_count,
-    };
-    cache.save(vid, pid)?;
-
-    Ok(definition.get_layout_names())
-}
 
 pub struct ZmkProtocol {
     api: KeyboardApi,
@@ -58,39 +14,20 @@ pub struct ZmkProtocol {
 }
 
 impl ZmkProtocol {
-    pub fn connect_cached(vid: u16, pid: u16) -> Result<Self, Box<dyn Error>> {
-        let cache = ZmkCache::load(vid, pid)
-            .ok_or_else(|| format!("No cached data for {:04x}:{:04x}", vid, pid))?;
+    pub fn connect_live(vid: u16, pid: u16, zmk_data: &ZmkData) -> Result<Self, Box<dyn Error>> {
+        let (definition, layout_keys, layer_count) = build_from_zmk_data(vid, pid, zmk_data)?;
+        let api = KeyboardApi::new(vid, pid, 0xff60).map_err(|e| {
+            std::io::Error::other(format!(
+                "Failed to connect HID ({vid:04x}:{pid:04x}): {e}"
+            ))
+        })?;
 
-        let mut last_err = String::new();
-        for attempt in 0..5 {
-            if attempt > 0 {
-                let delay = std::time::Duration::from_millis(300 * attempt as u64);
-                eprintln!(
-                    "HID connect attempt {} failed, retrying in {:?}...",
-                    attempt, delay
-                );
-                std::thread::sleep(delay);
-            }
-            match KeyboardApi::new(vid, pid, 0xff60) {
-                Ok(api) => {
-                    return Ok(Self {
-                        api,
-                        definition: cache.definition,
-                        layout_keys: cache.layout_keys,
-                        layer_count: cache.layer_count,
-                    });
-                }
-                Err(e) => {
-                    last_err = format!("{e}");
-                }
-            }
-        }
-
-        Err(
-            format!("Failed to connect HID ({vid:04x}:{pid:04x}) after 5 attempts: {last_err}")
-                .into(),
-        )
+        Ok(Self {
+            api,
+            definition,
+            layout_keys,
+            layer_count,
+        })
     }
 }
 
@@ -128,7 +65,6 @@ fn build_from_zmk_data(
         return Err("Device has no physical layouts".into());
     }
 
-    // Build KeyboardDefinition from currently active physical layout only.
     let active_layout = proto_layouts
         .get(active_idx)
         .ok_or_else(|| format!("Invalid active layout index: {active_idx}"))?;
@@ -159,9 +95,7 @@ fn build_from_zmk_data(
     };
 
     let layer_count = data.layer_count;
-
     let active_key_count = num_keys;
-
     let mut layout_keys_3d = Vec::with_capacity(layer_count);
 
     for layer_keys in &data.layout_keys {
