@@ -1,76 +1,77 @@
 # KeyPeek <img src="resources/icon.svg" align="right" width="15%"/>
 
-KeyPeek provides a live on‑screen overlay of your keyboard, mirroring the active base and momentary layers. It is especially helpful when learning complex multi‑layer layouts or using boards with missing legends. The overlay updates instantly on layer changes, using VIA to query the current keymap and layer state so the view always matches the firmware.
+KeyPeek provides a live on-screen overlay of your keyboard, mirroring the active base and momentary layers. It is especially useful when learning complex multi-layer layouts or using boards with missing legends. The overlay updates instantly when layers change, so the view always matches your firmware state.
 
-It reflects the actual active layer stack, i.e. base and momentary layers, so the shown keys always correspond to the current effective layout.
+It reflects the active layer stack (base + momentary), so the shown keys always match the current effective layout.
+It supports QMK, Vial, and ZMK keyboards.
 
 <img src=".github/assets/demo.gif" alt="KeyPeek in action">
 
 ## Setup
 
-Stock QMK does not expose layer change events to the host, so a minimal firmware change is required to send layer state updates via RAW HID.
+KeyPeek requires a small firmware module because stock QMK/Vial/ZMK firmware does not expose live layer-change events.
+The module adds that event stream over the device connection, so the overlay stays in sync with your active layers in real time.
 
-- Add the following to your `rules.mk` file to enable VIA and RAW HID support:
-  ```
-  VIA_ENABLE = yes
-  RAW_ENABLE = yes
-  ```
-- Add the following to your `config.h` file to enable active layer reporting:
-  ```c
-  #include "raw_hid.h"
-  #include "usb_descriptor.h"
-  
-  // Notify about layer changes
-  layer_state_t layer_state_set_user(layer_state_t state) {
-      uint8_t data[RAW_EPSIZE] = {0};
-      data[0] = 0xFF;
-      data[1] = sizeof(layer_state_t);
-      memcpy(&data[2], &default_layer_state, sizeof(layer_state_t));
-      memcpy(&data[2 + sizeof(layer_state_t)], &state, sizeof(layer_state_t));
-      raw_hid_send(data, RAW_EPSIZE);
-      return state;
-  }
-  ```
-- Optionally, if you want the currently pressed keys to be highlighted, include the following:
-  ```c
-  // Notify about key press/release events
-  bool process_record_user(uint16_t keycode, keyrecord_t *record) {
-      static uint8_t data[RAW_EPSIZE];
-      data[0] = 0xF1;
-      data[1] = record->event.key.row;
-      data[2] = record->event.key.col;
-      data[3] = record->event.pressed ? 1 : 0;
-      raw_hid_send(data, RAW_EPSIZE);
-      return true;
-  }
-  ```
-- Compile and flash the modified firmware to your keyboard
-  ```sh
-  qmk compile -kb <your_keyboard> -km <your_keymap>
-  ```
-- Obtain the keyboard information json file:
-  ```sh
-  qmk info -kb <your_keyboard> -m -f json > keyboard_info.json
-  ```
-  This is the input file for KeyPeek containing the keyboard layout information required for rendering the overlay.
+### QMK and Vial
+
+1. In your QMK userspace (or `qmk_firmware`) root, add the module repo:
+   ```sh
+   mkdir -p modules
+   git submodule add https://github.com/srwi/qmk-modules.git modules/srwi
+   git submodule update --init --recursive
+   ```
+2. In your keymap folder, add `srwi/keypeek_layer_notify` to `keymap.json`:
+   ```json
+   {
+     "modules": [
+       "srwi/keypeek_layer_notify"
+     ]
+   }
+   ```
+3. In the same keymap folder, enable RAW HID in `rules.mk`:
+   ```make
+   RAW_ENABLE = yes
+   ```
+4. Build and flash your firmware:
+   ```sh
+   qmk compile -kb <your_keyboard> -km <your_keymap>
+   ```
+5. QMK (VIA) only: export `keyboard_info.json`:
+   ```sh
+   qmk info -kb <your_keyboard> -m -f json > keyboard_info.json
+   ```
+   This is only required for QMK (VIA), because VIA does not provide physical layout data directly over the connection, while Vial does.
+
+### ZMK
+
+1. Add the KeyPeek module to your `zmk-config/config/west.yml`:
+   ```yaml
+   manifest:
+     remotes:
+       - name: zmkfirmware
+         url-base: https://github.com/zmkfirmware
+       - name: srwi
+         url-base: https://github.com/srwi
+     projects:
+       - name: zmk
+         remote: zmkfirmware
+         revision: main
+         import: app/west.yml
+       - name: zmk-keypeek-layer-notifier
+         remote: srwi
+         revision: main
+   ```
+2. Run `west update` in your `zmk-config` workspace to fetch the module.
+3. Enable ZMK Studio in `build.yaml` for the central (USB-connected) side by adding `snippet: studio-rpc-usb-uart` and `cmake-args: -DCONFIG_ZMK_STUDIO=y`, then build and flash.
+4. KeyPeek reads layout and keymap directly from the device for ZMK.
 
 ## Usage
 
-The only input required for KeyPeek is the keyboard information json file obtained in the previous step. Make sure to select the correct layout for your keyboard.
+Devices are scanned when the app starts. For QMK you will be prompted to select the `keyboard_info.json` generated from your keymap when you connect. For Vial and ZMK, just select the connected device from the dropdown, since they provide layout information directly.
 
-<img src=".github/assets/settings_window.png" alt="Settings window screenshot" width="60%">
+Appearance settings are saved to `settings.ini` in the app directory.
 
-For ZMK keyboards, select a ZMK HID device, then choose a ZMK transport:
-- `Serial` for wired ZMK access (`serial:<port>`)
-- `Bluetooth` for BLE ZMK access (`ble:<device_id>`)
-
-Saved ZMK settings use strict tagged transport config:
-- `vid:pid|serial:<port>`
-- `vid:pid|ble:<device_id>`
-
-Legacy untagged ZMK settings are intentionally unsupported.
-
-When "Remember settings" is checked, the selected options are saved to `settings.ini`.
+<img src=".github/assets/settings_window.png" alt="KeyPeek settings window">
 
 # License & Attribution
 
