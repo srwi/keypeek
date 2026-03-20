@@ -85,10 +85,9 @@ The module adds that event stream over the device connection, so the overlay sta
       snippet: studio-rpc-usb-uart # <-- required for ZMK Studio support
   ```
 
-3. Enable Raw HID and ZMK Studio support in your `.conf` file:
+3. Enable ZMK Studio support in your `.conf` file:
 
   ```conf
-  CONFIG_RAW_HID=y
   CONFIG_ZMK_STUDIO=y
   ```
 
