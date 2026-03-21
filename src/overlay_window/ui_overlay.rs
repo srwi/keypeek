@@ -190,6 +190,7 @@ impl OverlayApp {
         Window::new("KeyPeek")
             .open(&mut window_open)
             .auto_sized()
+            .interactable(false)
             .anchor(anchor_params.0, anchor_params.1)
             .frame(egui::Frame::NONE.fill(egui::Color32::TRANSPARENT))
             .fade_out(true)
