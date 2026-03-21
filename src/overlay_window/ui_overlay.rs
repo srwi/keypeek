@@ -15,7 +15,6 @@ impl OverlayApp {
         color: egui::Color32,
     ) -> LabelGalleys {
         let size = self.settings.active.size as f32;
-        let font_scale = self.settings.active.font_size_multiplier;
         let create_galley =
             |text: String, fid: egui::FontId| ui.painter().layout_no_wrap(text, fid, color);
         let fits_width =
@@ -23,7 +22,7 @@ impl OverlayApp {
         let max_width = rect.width() * 0.85;
 
         if let Some(symbol) = &key.symbol {
-            let symbol_font = egui::FontId::proportional(0.33 * size * font_scale);
+            let symbol_font = egui::FontId::proportional(font.size * 1.32);
             let symbol_galley = create_galley(symbol.clone(), symbol_font);
 
             if !key.tap.is_empty() {
@@ -76,6 +75,30 @@ impl OverlayApp {
         } else {
             key.tap.full.clone()
         };
+
+        if self.settings.active.auto_fit_before_ellipsis {
+            let max_height = rect.height() * 0.85;
+            let full_galley = create_galley(key.tap.full.clone(), font.clone());
+            let width_scale = if full_galley.rect.width() > 0.0 {
+                max_width / full_galley.rect.width()
+            } else {
+                1.0
+            };
+            let height_scale = if full_galley.rect.height() > 0.0 {
+                max_height / full_galley.rect.height()
+            } else {
+                1.0
+            };
+            let scale = width_scale.min(height_scale).min(1.0);
+            let fitted_text = create_galley(
+                key.tap.full.clone(),
+                egui::FontId::proportional(font.size * scale),
+            );
+            return LabelGalleys {
+                symbol: None,
+                text: Some(fitted_text),
+            };
+        }
 
         while truncated.len() > 1 {
             truncated.pop();

@@ -211,6 +211,13 @@ impl OverlayApp {
                             );
                             ui.end_row();
 
+                            ui.label("Auto-fit long labels");
+                            ui.checkbox(
+                                &mut self.settings.draft.auto_fit_before_ellipsis,
+                                "Fit label instead of ellipses",
+                            );
+                            ui.end_row();
+
                             ui.label("Display duration");
                             let mut timeout_ui =
                                 Self::timeout_to_ui_value(self.settings.draft.timeout);

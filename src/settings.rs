@@ -165,6 +165,7 @@ impl Default for ThemeSettings {
 pub struct Settings {
     pub size: i32,
     pub font_size_multiplier: f32,
+    pub auto_fit_before_ellipsis: bool,
     pub position: WindowPosition,
     pub timeout: i64,
     pub margin: u32,
@@ -176,6 +177,7 @@ impl Default for Settings {
         Self {
             size: 60,
             font_size_multiplier: 1.0,
+            auto_fit_before_ellipsis: false,
             position: WindowPosition::BottomRight,
             timeout: 2000,
             margin: 10,
@@ -192,6 +194,10 @@ impl Settings {
         section.set(
             "font_size_multiplier",
             self.font_size_multiplier.to_string(),
+        );
+        section.set(
+            "auto_fit_before_ellipsis",
+            self.auto_fit_before_ellipsis.to_string(),
         );
         section.set("position", self.position.to_string());
         section.set("timeout", self.timeout.to_string());
@@ -213,6 +219,9 @@ impl Settings {
         if let Some(val) = section.get("font_size_multiplier") {
             let parsed = val.parse::<f32>().unwrap_or(s.font_size_multiplier);
             s.font_size_multiplier = parsed.clamp(0.1, 2.0);
+        }
+        if let Some(val) = section.get("auto_fit_before_ellipsis") {
+            s.auto_fit_before_ellipsis = val.parse().unwrap_or(s.auto_fit_before_ellipsis);
         }
         if let Some(val) = section.get("position") {
             if let Ok(parsed) = val.parse() {
