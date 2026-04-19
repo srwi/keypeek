@@ -1,5 +1,5 @@
 use super::state::{AppConnectionState, ConnectionDraft, ZmkTransportDraft};
-use super::{OverlayApp, SETTINGS_FILE};
+use super::OverlayApp;
 use crate::connection::{ConnectedState, ConnectionRequest, ConnectionTask};
 use crate::device_discovery::DeviceKind;
 use crate::protocols::{ConnectionSpec, ZmkTransportConfig};
@@ -103,7 +103,7 @@ impl OverlayApp {
     }
 
     pub(super) fn persist_settings(&self) {
-        if let Err(e) = self.settings.active.save_to_file(SETTINGS_FILE) {
+        if let Err(e) = self.settings.active.save() {
             eprintln!("Failed to save settings: {e}");
         }
     }

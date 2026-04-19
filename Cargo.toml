@@ -10,6 +10,7 @@ edition = "2021"
 
 [dependencies]
 rust-ini = "0.21.3"
+dirs = "6.0.0"
 tray-icon = "0.22.0"
 eframe = "0.33.3"
 egui_extras = { version = "0.33.3", features = ["all_loaders"] }

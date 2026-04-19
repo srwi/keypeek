@@ -18,10 +18,8 @@ use overlay_window::OverlayApp;
 use settings::Settings;
 use ui_wake::UiWake;
 
-const SETTINGS_FILE: &str = "settings.ini";
-
 fn main() -> Result<(), eframe::Error> {
-    let settings = Settings::load_from_file(SETTINGS_FILE).unwrap_or_default();
+    let settings = Settings::load().unwrap_or_default();
     let available_devices = discover_devices();
 
     let options = eframe::NativeOptions {

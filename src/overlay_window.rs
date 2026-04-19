@@ -14,8 +14,6 @@ use state::{
     AppConnectionState, ConnectDraftState, ConnectionDraft, SessionState, SettingsState, UiState,
 };
 
-const SETTINGS_FILE: &str = "settings.ini";
-
 pub struct OverlayApp {
     _tray_icon: tray_icon::TrayIcon,
     ui_wake: UiWake,

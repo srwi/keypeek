@@ -1,5 +1,7 @@
 use ini::Ini;
 use std::fmt;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -187,7 +189,42 @@ impl Default for Settings {
 }
 
 impl Settings {
-    pub fn save_to_file(&self, path: &str) -> std::io::Result<()> {
+    pub fn config_file_path() -> PathBuf {
+        Self::config_dir().join("settings.ini")
+    }
+
+    fn config_dir() -> PathBuf {
+        let mut path = dirs::config_dir()
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+
+        path.push(Self::app_config_dir_name());
+        path
+    }
+
+    #[cfg(target_os = "linux")]
+    fn app_config_dir_name() -> &'static str {
+        "keypeek"
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn app_config_dir_name() -> &'static str {
+        "KeyPeek"
+    }
+
+    pub fn save(&self) -> std::io::Result<()> {
+        let path = Self::config_file_path();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        self.save_to_file(&path)
+    }
+
+    pub fn load() -> Option<Self> {
+        let path = Self::config_file_path();
+        Self::load_from_file(&path).or_else(|| Self::load_from_file("settings.ini"))
+    }
+
+    pub fn save_to_file(&self, path: impl AsRef<Path>) -> std::io::Result<()> {
         let mut conf = Ini::new();
         let mut section = conf.with_section(Some("settings"));
         section.set("size", self.size.to_string());
@@ -209,7 +246,7 @@ impl Settings {
         conf.write_to_file(path)
     }
 
-    pub fn load_from_file(path: &str) -> Option<Self> {
+    pub fn load_from_file(path: impl AsRef<Path>) -> Option<Self> {
         let conf = Ini::load_from_file(path).ok()?;
         let section = conf.section(Some("settings"))?;
         let mut s = Settings::default();
