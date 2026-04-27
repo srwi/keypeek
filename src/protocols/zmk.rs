@@ -2,16 +2,15 @@ use super::layout_geometry::flattened_top_left_after_center_rotation;
 use super::zmk_rpc::{self, ZmkData, ZmkTransport};
 use super::{Key, KeyboardDefinition, KeyboardLayout, KeyboardProtocol};
 use crate::layout_key::LayoutKey;
-use hidapi::HidApi;
-use qmk_via_api::api::KeyboardApi;
+use hidapi::{HidApi, HidDevice};
 use std::error::Error;
 use std::time::{Duration, Instant};
 
 type LayerKeys3d = Vec<Vec<Vec<Option<LayoutKey>>>>;
-const VIA_USAGE_PAGE: u16 = 0xff60;
+const ZMK_USAGE_PAGE: u16 = 0xff60;
 
 pub struct ZmkProtocol {
-    api: KeyboardApi,
+    hid_device: HidDevice,
     definition: KeyboardDefinition,
     layout_keys: LayerKeys3d,
     layer_count: usize,
@@ -24,9 +23,9 @@ impl ZmkProtocol {
         transport: &ZmkTransport,
     ) -> Result<Self, Box<dyn Error>> {
         let zmk_data = zmk_rpc::fetch_zmk_data(transport)?;
-        wait_for_hid_reappearance(vid, pid, VIA_USAGE_PAGE, Duration::from_secs(8))
+        wait_for_hid_reappearance(vid, pid, ZMK_USAGE_PAGE, Duration::from_secs(8))
             .map_err(std::io::Error::other)?;
-        let api = open_keyboard_api(vid, pid).map_err(|e| {
+        let hid_device = open_zmk_hid(vid, pid).map_err(|e| {
             std::io::Error::other(format!(
                 "Failed to connect HID ({vid:04x}:{pid:04x}) after reappearance: {e}"
             ))
@@ -34,7 +33,7 @@ impl ZmkProtocol {
         let (definition, layout_keys, layer_count) = build_from_zmk_data(vid, pid, zmk_data)?;
 
         Ok(Self {
-            api,
+            hid_device,
             definition,
             layout_keys,
             layer_count,
@@ -42,8 +41,28 @@ impl ZmkProtocol {
     }
 }
 
-fn open_keyboard_api(vid: u16, pid: u16) -> Result<KeyboardApi, String> {
-    KeyboardApi::new(vid, pid, VIA_USAGE_PAGE).map_err(|e| e.to_string())
+fn open_zmk_hid(vid: u16, pid: u16) -> Result<HidDevice, String> {
+    let api = HidApi::new().map_err(|e| format!("hidapi init failed: {e}"))?;
+    // Unlike QMK/Vial, ZMK only needs a plain raw-HID reader here. The VIA helper sends an
+    // eager GetProtocolVersion command on open, but ZMK raw-HID devices can emit async layer/key
+    // notifications without implementing the VIA command/response handshake.
+    let path = api
+        .device_list()
+        .find(|device| {
+            device.vendor_id() == vid
+                && device.product_id() == pid
+                && device.usage_page() == ZMK_USAGE_PAGE
+        })
+        .map(|device| device.path().to_owned())
+        .ok_or_else(|| {
+            format!(
+                "could not find HID interface for {:04x}:{:04x} usage 0x{:04x}",
+                vid, pid, ZMK_USAGE_PAGE
+            )
+        })?;
+
+    api.open_path(&path)
+        .map_err(|e| e.to_string())
 }
 
 fn wait_for_hid_reappearance(
@@ -89,9 +108,11 @@ impl KeyboardProtocol for ZmkProtocol {
     }
 
     fn hid_read(&self) -> Result<Vec<u8>, Box<dyn Error>> {
-        self.api
-            .hid_read()
+        let mut buffer = vec![0; 32];
+        self.hid_device
+            .read(&mut buffer)
             .map_err(|e| format!("HID read error: {e}").into())
+            .map(|_| buffer)
     }
 }
 
