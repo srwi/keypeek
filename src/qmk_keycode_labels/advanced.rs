@@ -6,19 +6,40 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
     match keycode_bytes {
         input_bytes if QK_MODS.contains(&input_bytes) => {
             let keycode = input_bytes & 0xff;
-            let keycode_str = get_basic_layout_key(keycode)
-                .map(|k| k.tap.full)
-                .unwrap_or_else(|| format!("0x{:02X}", keycode));
+            let tap_key = get_basic_layout_key(keycode).unwrap_or_default();
+            let keycode_str = tap_key.tap.full.clone();
 
             let input_modifiers = input_bytes & 0x1f00;
+
+            // For pure shift modifiers, try to show the shifted character directly
+            if input_modifiers == QK_LSFT || input_modifiers == QK_RSFT {
+                if let Some(pos) = keycode_str.find('\n') {
+                    return Some(LayoutKey {
+                        tap: Label::new(keycode_str[..pos].to_string()),
+                        ..tap_key
+                    });
+                }
+            }
 
             // Try to find exact matches first
             if let Some((name, _)) = MODIFIER_KEY_TO_VALUE
                 .iter()
                 .find(|(_, v)| *v == input_modifiers)
             {
+                let mut display_name = name.to_string();
+                // Use our new symbols if it's a simple modifier
+                if input_modifiers == QK_LCTL || input_modifiers == QK_RCTL {
+                    display_name = "\u{2388}".to_string();
+                } else if input_modifiers == QK_LALT || input_modifiers == QK_RALT {
+                    display_name = egui_phosphor::regular::OPTION.to_string();
+                } else if input_modifiers == QK_LGUI || input_modifiers == QK_RGUI {
+                    display_name = egui_phosphor::fill::DIAMOND.to_string();
+                } else if input_modifiers == QK_LSFT || input_modifiers == QK_RSFT {
+                    display_name = egui_phosphor::regular::ARROW_FAT_UP.to_string();
+                }
+
                 return Some(LayoutKey {
-                    tap: Label::new(format!("{}({})", name, keycode_str)),
+                    tap: Label::new(format!("{}{}", display_name, keycode_str)),
                     kind: KeycodeKind::Modifier,
                     ..Default::default()
                 });
@@ -46,24 +67,24 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
                 .collect();
 
             if !enabled.is_empty() {
-                // Build nested parentheses style, e.g. LCTL(LALT(A))
-                let mut nested_mods = String::new();
-                for (i, part) in enabled.iter().enumerate() {
-                    if i > 0 {
-                        nested_mods.push('(');
-                    }
-                    nested_mods.push_str(part);
+                // Build compact symbol style, e.g. ⎈⌥A
+                let mut compact_label = String::new();
+                for part in enabled.iter() {
+                    let sym = match *part {
+                        "LCTL" | "RCTL" | "C" => "\u{2388}",
+                        "LSFT" | "RSFT" | "S" => egui_phosphor::regular::ARROW_FAT_UP,
+                        "LALT" | "RALT" | "A" | "ALGR" => egui_phosphor::regular::OPTION,
+                        "LGUI" | "RGUI" | "G" | "LCMD" | "LWIN" | "RCMD" | "RWIN" => {
+                            egui_phosphor::fill::DIAMOND
+                        }
+                        _ => *part,
+                    };
+                    compact_label.push_str(sym);
                 }
-                if !nested_mods.is_empty() {
-                    nested_mods.push('(');
-                }
-                nested_mods.push_str(&keycode_str);
-                for _ in 0..enabled.len() {
-                    nested_mods.push(')');
-                }
+                compact_label.push_str(&keycode_str);
 
                 return Some(LayoutKey {
-                    tap: Label::new(nested_mods),
+                    tap: Label::new(compact_label),
                     kind: KeycodeKind::Modifier,
                     ..Default::default()
                 });
