@@ -1,3 +1,4 @@
+use crate::protocols::ConnectionSpec;
 use ini::Ini;
 use std::fmt;
 use std::fs;
@@ -172,6 +173,8 @@ pub struct Settings {
     pub timeout: i64,
     pub margin: u32,
     pub theme: ThemeSettings,
+    pub show_on_layer_change: bool,
+    pub last_connection: Option<ConnectionSpec>,
 }
 
 impl Default for Settings {
@@ -184,6 +187,8 @@ impl Default for Settings {
             timeout: 2000,
             margin: 10,
             theme: ThemeSettings::default(),
+            show_on_layer_change: true,
+            last_connection: None,
         }
     }
 }
@@ -239,6 +244,15 @@ impl Settings {
         section.set("position", self.position.to_string());
         section.set("timeout", self.timeout.to_string());
         section.set("margin", self.margin.to_string());
+        section.set(
+            "show_on_layer_change",
+            self.show_on_layer_change.to_string(),
+        );
+        if let Some(conn) = &self.last_connection {
+            if let Ok(json) = serde_json::to_string(conn) {
+                section.set("last_connection", json);
+            }
+        }
         for (index, color) in self.theme.layer_colors.iter().enumerate() {
             section.set(format!("layer_color_{index}"), color.to_string());
         }
@@ -275,6 +289,12 @@ impl Settings {
         }
         if let Some(val) = section.get("margin") {
             s.margin = val.parse().unwrap_or(s.margin);
+        }
+        if let Some(val) = section.get("show_on_layer_change") {
+            s.show_on_layer_change = val.parse().unwrap_or(s.show_on_layer_change);
+        }
+        if let Some(val) = section.get("last_connection") {
+            s.last_connection = serde_json::from_str(val).ok();
         }
         for index in 0..s.theme.layer_colors.len() {
             if let Some(val) = section.get(&format!("layer_color_{index}")) {

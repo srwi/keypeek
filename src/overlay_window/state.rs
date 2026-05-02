@@ -3,6 +3,8 @@ use crate::device_discovery::DiscoveredDevice;
 use crate::keyboard::Keyboard;
 use crate::protocols::KeyboardDefinition;
 use crate::settings::{ProtocolType, Settings};
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use eframe::egui;
 use egui_file_dialog::FileDialog;
@@ -45,6 +47,8 @@ pub struct UiState {
     pub settings_error: Option<String>,
     pub settings_warning: Option<String>,
     pub mouse_passthrough: Option<bool>,
+    pub manual_visible: Arc<AtomicBool>,
+    pub force_settings: Arc<AtomicBool>,
     #[cfg(target_os = "macos")]
     pub macos_maximized: bool,
     pub file_dialog: FileDialog,

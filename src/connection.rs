@@ -43,6 +43,7 @@ fn format_connect_error(spec: &ConnectionSpec, error_text: &str) -> String {
 }
 
 pub struct ConnectedState {
+    pub spec: ConnectionSpec,
     pub definition: KeyboardDefinition,
     pub layout_names: Vec<String>,
     pub selected_layout_name: String,
@@ -94,6 +95,7 @@ pub fn build_connected_state(
     .map_err(|e| format!("Failed to create keyboard: {e}"))?;
 
     Ok(ConnectedState {
+        spec: request.spec,
         definition,
         layout_names,
         selected_layout_name,

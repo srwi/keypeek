@@ -99,6 +99,13 @@ impl OverlayApp {
         self.ui.settings_error = None;
         self.ui.settings_warning = None;
 
+        if let AppConnectionState::Connected { keyboard } = &self.session.connection {
+            *keyboard.show_on_layer_change.lock().unwrap() =
+                self.settings.active.show_on_layer_change;
+        }
+
+        self.settings.active.last_connection = Some(connected.spec);
+        self.settings.draft.last_connection = self.settings.active.last_connection.clone();
         self.persist_settings();
     }
 
@@ -133,6 +140,21 @@ impl OverlayApp {
         }
 
         self.begin_connect_with_current_draft();
+    }
+
+    pub(super) fn begin_connect_with_spec(&mut self, spec: ConnectionSpec) {
+        if self.connect.pending_connect.is_some() {
+            return;
+        }
+
+        let request = ConnectionRequest {
+            spec,
+            timeout: self.settings.draft.timeout,
+            layout_name: None,
+        };
+
+        self.connect.pending_connect = Some(ConnectionTask::start(request, self.ui_wake.clone()));
+        self.ui.settings_error = None;
     }
 
     fn begin_connect_with_current_draft(&mut self) {

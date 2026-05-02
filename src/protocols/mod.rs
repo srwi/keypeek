@@ -78,13 +78,13 @@ pub trait KeyboardProtocol: Send {
     fn hid_read(&self) -> Result<Vec<u8>, Box<dyn Error>>;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ZmkTransportConfig {
     Serial(String),
     Ble(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ConnectionSpec {
     Via {
         json_path: String,

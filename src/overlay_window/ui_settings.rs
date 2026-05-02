@@ -236,6 +236,13 @@ impl OverlayApp {
                                 "Fit long labels to available space",
                             );
                             ui.end_row();
+
+                            ui.label("Show on layer change");
+                            ui.checkbox(
+                                &mut self.settings.draft.show_on_layer_change,
+                                "Automatically show overlay when switching layers",
+                            );
+                            ui.end_row();
                         });
                 });
 
