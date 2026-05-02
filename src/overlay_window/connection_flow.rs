@@ -109,6 +109,19 @@ impl OverlayApp {
         self.persist_settings();
     }
 
+    pub(super) fn disconnect(&mut self) {
+        self.session.connection = AppConnectionState::Disconnected;
+        self.session.layout_names.clear();
+        self.session.active_layout_name.clear();
+        self.session.draft_layout_name.clear();
+        self.session.connected_definition = None;
+        self.session.ever_connected = false;
+
+        self.settings.active.last_connection = None;
+        self.settings.draft.last_connection = None;
+        self.persist_settings();
+    }
+
     pub(super) fn persist_settings(&self) {
         if let Err(e) = self.settings.active.save() {
             eprintln!("Failed to save settings: {e}");
@@ -116,17 +129,6 @@ impl OverlayApp {
     }
 
     pub(super) fn connect_from_ui(&mut self) {
-        if matches!(
-            self.session.connection,
-            AppConnectionState::Connected { .. }
-        ) {
-            self.ui.settings_warning = Some(
-                "Switching device/protocol/layout requires app restart in this version."
-                    .to_string(),
-            );
-            return;
-        }
-
         if self.connect.selected_device_index.is_none() {
             self.ui.settings_error = Some("No device selected".to_string());
             return;
