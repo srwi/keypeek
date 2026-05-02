@@ -139,6 +139,7 @@ fn main() -> Result<(), eframe::Error> {
 
             let mut fonts = egui::FontDefinitions::default();
             egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+            egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Fill);
             cc.egui_ctx.set_fonts(fonts);
 
             let ui_wake = UiWake::from_ctx(&cc.egui_ctx);
