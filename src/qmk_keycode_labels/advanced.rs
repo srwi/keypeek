@@ -160,6 +160,12 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
 
 fn mod_value_to_string(mod_mask: u16) -> String {
     let mut mods = Vec::new();
+
+    // QMK uses a 5-bit format for many advanced keycodes:
+    // Bits 0-3: LCTL, LSFT, LALT, LGUI
+    // Bit 4: Right-side flag
+    // Since we use the same symbols for Left and Right, we only need to check bits 0-3.
+
     if mod_mask & MOD_LCTL != 0 {
         mods.push("\u{2388}");
     }
@@ -172,22 +178,13 @@ fn mod_value_to_string(mod_mask: u16) -> String {
     if mod_mask & MOD_LGUI != 0 {
         mods.push(egui_phosphor::fill::DIAMOND);
     }
-    if mod_mask & MOD_RCTL != 0 {
-        mods.push("\u{2388}");
-    }
-    if mod_mask & MOD_RSFT != 0 {
-        mods.push(egui_phosphor::regular::ARROW_FAT_UP);
-    }
-    if mod_mask & MOD_RALT != 0 {
-        mods.push(egui_phosphor::regular::OPTION);
-    }
-    if mod_mask & MOD_RGUI != 0 {
-        mods.push(egui_phosphor::fill::DIAMOND);
-    }
 
     if mods.is_empty() {
         "None".to_string()
     } else {
-        mods.into_iter().map(|s| s.to_string()).collect::<Vec<_>>().join("")
+        mods.into_iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+            .join("")
     }
 }

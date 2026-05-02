@@ -23,6 +23,10 @@ pub fn get_layer_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             let l = (b - QK_LAYER_TAP_TOGGLE.start) as u8;
             (format!("TT({})", l), Some(l))
         }
+        b if QK_TAP_DANCE.contains(&b) => {
+            let n = b - QK_TAP_DANCE.start;
+            (format!("TD({})", n), None)
+        }
         b if QK_DEF_LAYER.contains(&b) => {
             let l = (b - QK_DEF_LAYER.start) as u8;
             (format!("DF({})", l), None)
@@ -43,4 +47,21 @@ pub fn get_layer_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
         layer_ref,
         ..Default::default()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_layer_layout_key_tap_dance() {
+        let key = get_layer_layout_key(0x5700).unwrap();
+        assert_eq!(key.tap.full, "TD(0)");
+
+        let key = get_layer_layout_key(0x570A).unwrap();
+        assert_eq!(key.tap.full, "TD(10)");
+
+        let key = get_layer_layout_key(0x571F).unwrap();
+        assert_eq!(key.tap.full, "TD(31)");
+    }
 }
