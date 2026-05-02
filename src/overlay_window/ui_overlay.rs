@@ -16,8 +16,20 @@ impl OverlayApp {
     ) -> LabelGalleys {
         let size = self.settings.active.size as f32;
         let font_scale = self.settings.active.font_size_multiplier;
-        let create_galley =
-            |text: String, fid: egui::FontId| ui.painter().layout_no_wrap(text, fid, color);
+        let create_galley = |text: String, fid: egui::FontId| {
+            let mut job = egui::text::LayoutJob::default();
+            job.append(
+                &text,
+                0.0,
+                egui::text::TextFormat {
+                    font_id: fid,
+                    color,
+                    ..Default::default()
+                },
+            );
+            job.halign = egui::Align::Center;
+            ui.painter().layout_job(job)
+        };
         let fits_width =
             |galley: &std::sync::Arc<egui::Galley>, max: f32| galley.rect.width() <= max;
         let max_width = rect.width() * 0.85;
