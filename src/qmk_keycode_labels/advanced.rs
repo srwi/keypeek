@@ -140,33 +140,33 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
 fn mod_value_to_string(mod_mask: u16) -> String {
     let mut mods = Vec::new();
     if mod_mask & MOD_LCTL != 0 {
-        mods.push("MOD_LCTL");
+        mods.push("\u{2388}");
     }
     if mod_mask & MOD_LSFT != 0 {
-        mods.push("MOD_LSFT");
+        mods.push(egui_phosphor::regular::ARROW_FAT_UP);
     }
     if mod_mask & MOD_LALT != 0 {
-        mods.push("MOD_LALT");
+        mods.push(egui_phosphor::regular::OPTION);
     }
     if mod_mask & MOD_LGUI != 0 {
-        mods.push("MOD_LGUI");
+        mods.push(egui_phosphor::fill::DIAMOND);
     }
     if mod_mask & MOD_RCTL != 0 {
-        mods.push("MOD_RCTL");
+        mods.push("\u{2388}");
     }
     if mod_mask & MOD_RSFT != 0 {
-        mods.push("MOD_RSFT");
+        mods.push(egui_phosphor::regular::ARROW_FAT_UP);
     }
     if mod_mask & MOD_RALT != 0 {
-        mods.push("MOD_RALT");
+        mods.push(egui_phosphor::regular::OPTION);
     }
     if mod_mask & MOD_RGUI != 0 {
-        mods.push("MOD_RGUI");
+        mods.push(egui_phosphor::fill::DIAMOND);
     }
 
     if mods.is_empty() {
         "None".to_string()
     } else {
-        mods.join(" | ")
+        mods.into_iter().map(|s| s.to_string()).collect::<Vec<_>>().join("")
     }
 }

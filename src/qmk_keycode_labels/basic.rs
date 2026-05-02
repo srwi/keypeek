@@ -875,46 +875,50 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             ..Default::default()
         }),
         Keycode::KC_LEFT_CTRL => Some(LayoutKey {
-            tap: Label::new("Ctrl"),
+            tap: Label::new(""),
+            symbol: Some("\u{2388}".to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()
         }),
         Keycode::KC_LEFT_SHIFT => Some(LayoutKey {
-            tap: Label::new("Shift"),
+            tap: Label::new(""),
             symbol: Some(egui_phosphor::regular::ARROW_FAT_UP.to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()
         }),
         Keycode::KC_LEFT_ALT => Some(LayoutKey {
-            tap: Label::new("Alt"),
+            tap: Label::new(""),
+            symbol: Some(egui_phosphor::regular::OPTION.to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()
         }),
         Keycode::KC_LEFT_GUI => Some(LayoutKey {
-            tap: Label::new("Win"),
-            symbol: Some(egui_phosphor::regular::WINDOWS_LOGO.to_string()),
+            tap: Label::new(""),
+            symbol: Some(egui_phosphor::fill::DIAMOND.to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()
         }),
         Keycode::KC_RIGHT_CTRL => Some(LayoutKey {
-            tap: Label::new("Ctrl"),
+            tap: Label::new(""),
+            symbol: Some("\u{2388}".to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()
         }),
         Keycode::KC_RIGHT_SHIFT => Some(LayoutKey {
-            tap: Label::new("Shift"),
+            tap: Label::new(""),
             symbol: Some(egui_phosphor::regular::ARROW_FAT_UP.to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()
         }),
         Keycode::KC_RIGHT_ALT => Some(LayoutKey {
-            tap: Label::new("Alt"),
+            tap: Label::new(""),
+            symbol: Some(egui_phosphor::regular::OPTION.to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()
         }),
         Keycode::KC_RIGHT_GUI => Some(LayoutKey {
-            tap: Label::new("Win"),
-            symbol: Some(egui_phosphor::regular::WINDOWS_LOGO.to_string()),
+            tap: Label::new(""),
+            symbol: Some(egui_phosphor::fill::DIAMOND.to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()
         }),
