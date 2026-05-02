@@ -78,12 +78,12 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             let mod_str = mod_value_to_string(mod_value);
 
             let keycode = (remainder & 0xFF) as u8;
-            let keycode_str = get_basic_layout_key(keycode as u16)
-                .map(|k| k.tap.full)
-                .unwrap_or_else(|| format!("0x{:02X}", keycode));
+            let tap_key = get_basic_layout_key(keycode as u16).unwrap_or_default();
 
             Some(LayoutKey {
-                tap: Label::new(format!("MT({},{})", mod_str, keycode_str)),
+                tap: tap_key.tap,
+                hold: Some(Label::new(mod_str)),
+                symbol: tap_key.symbol,
                 kind: KeycodeKind::Modifier,
                 ..Default::default()
             })
@@ -122,12 +122,12 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             let layer = remainder >> 8;
 
             let keycode = (remainder & 0xFF) as u8;
-            let keycode_str = get_basic_layout_key(keycode as u16)
-                .map(|k| k.tap.full)
-                .unwrap_or_else(|| format!("0x{:02X}", keycode));
+            let tap_key = get_basic_layout_key(keycode as u16).unwrap_or_default();
 
             Some(LayoutKey {
-                tap: Label::new(format!("LT({},{})", layer, keycode_str)),
+                tap: tap_key.tap,
+                hold: Some(Label::new(format!("L{}", layer))),
+                symbol: tap_key.symbol,
                 kind: KeycodeKind::Modifier,
                 layer_ref: Some(layer as u8),
                 ..Default::default()
@@ -140,33 +140,33 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
 fn mod_value_to_string(mod_mask: u16) -> String {
     let mut mods = Vec::new();
     if mod_mask & MOD_LCTL != 0 {
-        mods.push("MOD_LCTL");
+        mods.push("Ctl");
     }
     if mod_mask & MOD_LSFT != 0 {
-        mods.push("MOD_LSFT");
+        mods.push("Sft");
     }
     if mod_mask & MOD_LALT != 0 {
-        mods.push("MOD_LALT");
+        mods.push("Alt");
     }
     if mod_mask & MOD_LGUI != 0 {
-        mods.push("MOD_LGUI");
+        mods.push("Gui");
     }
     if mod_mask & MOD_RCTL != 0 {
-        mods.push("MOD_RCTL");
+        mods.push("Ctl");
     }
     if mod_mask & MOD_RSFT != 0 {
-        mods.push("MOD_RSFT");
+        mods.push("Sft");
     }
     if mod_mask & MOD_RALT != 0 {
-        mods.push("MOD_RALT");
+        mods.push("Alt");
     }
     if mod_mask & MOD_RGUI != 0 {
-        mods.push("MOD_RGUI");
+        mods.push("Gui");
     }
 
     if mods.is_empty() {
         "None".to_string()
     } else {
-        mods.join(" | ")
+        mods.join("+")
     }
 }
