@@ -816,15 +816,18 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             ..Default::default()
         }),
         Keycode::QK_MOUSE_BUTTON_1 => Some(LayoutKey {
-            tap: Label::new("Mouse Btn1"),
+            tap: Label::new(""),
+            symbol: Some(egui_phosphor::regular::MOUSE_LEFT_CLICK.to_string()),
             ..Default::default()
         }),
         Keycode::QK_MOUSE_BUTTON_2 => Some(LayoutKey {
-            tap: Label::new("Mouse Btn2"),
+            tap: Label::new(""),
+            symbol: Some(egui_phosphor::regular::MOUSE_RIGHT_CLICK.to_string()),
             ..Default::default()
         }),
         Keycode::QK_MOUSE_BUTTON_3 => Some(LayoutKey {
-            tap: Label::new("Mouse Btn3"),
+            tap: Label::new(""),
+            symbol: Some(egui_phosphor::regular::MOUSE_MIDDLE_CLICK.to_string()),
             ..Default::default()
         }),
         Keycode::QK_MOUSE_BUTTON_4 => Some(LayoutKey {
