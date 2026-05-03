@@ -5,7 +5,41 @@ use crate::layout_key::{KeycodeKind, LayoutKey};
 use crate::settings::ThemeColor;
 use eframe::egui::{self, Window};
 
+fn rotate_point(point: egui::Pos2, origin: egui::Pos2, angle_rad: f32) -> egui::Pos2 {
+    let cos_a = angle_rad.cos();
+    let sin_a = angle_rad.sin();
+    let dx = point.x - origin.x;
+    let dy = point.y - origin.y;
+    egui::pos2(
+        origin.x + dx * cos_a - dy * sin_a,
+        origin.y + dx * sin_a + dy * cos_a,
+    )
+}
+
 impl OverlayApp {
+    fn add_rotated_shape(
+        painter: &egui::Painter,
+        mut shape: egui::Shape,
+        angle: f32,
+        origin: egui::Pos2,
+    ) {
+        if angle != 0.0 {
+            match &mut shape {
+                egui::Shape::Rect(rect_shape) => {
+                    let new_center = rotate_point(rect_shape.rect.center(), origin, angle);
+                    rect_shape.rect =
+                        egui::Rect::from_center_size(new_center, rect_shape.rect.size());
+                    rect_shape.angle += angle;
+                }
+                egui::Shape::Text(text_shape) => {
+                    text_shape.pos = rotate_point(text_shape.pos, origin, angle);
+                    text_shape.angle += angle;
+                }
+                _ => {}
+            }
+        }
+        painter.add(shape);
+    }
     pub(super) fn generate_key_label_galleys(
         &self,
         ui: &egui::Ui,
@@ -282,12 +316,20 @@ impl OverlayApp {
                     )
                     .shrink(0.06 * size);
 
-                    ui.painter().rect(
-                        rect,
-                        0.1 * size,
-                        fill_color,
-                        egui::Stroke::new(border_thickness, stroke_color),
-                        egui::StrokeKind::Outside,
+                    let angle = key.r.to_radians();
+                    let origin = rect.center();
+
+                    Self::add_rotated_shape(
+                        ui.painter(),
+                        egui::Shape::Rect(egui::epaint::RectShape::new(
+                            rect,
+                            0.1 * size,
+                            fill_color,
+                            egui::Stroke::new(border_thickness, stroke_color),
+                            egui::StrokeKind::Outside,
+                        )),
+                        angle,
+                        origin,
                     );
 
                     let font = egui::FontId::proportional(0.25 * size * font_scale);
@@ -309,21 +351,35 @@ impl OverlayApp {
                             rect.max,
                         );
                         let r = (0.08 * size) as u8;
-                        ui.painter().rect_filled(
-                            hold_area_rect,
-                            egui::CornerRadius {
-                                nw: 0,
-                                ne: 0,
-                                sw: r,
-                                se: r,
-                            },
-                            fill_color.lerp_to_gamma(egui::Color32::BLACK, 0.15),
+
+                        Self::add_rotated_shape(
+                            ui.painter(),
+                            egui::Shape::Rect(egui::epaint::RectShape::new(
+                                hold_area_rect,
+                                egui::CornerRadius {
+                                    nw: 0,
+                                    ne: 0,
+                                    sw: r,
+                                    se: r,
+                                },
+                                fill_color.lerp_to_gamma(egui::Color32::BLACK, 0.15),
+                                egui::Stroke::NONE,
+                                egui::StrokeKind::Outside,
+                            )),
+                            angle,
+                            origin,
                         );
+
                         let hold_pos = hold_area_rect.center() - hold_galley.rect.center().to_vec2();
-                        ui.painter().galley(
-                            hold_pos,
-                            hold_galley,
-                            font_color.gamma_multiply(0.7),
+                        Self::add_rotated_shape(
+                            ui.painter(),
+                            egui::Shape::Text(egui::epaint::TextShape::new(
+                                hold_pos,
+                                hold_galley,
+                                font_color.gamma_multiply(0.7),
+                            )),
+                            angle,
+                            origin,
                         );
                     }
 
@@ -343,18 +399,54 @@ impl OverlayApp {
                                 start_x,
                                 main_label_rect.center().y - symbol_galley.rect.center().y,
                             );
-                            ui.painter().galley(sym_pos, symbol_galley, font_color);
-                            ui.painter().galley(text_pos, text_galley, font_color);
+                            Self::add_rotated_shape(
+                                ui.painter(),
+                                egui::Shape::Text(egui::epaint::TextShape::new(
+                                    sym_pos,
+                                    symbol_galley,
+                                    font_color,
+                                )),
+                                angle,
+                                origin,
+                            );
+                            Self::add_rotated_shape(
+                                ui.painter(),
+                                egui::Shape::Text(egui::epaint::TextShape::new(
+                                    text_pos,
+                                    text_galley,
+                                    font_color,
+                                )),
+                                angle,
+                                origin,
+                            );
                         }
                         (Some(symbol_galley), None) => {
                             let sym_pos =
                                 main_label_rect.center() - symbol_galley.rect.center().to_vec2();
-                            ui.painter().galley(sym_pos, symbol_galley, font_color);
+                            Self::add_rotated_shape(
+                                ui.painter(),
+                                egui::Shape::Text(egui::epaint::TextShape::new(
+                                    sym_pos,
+                                    symbol_galley,
+                                    font_color,
+                                )),
+                                angle,
+                                origin,
+                            );
                         }
                         (None, Some(text_galley)) => {
                             let label_pos =
                                 main_label_rect.center() - text_galley.rect.center().to_vec2();
-                            ui.painter().galley(label_pos, text_galley, font_color);
+                            Self::add_rotated_shape(
+                                ui.painter(),
+                                egui::Shape::Text(egui::epaint::TextShape::new(
+                                    label_pos,
+                                    text_galley,
+                                    font_color,
+                                )),
+                                angle,
+                                origin,
+                            );
                         }
                         _ => {}
                     }

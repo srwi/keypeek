@@ -24,6 +24,8 @@ pub struct Key {
     pub y: f32,
     pub w: f32,
     pub h: f32,
+    #[serde(default)]
+    pub r: f32,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
