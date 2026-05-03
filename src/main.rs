@@ -35,7 +35,7 @@ fn main() -> Result<(), eframe::Error> {
 
     if let Ok(mut stream) = Stream::connect(socket_name.clone()) {
         if cli.settings {
-            let _ = stream.write_all(b"settin");
+            let _ = stream.write_all(b"settings");
             let _ = stream.flush();
         } else if cli.toggle {
             let _ = stream.write_all(b"toggle");
@@ -60,13 +60,15 @@ fn main() -> Result<(), eframe::Error> {
         std::thread::spawn(move || {
             for stream in listener.incoming() {
                 if let Ok(mut stream) = stream {
-                    let mut buf = [0u8; 6];
-                    if stream.read_exact(&mut buf).is_ok() {
-                        let cmd = std::str::from_utf8(&buf).unwrap_or("");
-                        if cmd == "toggle" {
+                    // We only expect a small command, but we should read what's there
+                    // local_socket streams usually close or signal end of data when flushed/dropped
+                    let mut temp_buf = [0u8; 32];
+                    if let Ok(n) = stream.read(&mut temp_buf) {
+                        let cmd = std::str::from_utf8(&temp_buf[..n]).unwrap_or("");
+                        if cmd.starts_with("toggle") {
                             let current = manual_visible.load(Ordering::Relaxed);
                             manual_visible.store(!current, Ordering::Relaxed);
-                        } else if cmd == "settin" {
+                        } else if cmd.starts_with("settings") {
                             force_settings.store(true, Ordering::Relaxed);
                         }
 
