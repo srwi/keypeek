@@ -23,6 +23,7 @@ impl Keyboard {
         layout_name: String,
         timeout: i64,
         ui_wake: UiWake,
+        manual_visible: Arc<std::sync::atomic::AtomicBool>,
     ) -> Result<Self, String> {
         let definition = protocol.get_layout_definition();
 
@@ -60,55 +61,72 @@ impl Keyboard {
         let timeout_clone = Arc::clone(&keyboard.timeout_ms);
         let show_on_layer_change_clone = Arc::clone(&show_on_layer_change);
         let matrix_clone = Arc::clone(&matrix);
+        let manual_visible_clone = Arc::clone(&manual_visible);
 
         thread::spawn(move || loop {
-            if let Ok(response) = protocol.hid_read() {
-                let mut needs_repaint = false;
-                if response[0] == 0xff {
-                    let size = response[1] as usize;
+            match protocol.hid_read() {
+                Ok(response) => {
+                    if response.is_empty() {
+                        continue;
+                    }
+                    let mut needs_repaint = false;
+                    if response[0] == 0xff {
+                        let size = response[1] as usize;
 
-                    let mut default_bytes = [0u8; 4];
-                    default_bytes[..size].copy_from_slice(&response[2..2 + size]);
-                    let default_layer_state = u32::from_le_bytes(default_bytes);
+                        let mut default_bytes = [0u8; 4];
+                        default_bytes[..size].copy_from_slice(&response[2..2 + size]);
+                        let default_layer_state = u32::from_le_bytes(default_bytes);
 
-                    let mut layer_bytes = [0u8; 4];
-                    layer_bytes[..size].copy_from_slice(&response[2 + size..2 + 2 * size]);
-                    let layer_state = u32::from_le_bytes(layer_bytes);
+                        let mut layer_bytes = [0u8; 4];
+                        layer_bytes[..size].copy_from_slice(&response[2 + size..2 + 2 * size]);
+                        let layer_state = u32::from_le_bytes(layer_bytes);
 
-                    if *show_on_layer_change_clone.lock().unwrap() {
-                        if layer_state > 1 {
-                            *time_to_hide_clone.lock().unwrap() = None;
-                        } else {
-                            let timeout = *timeout_clone.lock().unwrap();
-                            if timeout < 0 {
+                        if *show_on_layer_change_clone.lock().unwrap() {
+                            if layer_state > 1 {
                                 *time_to_hide_clone.lock().unwrap() = None;
                             } else {
-                                let time_to_hide =
-                                    Instant::now() + Duration::from_millis(timeout as u64);
-                                *time_to_hide_clone.lock().unwrap() = Some(time_to_hide);
+                                let timeout = *timeout_clone.lock().unwrap();
+                                if timeout < 0 {
+                                    *time_to_hide_clone.lock().unwrap() = None;
+                                } else {
+                                    let time_to_hide =
+                                        Instant::now() + Duration::from_millis(timeout as u64);
+                                    *time_to_hide_clone.lock().unwrap() = Some(time_to_hide);
+                                }
                             }
                         }
+
+                        *layer_state_clone.lock().unwrap() = layer_state;
+                        *default_layer_state_clone.lock().unwrap() = default_layer_state;
+                        needs_repaint = true;
+                    } else if response[0] == 0xF1 {
+                        let row = response[1] as usize;
+                        let col = response[2] as usize;
+                        let pressed = response[3] != 0;
+
+                        if let Ok(mut mat) = matrix_clone.lock() {
+                            if row < mat.pressed.len() && col < mat.pressed[0].len() {
+                                mat.set_pressed(row, col, pressed);
+                            }
+                        }
+
+                        let manual = manual_visible_clone.load(std::sync::atomic::Ordering::Relaxed);
+                        let timeout_active = time_to_hide_clone
+                            .lock()
+                            .unwrap()
+                            .as_ref()
+                            .is_none_or(|time_to_hide| Instant::now() < *time_to_hide);
+
+                        needs_repaint = manual || timeout_active;
                     }
 
-                    *layer_state_clone.lock().unwrap() = layer_state;
-                    *default_layer_state_clone.lock().unwrap() = default_layer_state;
-                    needs_repaint = true;
-                } else if response[0] == 0xF1 {
-                    let row = response[1] as usize;
-                    let col = response[2] as usize;
-                    let pressed = response[3];
-                    if let Ok(mut mat) = matrix_clone.lock() {
-                        mat.set_pressed(row, col, pressed != 0);
+                    if needs_repaint {
+                        ui_wake.request_repaint();
                     }
-                    needs_repaint = time_to_hide_clone
-                        .lock()
-                        .unwrap()
-                        .as_ref()
-                        .is_none_or(|time_to_hide| Instant::now() < *time_to_hide);
                 }
-
-                if needs_repaint {
-                    ui_wake.request_repaint();
+                Err(e) => {
+                    eprintln!("HID Read Error: {}", e);
+                    thread::sleep(Duration::from_millis(100));
                 }
             }
         });
@@ -151,6 +169,10 @@ impl Keyboard {
 
     pub fn is_key_pressed(&self, row: usize, col: usize) -> bool {
         self.matrix.lock().unwrap().is_pressed(row, col)
+    }
+
+    pub fn get_highlight_timeout(&self) -> Option<Duration> {
+        self.matrix.lock().unwrap().get_min_highlight_timeout()
     }
 
     pub fn set_timeout(&self, timeout: i64) {

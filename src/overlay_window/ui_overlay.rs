@@ -215,7 +215,6 @@ impl OverlayApp {
         pressed: bool,
     ) -> (egui::Color32, egui::Color32, f32, egui::Color32) {
         const DESATURATE_FACTOR: f32 = 0.7;
-
         const BLACK: egui::Color32 = egui::Color32::BLACK;
 
         let size = self.settings.active.size as f32;
@@ -223,19 +222,19 @@ impl OverlayApp {
         let mut background_color = Self::to_egui_color(layer_theme_color);
         let mut font_color = Self::to_egui_color(self.settings.active.theme.font_color);
 
-        if pressed {
-            return (
-                background_color.lerp_to_gamma(egui::Color32::WHITE, 0.2),
-                background_color.lerp_to_gamma(egui::Color32::WHITE, 0.7),
-                0.03 * size,
-                font_color.lerp_to_gamma(egui::Color32::WHITE, 0.4),
-            );
-        }
-
         if kind == KeycodeKind::Special {
             background_color = background_color.lerp_to_gamma(BLACK, 0.6);
         } else if kind == KeycodeKind::Modifier {
             background_color = background_color.lerp_to_gamma(BLACK, 0.3);
+        }
+
+        if pressed {
+            return (
+                background_color.lerp_to_gamma(egui::Color32::WHITE, 0.25),
+                background_color.lerp_to_gamma(egui::Color32::WHITE, 0.8),
+                0.08 * size,
+                font_color.lerp_to_gamma(egui::Color32::WHITE, 0.5),
+            );
         }
 
         let mut border_color = background_color.lerp_to_gamma(BLACK, 0.2);

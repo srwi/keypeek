@@ -1,8 +1,10 @@
 use crate::layout_key::LayoutKey;
+use std::time::{Duration, Instant};
 
 pub struct KeyMatrix {
     pub keys: Vec<Vec<Vec<Option<LayoutKey>>>>,
     pub pressed: Vec<Vec<bool>>,
+    pub last_pressed_at: Vec<Vec<Option<Instant>>>,
 }
 
 impl KeyMatrix {
@@ -14,6 +16,7 @@ impl KeyMatrix {
         KeyMatrix {
             keys,
             pressed: vec![vec![false; cols]; rows],
+            last_pressed_at: vec![vec![None; cols]; rows],
         }
     }
 
@@ -39,18 +42,63 @@ impl KeyMatrix {
     }
 
     pub fn is_pressed(&self, row: usize, col: usize) -> bool {
-        self.pressed
+        let physically_pressed = self.pressed
             .get(row)
             .and_then(|r| r.get(col))
             .copied()
-            .unwrap_or(false)
+            .unwrap_or(false);
+
+        if physically_pressed {
+            return true;
+        }
+
+        // Check for minimum highlight duration (50ms) to ensure fast taps are visible
+        if let Some(Some(last_press)) = self.last_pressed_at.get(row).and_then(|r| r.get(col)) {
+            if last_press.elapsed() < Duration::from_millis(50) {
+                return true;
+            }
+        }
+
+        false
     }
 
     pub fn set_pressed(&mut self, row: usize, col: usize, value: bool) {
         if let Some(r) = self.pressed.get_mut(row) {
             if col < r.len() {
                 r[col] = value;
+                if value {
+                    if let Some(times) = self.last_pressed_at.get_mut(row) {
+                        if col < times.len() {
+                            times[col] = Some(Instant::now());
+                        }
+                    }
+                }
             }
         }
+    }
+
+    pub fn get_min_highlight_timeout(&self) -> Option<Duration> {
+        let mut min_timeout: Option<Duration> = None;
+        let now = Instant::now();
+        let duration_50ms = Duration::from_millis(50);
+
+        for (r, row_pressed) in self.pressed.iter().enumerate() {
+            for (c, &physically_pressed) in row_pressed.iter().enumerate() {
+                if !physically_pressed {
+                    if let Some(Some(last_press)) =
+                        self.last_pressed_at.get(r).and_then(|row| row.get(c))
+                    {
+                        if let Some(elapsed) = now.checked_duration_since(*last_press) {
+                            if elapsed < duration_50ms {
+                                let remaining = duration_50ms - elapsed;
+                                min_timeout =
+                                    Some(min_timeout.map_or(remaining, |min| min.min(remaining)));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        min_timeout
     }
 }

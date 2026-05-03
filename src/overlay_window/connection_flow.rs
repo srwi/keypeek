@@ -155,7 +155,11 @@ impl OverlayApp {
             layout_name: None,
         };
 
-        self.connect.pending_connect = Some(ConnectionTask::start(request, self.ui_wake.clone()));
+        self.connect.pending_connect = Some(ConnectionTask::start(
+            request,
+            self.ui_wake.clone(),
+            self.ui.manual_visible.clone(),
+        ));
         self.ui.settings_error = None;
     }
 
@@ -182,7 +186,11 @@ impl OverlayApp {
             },
         };
 
-        self.connect.pending_connect = Some(ConnectionTask::start(request, self.ui_wake.clone()));
+        self.connect.pending_connect = Some(ConnectionTask::start(
+            request,
+            self.ui_wake.clone(),
+            self.ui.manual_visible.clone(),
+        ));
         self.ui.settings_error = None;
     }
 

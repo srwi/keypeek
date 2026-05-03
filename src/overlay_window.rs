@@ -95,17 +95,25 @@ impl OverlayApp {
             return;
         };
 
-        let Some(time_to_hide) = keyboard
+        let mut min_delay: Option<std::time::Duration> = None;
+
+        if let Some(time_to_hide) = keyboard
             .time_to_hide_overlay
             .lock()
             .unwrap()
             .as_ref()
             .copied()
-        else {
-            return;
-        };
+        {
+            if let Some(delay) = time_to_hide.checked_duration_since(Instant::now()) {
+                min_delay = Some(delay);
+            }
+        }
 
-        if let Some(delay) = time_to_hide.checked_duration_since(Instant::now()) {
+        if let Some(highlight_delay) = keyboard.get_highlight_timeout() {
+            min_delay = Some(min_delay.map_or(highlight_delay, |min| min.min(highlight_delay)));
+        }
+
+        if let Some(delay) = min_delay {
             ctx.request_repaint_after(delay);
         }
     }
