@@ -296,15 +296,10 @@ impl OverlayApp {
                         .get_key(effective_layer as usize, key.row, key.col)
                         .unwrap_or_default();
 
-                    let first_layer_key_kind = keyboard
-                        .get_key(0, key.row, key.col)
-                        .map(|k| k.kind)
-                        .unwrap_or(KeycodeKind::Basic);
-
                     let (fill_color, stroke_color, border_thickness, font_color) = self
                         .get_keycode_color(
                             layout_key.layer_ref.unwrap_or(effective_layer),
-                            first_layer_key_kind,
+                            layout_key.kind,
                             is_background_key,
                             keyboard.is_key_pressed(key.row, key.col),
                         );
