@@ -15,6 +15,7 @@ pub struct Keyboard {
     default_layer_state: Arc<Mutex<u32>>,
     timeout_ms: Arc<Mutex<i64>>,
     pub show_on_layer_change: Arc<Mutex<bool>>,
+    disconnected: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Keyboard {
@@ -44,6 +45,7 @@ impl Keyboard {
         let timeout_ms = Arc::new(Mutex::new(timeout));
         let show_on_layer_change = Arc::new(Mutex::new(true));
         let matrix = Arc::new(Mutex::new(matrix));
+        let disconnected = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
         let keyboard = Keyboard {
             layout,
@@ -53,6 +55,7 @@ impl Keyboard {
             default_layer_state: Arc::clone(&default_layer_state),
             timeout_ms: Arc::clone(&timeout_ms),
             show_on_layer_change: Arc::clone(&show_on_layer_change),
+            disconnected: Arc::clone(&disconnected),
         };
 
         let layer_state_clone = Arc::clone(&keyboard.layer_state);
@@ -62,76 +65,97 @@ impl Keyboard {
         let show_on_layer_change_clone = Arc::clone(&show_on_layer_change);
         let matrix_clone = Arc::clone(&matrix);
         let manual_visible_clone = Arc::clone(&manual_visible);
+        let disconnected_clone = Arc::clone(&disconnected);
 
-        thread::spawn(move || loop {
-            match protocol.hid_read() {
-                Ok(response) => {
-                    if response.is_empty() {
-                        continue;
-                    }
-                    let mut needs_repaint = false;
-                    if response[0] == 0xff {
-                        let size = response[1] as usize;
+        thread::spawn(move || {
+            let mut error_count = 0;
+            loop {
+                match protocol.hid_read() {
+                    Ok(response) => {
+                        error_count = 0;
+                        if response.is_empty() {
+                            continue;
+                        }
+                        let mut needs_repaint = false;
+                        if response[0] == 0xff {
+                            let size = response[1] as usize;
 
-                        let mut default_bytes = [0u8; 4];
-                        default_bytes[..size].copy_from_slice(&response[2..2 + size]);
-                        let default_layer_state = u32::from_le_bytes(default_bytes);
+                            let mut default_bytes = [0u8; 4];
+                            default_bytes[..size].copy_from_slice(&response[2..2 + size]);
+                            let default_layer_state = u32::from_le_bytes(default_bytes);
 
-                        let mut layer_bytes = [0u8; 4];
-                        layer_bytes[..size].copy_from_slice(&response[2 + size..2 + 2 * size]);
-                        let layer_state = u32::from_le_bytes(layer_bytes);
+                            let mut layer_bytes = [0u8; 4];
+                            layer_bytes[..size].copy_from_slice(&response[2 + size..2 + 2 * size]);
+                            let layer_state = u32::from_le_bytes(layer_bytes);
 
-                        if *show_on_layer_change_clone.lock().unwrap() {
-                            if layer_state > 1 {
-                                *time_to_hide_clone.lock().unwrap() = None;
-                            } else {
-                                let timeout = *timeout_clone.lock().unwrap();
-                                if timeout < 0 {
+                            if *show_on_layer_change_clone.lock().unwrap() {
+                                if layer_state > 1 {
                                     *time_to_hide_clone.lock().unwrap() = None;
                                 } else {
-                                    let time_to_hide =
-                                        Instant::now() + Duration::from_millis(timeout as u64);
-                                    *time_to_hide_clone.lock().unwrap() = Some(time_to_hide);
+                                    let timeout = *timeout_clone.lock().unwrap();
+                                    if timeout < 0 {
+                                        *time_to_hide_clone.lock().unwrap() = None;
+                                    } else {
+                                        let time_to_hide =
+                                            Instant::now() + Duration::from_millis(timeout as u64);
+                                        *time_to_hide_clone.lock().unwrap() = Some(time_to_hide);
+                                    }
                                 }
                             }
-                        }
 
-                        *layer_state_clone.lock().unwrap() = layer_state;
-                        *default_layer_state_clone.lock().unwrap() = default_layer_state;
-                        needs_repaint = true;
-                    } else if response[0] == 0xF1 {
-                        let row = response[1] as usize;
-                        let col = response[2] as usize;
-                        let pressed = response[3] != 0;
+                            *layer_state_clone.lock().unwrap() = layer_state;
+                            *default_layer_state_clone.lock().unwrap() = default_layer_state;
+                            needs_repaint = true;
+                        } else if response[0] == 0xF1 {
+                            let row = response[1] as usize;
+                            let col = response[2] as usize;
+                            let pressed = response[3] != 0;
 
-                        if let Ok(mut mat) = matrix_clone.lock() {
-                            if row < mat.pressed.len() && col < mat.pressed[0].len() {
-                                mat.set_pressed(row, col, pressed);
+                            if let Ok(mut mat) = matrix_clone.lock() {
+                                if row < mat.pressed.len() && col < mat.pressed[0].len() {
+                                    mat.set_pressed(row, col, pressed);
+                                }
                             }
+
+                            let manual =
+                                manual_visible_clone.load(std::sync::atomic::Ordering::Relaxed);
+                            let timeout_active = time_to_hide_clone
+                                .lock()
+                                .unwrap()
+                                .as_ref()
+                                .is_none_or(|time_to_hide| Instant::now() < *time_to_hide);
+
+                            needs_repaint = manual || timeout_active;
                         }
 
-                        let manual = manual_visible_clone.load(std::sync::atomic::Ordering::Relaxed);
-                        let timeout_active = time_to_hide_clone
-                            .lock()
-                            .unwrap()
-                            .as_ref()
-                            .is_none_or(|time_to_hide| Instant::now() < *time_to_hide);
-
-                        needs_repaint = manual || timeout_active;
+                        if needs_repaint {
+                            ui_wake.request_repaint();
+                        }
                     }
+                    Err(e) => {
+                        error_count += 1;
+                        if error_count == 1 {
+                            eprintln!("HID Read Error: {}", e);
+                        }
 
-                    if needs_repaint {
-                        ui_wake.request_repaint();
+                        if error_count > 10 {
+                            disconnected_clone.store(true, std::sync::atomic::Ordering::Relaxed);
+                            ui_wake.request_repaint();
+                        }
+
+                        let delay = (100 * (1 << (error_count.min(6) - 1))).min(5000);
+                        thread::sleep(Duration::from_millis(delay));
                     }
-                }
-                Err(e) => {
-                    eprintln!("HID Read Error: {}", e);
-                    thread::sleep(Duration::from_millis(100));
                 }
             }
         });
 
         Ok(keyboard)
+    }
+
+    pub fn is_disconnected(&self) -> bool {
+        self.disconnected
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     pub fn get_effective_key_layer(&self, row: usize, col: usize) -> (u8, bool) {

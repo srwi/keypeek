@@ -146,6 +146,14 @@ impl eframe::App for OverlayApp {
             self.ui.settings_visible = true;
         }
 
+        if let AppConnectionState::Connected { keyboard } = &self.session.connection {
+            if keyboard.is_disconnected() {
+                self.disconnect();
+                self.ui.settings_visible = true;
+                self.ui.settings_warning = Some("Device disconnected".to_string());
+            }
+        }
+
         self.poll_connect_result();
 
         self.apply_live_visual_settings();
