@@ -331,7 +331,7 @@ impl OverlayApp {
 
         if self.ui.settings_visible && !open {
             self.ui.settings_visible = false;
-            if !self.session.ever_connected {
+            if !self.session.has_connected {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
         }

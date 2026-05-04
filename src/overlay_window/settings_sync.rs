@@ -2,6 +2,7 @@ use super::state::AppConnectionState;
 use super::OverlayApp;
 use crate::settings::{ProtocolType, WindowPosition};
 use eframe::egui::{self, Align2};
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 impl OverlayApp {
@@ -37,8 +38,9 @@ impl OverlayApp {
             if old_timeout != self.settings.active.timeout {
                 keyboard.set_timeout(self.settings.active.timeout);
             }
-            *keyboard.show_on_layer_change.lock().unwrap() =
-                self.settings.active.show_on_layer_change;
+            keyboard
+                .show_on_layer_change
+                .store(self.settings.active.show_on_layer_change, Ordering::SeqCst);
         }
 
         self.persist_settings();
@@ -136,7 +138,6 @@ impl OverlayApp {
                         .load(std::sync::atomic::Ordering::Relaxed);
 
                     if !self.settings.active.show_on_layer_change {
-                        // eprintln!("Debug: show_on_layer_change=false, manual={}", manual);
                         return manual;
                     }
 

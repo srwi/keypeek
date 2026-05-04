@@ -62,7 +62,7 @@ pub struct SettingsState {
 
 pub struct SessionState {
     pub connection: AppConnectionState,
-    pub ever_connected: bool,
+    pub has_connected: bool,
     pub connected_definition: Option<KeyboardDefinition>,
     pub layout_names: Vec<String>,
     pub active_layout_name: String,

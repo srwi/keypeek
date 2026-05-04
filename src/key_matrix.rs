@@ -1,6 +1,8 @@
 use crate::layout_key::LayoutKey;
 use std::time::{Duration, Instant};
 
+const MIN_HIGHLIGHT_DURATION: Duration = Duration::from_millis(50);
+
 pub struct KeyMatrix {
     pub keys: Vec<Vec<Vec<Option<LayoutKey>>>>,
     pub pressed: Vec<Vec<bool>>,
@@ -41,6 +43,10 @@ impl KeyMatrix {
             .unwrap_or(true)
     }
 
+    /// Returns whether the key should currently be shown as pressed.
+    ///
+    /// This includes keys that are physically pressed as well as recently released keys
+    /// that still fall within the minimum highlight duration window.
     pub fn is_pressed(&self, row: usize, col: usize) -> bool {
         let physically_pressed = self.pressed
             .get(row)
@@ -52,9 +58,9 @@ impl KeyMatrix {
             return true;
         }
 
-        // Check for minimum highlight duration (50ms) to ensure fast taps are visible
+        // Check for minimum highlight duration to ensure fast taps are visible
         if let Some(Some(last_press)) = self.last_pressed_at.get(row).and_then(|r| r.get(col)) {
-            if last_press.elapsed() < Duration::from_millis(50) {
+            if last_press.elapsed() < MIN_HIGHLIGHT_DURATION {
                 return true;
             }
         }
@@ -80,7 +86,7 @@ impl KeyMatrix {
     pub fn get_min_highlight_timeout(&self) -> Option<Duration> {
         let mut min_timeout: Option<Duration> = None;
         let now = Instant::now();
-        let duration_50ms = Duration::from_millis(50);
+        let duration_50ms = MIN_HIGHLIGHT_DURATION;
 
         for (r, row_pressed) in self.pressed.iter().enumerate() {
             for (c, &physically_pressed) in row_pressed.iter().enumerate() {

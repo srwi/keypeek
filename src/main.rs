@@ -1,4 +1,4 @@
-#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+ #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 mod cli;
 mod connection;
 mod device_discovery;
@@ -35,11 +35,24 @@ fn main() -> Result<(), eframe::Error> {
 
     if let Ok(mut stream) = Stream::connect(socket_name.clone()) {
         if cli.settings {
-            let _ = stream.write_all(b"settings");
-            let _ = stream.flush();
+            stream
+                .write_all(b"settings")
+                .map_err(|e| eframe::Error::AppCreation(Box::new(e)))?;
+            stream
+                .flush()
+                .map_err(|e| eframe::Error::AppCreation(Box::new(e)))?;
         } else if cli.toggle {
-            let _ = stream.write_all(b"toggle");
-            let _ = stream.flush();
+            stream
+                .write_all(b"toggle")
+                .map_err(|e| eframe::Error::AppCreation(Box::new(e)))?;
+            stream
+                .flush()
+                .map_err(|e| eframe::Error::AppCreation(Box::new(e)))?;
+        } else {
+            eprintln!(
+                "App is already running but no command was provided; use --settings or --toggle."
+            );
+            std::process::exit(1);
         }
         return Ok(());
     }
@@ -66,8 +79,7 @@ fn main() -> Result<(), eframe::Error> {
                     if let Ok(n) = stream.read(&mut temp_buf) {
                         let cmd = std::str::from_utf8(&temp_buf[..n]).unwrap_or("");
                         if cmd.starts_with("toggle") {
-                            let current = manual_visible.load(Ordering::Relaxed);
-                            manual_visible.store(!current, Ordering::Relaxed);
+                            manual_visible.fetch_xor(true, Ordering::Relaxed);
                         } else if cmd.starts_with("settings") {
                             force_settings.store(true, Ordering::Relaxed);
                         }
@@ -87,29 +99,49 @@ fn main() -> Result<(), eframe::Error> {
     if let Some(json_path) = cli.via {
         settings.last_connection = Some(ConnectionSpec::Via { json_path });
     } else if let Some(vial_str) = cli.vial {
-        if let Ok((vid, pid)) = parse_vid_pid(&vial_str) {
-            settings.last_connection = Some(ConnectionSpec::Vial { vid, pid });
+        match parse_vid_pid(&vial_str) {
+            Ok((vid, pid)) => {
+                settings.last_connection = Some(ConnectionSpec::Vial { vid, pid });
+            }
+            Err(err) => {
+                eprintln!(
+                    "Invalid Vial VID:PID '{}': {}. Expected VID:PID like 1234:5678",
+                    vial_str,
+                    err
+                );
+                std::process::exit(1);
+            }
         }
     } else if let Some(zmk_str) = cli.zmk {
-        if let Ok((vid, pid)) = parse_vid_pid(&zmk_str) {
-            let transport = if let Some(port) = cli.serial {
-                ZmkTransportConfig::Serial(port)
-            } else if let Some(id) = cli.ble {
-                ZmkTransportConfig::Ble(id)
+        let (vid, pid) = match parse_vid_pid(&zmk_str) {
+            Ok((vid, pid)) => (vid, pid),
+            Err(err) => {
+                eprintln!(
+                    "Invalid ZMK VID:PID '{}': {}. Expected VID:PID like 1234:5678",
+                    zmk_str,
+                    err
+                );
+                std::process::exit(1);
+            }
+        };
+
+        let transport = if let Some(port) = cli.serial {
+            ZmkTransportConfig::Serial(port)
+        } else if let Some(id) = cli.ble {
+            ZmkTransportConfig::Ble(id)
+        } else {
+            let serial_ports = protocols::zmk_rpc::scan_serial_ports();
+            if let Some(port) = serial_ports.into_iter().find(|p| p.vid == vid && p.pid == pid) {
+                ZmkTransportConfig::Serial(port.port_name)
             } else {
-                let serial_ports = protocols::zmk_rpc::scan_serial_ports();
-                if let Some(port) = serial_ports.into_iter().find(|p| p.vid == vid && p.pid == pid) {
-                    ZmkTransportConfig::Serial(port.port_name)
-                } else {
-                    ZmkTransportConfig::Serial("AUTO".to_string())
-                }
-            };
-            settings.last_connection = Some(ConnectionSpec::Zmk {
-                vid,
-                pid,
-                transport,
-            });
-        }
+                ZmkTransportConfig::Serial("AUTO".to_string())
+            }
+        };
+        settings.last_connection = Some(ConnectionSpec::Zmk {
+            vid,
+            pid,
+            transport,
+        });
     }
 
     let available_devices = discover_devices();

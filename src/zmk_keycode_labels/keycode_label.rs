@@ -724,25 +724,25 @@ fn keycode_label(keycode: &Keycode) -> Option<LayoutKey> {
             ..Default::default()
         }),
         Keycode::RIGHT_CONTROL => Some(LayoutKey {
-            tap: Label::new(""),
+            tap: Label::default(),
             symbol: Some("\u{2388}".to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()
         }),
         Keycode::RIGHT_SHIFT => Some(LayoutKey {
-            tap: Label::new(""),
+            tap: Label::default(),
             symbol: Some(egui_phosphor::regular::ARROW_FAT_UP.to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()
         }),
         Keycode::RIGHT_ALT => Some(LayoutKey {
-            tap: Label::new(""),
+            tap: Label::default(),
             symbol: Some(egui_phosphor::regular::OPTION.to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()
         }),
         Keycode::RIGHT_COMMAND => Some(LayoutKey {
-            tap: Label::new(""),
+            tap: Label::default(),
             symbol: Some(egui_phosphor::fill::DIAMOND.to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()

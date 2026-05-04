@@ -1,4 +1,5 @@
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -14,7 +15,7 @@ pub struct Keyboard {
     layer_state: Arc<Mutex<u32>>,
     default_layer_state: Arc<Mutex<u32>>,
     timeout_ms: Arc<Mutex<i64>>,
-    pub show_on_layer_change: Arc<Mutex<bool>>,
+    pub show_on_layer_change: Arc<AtomicBool>,
     disconnected: Arc<std::sync::atomic::AtomicBool>,
 }
 
@@ -43,7 +44,7 @@ impl Keyboard {
         let default_layer_state = Arc::new(Mutex::new(0));
         let time_to_hide_overlay = Arc::new(Mutex::new(Some(Instant::now())));
         let timeout_ms = Arc::new(Mutex::new(timeout));
-        let show_on_layer_change = Arc::new(Mutex::new(true));
+        let show_on_layer_change = Arc::new(AtomicBool::new(true));
         let matrix = Arc::new(Mutex::new(matrix));
         let disconnected = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
@@ -73,12 +74,18 @@ impl Keyboard {
                 match protocol.hid_read() {
                     Ok(response) => {
                         error_count = 0;
+                        disconnected_clone.store(false, std::sync::atomic::Ordering::Relaxed);
                         if response.is_empty() {
                             continue;
                         }
                         let mut needs_repaint = false;
                         if response[0] == 0xff {
                             let size = response[1] as usize;
+
+                            if size > 4 || response.len() < 2 + 2 * size {
+                                eprintln!("Invalid size {} or response length {} for layer state update", size, response.len());
+                                continue;
+                            }
 
                             let mut default_bytes = [0u8; 4];
                             default_bytes[..size].copy_from_slice(&response[2..2 + size]);
@@ -88,7 +95,7 @@ impl Keyboard {
                             layer_bytes[..size].copy_from_slice(&response[2 + size..2 + 2 * size]);
                             let layer_state = u32::from_le_bytes(layer_bytes);
 
-                            if *show_on_layer_change_clone.lock().unwrap() {
+                            if show_on_layer_change_clone.load(Ordering::SeqCst) {
                                 if layer_state > 1 {
                                     *time_to_hide_clone.lock().unwrap() = None;
                                 } else {

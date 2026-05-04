@@ -834,6 +834,9 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             )),
             ..Default::default()
         }),
+        // Mouse buttons 1–3 use icon symbols for the common left/right/middle buttons,
+        // while buttons 4–8 fall back to text labels because standard auxiliary mouse button
+        // icons are not available/standardized.
         Keycode::QK_MOUSE_BUTTON_1 => Some(LayoutKey {
             tap: Label::new(""),
             symbol: Some(egui_phosphor::regular::MOUSE_LEFT_CLICK.to_string()),

@@ -35,7 +35,12 @@ impl OverlayApp {
                     text_shape.pos = rotate_point(text_shape.pos, origin, angle);
                     text_shape.angle += angle;
                 }
-                _ => {}
+                _ => {
+                    eprintln!(
+                        "Warning: Unhandled shape type in add_rotated_shape: {:?}",
+                        shape
+                    );
+                }
             }
         }
         painter.add(shape);
@@ -162,7 +167,6 @@ impl OverlayApp {
                         hold: None,
                     }
                 } else {
-                    let mut found = false;
                     let mut text_galley = None;
                     while truncated.len() > 1 {
                         truncated.pop();
@@ -170,22 +174,13 @@ impl OverlayApp {
                         let truncated_galley = create_galley(truncated_with_ellipsis, font.clone());
                         if fits_width(&truncated_galley, max_width) {
                             text_galley = Some(truncated_galley);
-                            found = true;
                             break;
                         }
                     }
-                    if found {
-                        LabelGalleys {
-                            symbol: None,
-                            text: text_galley,
-                            hold: None,
-                        }
-                    } else {
-                        LabelGalleys {
-                            symbol: None,
-                            text: None,
-                            hold: None,
-                        }
+                    LabelGalleys {
+                        symbol: None,
+                        text: text_galley,
+                        hold: None,
                     }
                 }
             }
@@ -344,7 +339,7 @@ impl OverlayApp {
                             egui::pos2(rect.left(), rect.bottom() - rect.height() * 0.22),
                             rect.max,
                         );
-                        let r = (0.08 * size) as u8;
+                        let r = ((0.08 * size).clamp(0.0, 255.0)) as u8;
 
                         Self::add_rotated_shape(
                             ui.painter(),

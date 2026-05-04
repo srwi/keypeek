@@ -2,6 +2,20 @@ use crate::layout_key::{KeycodeKind, Label, LayoutKey};
 use crate::qmk_keycode_labels::basic::get_basic_layout_key;
 use crate::qmk_keycode_labels::constants::*;
 
+fn modifier_symbol(modifier: u16) -> Option<&'static str> {
+    if modifier == QK_LCTL || modifier == QK_RCTL {
+        Some("\u{2388}")
+    } else if modifier == QK_LSFT || modifier == QK_RSFT {
+        Some(egui_phosphor::regular::ARROW_FAT_UP)
+    } else if modifier == QK_LALT || modifier == QK_RALT {
+        Some(egui_phosphor::regular::OPTION)
+    } else if modifier == QK_LGUI || modifier == QK_RGUI {
+        Some(egui_phosphor::fill::DIAMOND)
+    } else {
+        None
+    }
+}
+
 pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
     match keycode_bytes {
         input_bytes if QK_MODS.contains(&input_bytes) => {
@@ -11,7 +25,10 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
 
             let input_modifiers = input_bytes & 0x1f00;
 
-            // For pure shift modifiers, try to show the shifted character directly
+            // `keycode_str` is encoded as "shifted\nunshifted" for shifted keys,
+            // so for pure shift modifiers we use the portion before the first '\n'.
+            // This selects the shifted label for the resulting LayoutKey tap text,
+            // while preserving the original tap_key layout and other fields.
             if input_modifiers == QK_LSFT || input_modifiers == QK_RSFT {
                 if let Some(pos) = keycode_str.find('\n') {
                     return Some(LayoutKey {
@@ -26,17 +43,9 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
                 .iter()
                 .find(|(_, v)| *v == input_modifiers)
             {
-                let mut display_name = name.to_string();
-                // Use our new symbols if it's a simple modifier
-                if input_modifiers == QK_LCTL || input_modifiers == QK_RCTL {
-                    display_name = "\u{2388}".to_string();
-                } else if input_modifiers == QK_LALT || input_modifiers == QK_RALT {
-                    display_name = egui_phosphor::regular::OPTION.to_string();
-                } else if input_modifiers == QK_LGUI || input_modifiers == QK_RGUI {
-                    display_name = egui_phosphor::fill::DIAMOND.to_string();
-                } else if input_modifiers == QK_LSFT || input_modifiers == QK_RSFT {
-                    display_name = egui_phosphor::regular::ARROW_FAT_UP.to_string();
-                }
+                let display_name = modifier_symbol(input_modifiers)
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| name.to_string());
 
                 return Some(LayoutKey {
                     tap: Label::new(format!("{}{}", display_name, keycode_str)),
@@ -71,15 +80,19 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
                 let mut compact_label = String::new();
                 for part in enabled.iter() {
                     let sym = match *part {
-                        "LCTL" | "RCTL" | "C" => "\u{2388}",
-                        "LSFT" | "RSFT" | "S" => egui_phosphor::regular::ARROW_FAT_UP,
-                        "LALT" | "RALT" | "A" | "ALGR" => egui_phosphor::regular::OPTION,
+                        "LCTL" | "RCTL" | "C" => modifier_symbol(QK_LCTL),
+                        "LSFT" | "RSFT" | "S" => modifier_symbol(QK_LSFT),
+                        "LALT" | "RALT" | "A" | "ALGR" => modifier_symbol(QK_LALT),
                         "LGUI" | "RGUI" | "G" | "LCMD" | "LWIN" | "RCMD" | "RWIN" => {
-                            egui_phosphor::fill::DIAMOND
+                            modifier_symbol(QK_LGUI)
                         }
-                        _ => *part,
+                        _ => None,
                     };
-                    compact_label.push_str(sym);
+                    if let Some(sym) = sym {
+                        compact_label.push_str(sym);
+                    } else {
+                        compact_label.push_str(*part);
+                    }
                 }
                 compact_label.push_str(&keycode_str);
 
@@ -167,24 +180,29 @@ fn mod_value_to_string(mod_mask: u16) -> String {
     // Since we use the same symbols for Left and Right, we only need to check bits 0-3.
 
     if mod_mask & MOD_LCTL != 0 {
-        mods.push("\u{2388}");
+        if let Some(sym) = modifier_symbol(QK_LCTL) {
+            mods.push(sym);
+        }
     }
     if mod_mask & MOD_LSFT != 0 {
-        mods.push(egui_phosphor::regular::ARROW_FAT_UP);
+        if let Some(sym) = modifier_symbol(QK_LSFT) {
+            mods.push(sym);
+        }
     }
     if mod_mask & MOD_LALT != 0 {
-        mods.push(egui_phosphor::regular::OPTION);
+        if let Some(sym) = modifier_symbol(QK_LALT) {
+            mods.push(sym);
+        }
     }
     if mod_mask & MOD_LGUI != 0 {
-        mods.push(egui_phosphor::fill::DIAMOND);
+        if let Some(sym) = modifier_symbol(QK_LGUI) {
+            mods.push(sym);
+        }
     }
 
     if mods.is_empty() {
         "None".to_string()
     } else {
-        mods.into_iter()
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>()
-            .join("")
+        mods.join("")
     }
 }

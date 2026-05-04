@@ -52,7 +52,7 @@ impl OverlayApp {
             },
             session: SessionState {
                 connection: AppConnectionState::Disconnected,
-                ever_connected: false,
+                has_connected: false,
                 connected_definition: None,
                 layout_names: Vec::new(),
                 active_layout_name: String::new(),

@@ -55,13 +55,16 @@ mod tests {
 
     #[test]
     fn test_get_layer_layout_key_tap_dance() {
-        let key = get_layer_layout_key(0x5700).unwrap();
+        let key = get_layer_layout_key(QK_TAP_DANCE.start).unwrap();
         assert_eq!(key.tap.full, "TD(0)");
+        assert!(key.layer_ref.is_none());
 
-        let key = get_layer_layout_key(0x570A).unwrap();
+        let key = get_layer_layout_key(QK_TAP_DANCE.start + 0xA).unwrap();
         assert_eq!(key.tap.full, "TD(10)");
+        assert!(key.layer_ref.is_none());
 
-        let key = get_layer_layout_key(0x571F).unwrap();
+        let key = get_layer_layout_key(QK_TAP_DANCE.start + 0x1F).unwrap();
         assert_eq!(key.tap.full, "TD(31)");
+        assert!(key.layer_ref.is_none());
     }
 }

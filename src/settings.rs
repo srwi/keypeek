@@ -252,6 +252,9 @@ impl Settings {
             if let Ok(json) = serde_json::to_string(conn) {
                 section.set("last_connection", json);
             }
+        } else {
+            let key = String::from("last_connection");
+            section.delete(&key);
         }
         for (index, color) in self.theme.layer_colors.iter().enumerate() {
             section.set(format!("layer_color_{index}"), color.to_string());
@@ -293,7 +296,10 @@ impl Settings {
         if let Some(val) = section.get("show_on_layer_change") {
             s.show_on_layer_change = val.parse().unwrap_or(s.show_on_layer_change);
         }
-        if let Some(val) = section.get("last_connection") {
+        if let Some(val) = section
+            .get("last_connection")
+            .filter(|val| !val.trim().is_empty())
+        {
             s.last_connection = serde_json::from_str(val).ok();
         }
         for index in 0..s.theme.layer_colors.len() {

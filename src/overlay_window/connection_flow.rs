@@ -3,6 +3,7 @@ use super::OverlayApp;
 use crate::connection::{ConnectedState, ConnectionRequest, ConnectionTask};
 use crate::device_discovery::DeviceKind;
 use crate::protocols::{ConnectionSpec, ZmkTransportConfig};
+use std::sync::atomic::Ordering;
 
 impl OverlayApp {
     pub(super) fn select_device(&mut self, index: usize) {
@@ -92,17 +93,16 @@ impl OverlayApp {
         self.session.active_layout_name = connected.selected_layout_name.clone();
         self.session.draft_layout_name = connected.selected_layout_name;
         self.session.connected_definition = Some(connected.definition);
-        self.session.connection = AppConnectionState::Connected {
-            keyboard: connected.keyboard,
-        };
-        self.session.ever_connected = true;
+
+        let keyboard = connected.keyboard;
+        keyboard
+            .show_on_layer_change
+            .store(self.settings.active.show_on_layer_change, Ordering::SeqCst);
+
+        self.session.connection = AppConnectionState::Connected { keyboard };
+        self.session.has_connected = true;
         self.ui.settings_error = None;
         self.ui.settings_warning = None;
-
-        if let AppConnectionState::Connected { keyboard } = &self.session.connection {
-            *keyboard.show_on_layer_change.lock().unwrap() =
-                self.settings.active.show_on_layer_change;
-        }
 
         self.settings.active.last_connection = Some(connected.spec);
         self.settings.draft.last_connection = self.settings.active.last_connection.clone();
@@ -115,7 +115,7 @@ impl OverlayApp {
         self.session.active_layout_name.clear();
         self.session.draft_layout_name.clear();
         self.session.connected_definition = None;
-        self.session.ever_connected = false;
+        self.session.has_connected = false;
 
         self.settings.active.last_connection = None;
         self.settings.draft.last_connection = None;
