@@ -31,6 +31,9 @@ gtk = "0.18"
 [target.'cfg(target_os = "macos")'.dependencies]
 winit = "0.30.13"
 
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62.2", features = ["Devices_Bluetooth", "Devices_Radios", "Foundation"] }
+
 [package.metadata.bundle]
 name = "KeyPeek"
 identifier = "dev.srwi.keypeek"

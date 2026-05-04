@@ -2564,6 +2564,7 @@ dependencies = [
  "serde_json",
  "serialport",
  "tray-icon",
+ "windows 0.62.2",
  "winit",
  "zmk-studio-api",
 ]
