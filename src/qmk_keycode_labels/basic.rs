@@ -170,7 +170,7 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             ..Default::default()
         }),
         Keycode::KC_BACKSPACE => Some(LayoutKey {
-            tap: Label::new("Backspace"),
+            tap: Label::with_short("Backspace", "Bspc"),
             symbol: Some(egui_phosphor::regular::BACKSPACE.to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()

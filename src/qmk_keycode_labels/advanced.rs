@@ -26,44 +26,11 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
 
             // Left and right side modifiers are mutually exclusive. Therefore a single boolean
             // is used to indicate which side to use.
-            let is_right_side_mods = (input_modifiers & QK_RMODS_MIN) != 0;
-            let enabled: Vec<&str> = MODIFIER_KEY_TO_VALUE
-                .iter()
-                .filter(|(_, modifiers)| {
-                    if is_right_side_mods {
-                        *modifiers >= QK_RMODS_MIN
-                    } else {
-                        *modifiers < QK_RMODS_MIN
-                    }
-                })
-                .filter_map(|(modifiers_name, modifiers)| {
-                    if (input_modifiers & *modifiers) == *modifiers {
-                        Some(*modifiers_name)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
+            let mod_str = mod_mask_to_string(input_modifiers);
 
-            if !enabled.is_empty() {
-                // Build nested parentheses style, e.g. LCTL(LALT(A))
-                let mut nested_mods = String::new();
-                for (i, part) in enabled.iter().enumerate() {
-                    if i > 0 {
-                        nested_mods.push('(');
-                    }
-                    nested_mods.push_str(part);
-                }
-                if !nested_mods.is_empty() {
-                    nested_mods.push('(');
-                }
-                nested_mods.push_str(&keycode_str);
-                for _ in 0..enabled.len() {
-                    nested_mods.push(')');
-                }
-
+            if !mod_str.is_empty() {
                 return Some(LayoutKey {
-                    tap: Label::new(nested_mods),
+                    tap: Label::new(format!("{}({})", mod_str, keycode_str)),
                     kind: KeycodeKind::Modifier,
                     ..Default::default()
                 });
@@ -74,16 +41,19 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
         input_bytes if QK_MOD_TAP.contains(&input_bytes) => {
             let remainder = input_bytes & !(QK_MOD_TAP.start);
 
-            let mod_value = (remainder >> 8) & 0x1F;
-            let mod_str = mod_value_to_string(mod_value);
+            let mod_value = ((remainder >> 8) & 0xFF) << 8;
+            let mod_str = mod_mask_to_string(mod_value);
 
             let keycode = (remainder & 0xFF) as u8;
             let keycode_str = get_basic_layout_key(keycode as u16)
-                .map(|k| k.tap.full)
+                .map(|k| k.tap.short.unwrap_or(k.tap.full))
                 .unwrap_or_else(|| format!("0x{:02X}", keycode));
 
             Some(LayoutKey {
-                tap: Label::new(format!("MT({},{})", mod_str, keycode_str)),
+                tap: Label::with_short(
+                    format!("{}\n{}", mod_str, keycode_str),
+                    format!("{}/{}", mod_str, keycode_str),
+                ),
                 kind: KeycodeKind::Modifier,
                 ..Default::default()
             })
@@ -95,11 +65,14 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
 
             let layer = remainder >> shift;
 
-            let mod_value = remainder & mask;
-            let mod_str = mod_value_to_string(mod_value);
+            let mod_value = (remainder & mask) << 8;
+            let mod_str = mod_mask_to_string(mod_value);
 
             Some(LayoutKey {
-                tap: Label::new(format!("LM({},{})", layer, mod_str)),
+                tap: Label::with_short(
+                    format!("LM{}\n{}", layer, mod_str),
+                    format!("LM{}\n{}", layer, mod_str),
+                ),
                 kind: KeycodeKind::Modifier,
                 layer_ref: Some(layer as u8),
                 ..Default::default()
@@ -108,10 +81,13 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
         input_bytes if QK_ONE_SHOT_MOD.contains(&input_bytes) => {
             let remainder = input_bytes & !(QK_ONE_SHOT_MOD.start);
 
-            let mod_str = mod_value_to_string(remainder);
+            let mod_str = mod_mask_to_string(remainder << 8);
 
             Some(LayoutKey {
-                tap: Label::new(format!("OSM({})", mod_str)),
+                tap: Label::with_short(
+                    format!("OSM\n{}", mod_str),
+                    format!("OSM\n{}", mod_str),
+                ),
                 kind: KeycodeKind::Modifier,
                 ..Default::default()
             })
@@ -123,11 +99,14 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
 
             let keycode = (remainder & 0xFF) as u8;
             let keycode_str = get_basic_layout_key(keycode as u16)
-                .map(|k| k.tap.full)
+                .map(|k| k.tap.short.unwrap_or(k.tap.full))
                 .unwrap_or_else(|| format!("0x{:02X}", keycode));
 
             Some(LayoutKey {
-                tap: Label::new(format!("LT({},{})", layer, keycode_str)),
+                tap: Label::with_short(
+                    format!("L{}\n{}", layer, keycode_str),
+                    format!("L{}/{}", layer, keycode_str),
+                ),
                 kind: KeycodeKind::Modifier,
                 layer_ref: Some(layer as u8),
                 ..Default::default()
@@ -137,36 +116,32 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
     }
 }
 
-fn mod_value_to_string(mod_mask: u16) -> String {
-    let mut mods = Vec::new();
-    if mod_mask & MOD_LCTL != 0 {
-        mods.push("MOD_LCTL");
-    }
-    if mod_mask & MOD_LSFT != 0 {
-        mods.push("MOD_LSFT");
-    }
-    if mod_mask & MOD_LALT != 0 {
-        mods.push("MOD_LALT");
-    }
-    if mod_mask & MOD_LGUI != 0 {
-        mods.push("MOD_LGUI");
-    }
-    if mod_mask & MOD_RCTL != 0 {
-        mods.push("MOD_RCTL");
-    }
-    if mod_mask & MOD_RSFT != 0 {
-        mods.push("MOD_RSFT");
-    }
-    if mod_mask & MOD_RALT != 0 {
-        mods.push("MOD_RALT");
-    }
-    if mod_mask & MOD_RGUI != 0 {
-        mods.push("MOD_RGUI");
+fn mod_mask_to_string(input_modifiers: u16) -> String {
+    if let Some((name, _)) = MODIFIER_KEY_TO_VALUE
+        .iter()
+        .find(|(_, v)| *v == input_modifiers)
+    {
+        return name.to_string();
     }
 
-    if mods.is_empty() {
-        "None".to_string()
-    } else {
-        mods.join(" | ")
-    }
+    let is_right_side_mods = (input_modifiers & QK_RMODS_MIN) != 0;
+    let enabled: Vec<&str> = MODIFIER_KEY_TO_VALUE
+        .iter()
+        .filter(|(_, modifiers)| {
+            if is_right_side_mods {
+                *modifiers >= QK_RMODS_MIN
+            } else {
+                *modifiers < QK_RMODS_MIN
+            }
+        })
+        .filter_map(|(name, modifiers)| {
+            if *modifiers == (input_modifiers & *modifiers) && *modifiers != 0 
+                && modifiers.count_ones() == 1 {
+                Some(*name)
+            } else {
+                None
+            }
+        })
+        .collect();
+    enabled.join("+")
 }

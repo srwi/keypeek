@@ -269,8 +269,27 @@ impl OverlayApp {
                             symbol: None,
                             text: Some(text_galley),
                         } => {
-                            let label_pos = rect.center() - text_galley.rect.center().to_vec2();
-                            ui.painter().galley(label_pos, text_galley, font_color);
+                            let lines: Vec<&str> = text_galley.text().split('\n').collect();
+                            if lines.len() > 1 {
+                                let total_height = text_galley.rect.height();
+                                let mut current_y = rect.center().y - (total_height * 0.5);
+                                for line in lines {
+                                    let line_galley = ui.painter().layout_no_wrap(
+                                        line.to_string(), 
+                                        text_galley.job.sections[0].format.font_id.clone(), 
+                                        font_color
+                                    );
+                                    let line_pos = egui::pos2(
+                                        rect.center().x - (line_galley.rect.width() * 0.5),
+                                        current_y
+                                    );
+                                    ui.painter().galley(line_pos, line_galley.clone(), font_color);
+                                    current_y += line_galley.rect.height();
+                                }
+                            } else {
+                                let label_pos = rect.center() - text_galley.rect.center().to_vec2();
+                                ui.painter().galley(label_pos, text_galley, font_color);
+                            }
                         }
                         _ => {}
                     }
