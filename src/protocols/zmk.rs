@@ -61,8 +61,7 @@ fn open_zmk_hid(vid: u16, pid: u16) -> Result<HidDevice, String> {
             )
         })?;
 
-    api.open_path(&path)
-        .map_err(|e| e.to_string())
+    api.open_path(&path).map_err(|e| e.to_string())
 }
 
 fn wait_for_hid_reappearance(

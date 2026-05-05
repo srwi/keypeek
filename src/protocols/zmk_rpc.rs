@@ -49,6 +49,10 @@ pub fn scan_serial_ports() -> Vec<ZmkSerialDevice> {
 }
 
 pub fn scan_ble_devices() -> Result<Vec<ZmkBleDevice>, Box<dyn Error>> {
+    if !bluetooth_scan_available() {
+        return Ok(Vec::new());
+    }
+
     let devices =
         StudioClient::<PlatformBleTransport>::list_ble_devices_with_mode(BleDiscoveryMode::Any)?;
     Ok(devices
@@ -67,6 +71,28 @@ pub fn scan_ble_devices() -> Result<Vec<ZmkBleDevice>, Box<dyn Error>> {
             }
         })
         .collect())
+}
+
+#[cfg(target_os = "windows")]
+fn bluetooth_scan_available() -> bool {
+    windows_bluetooth_radio_is_on().unwrap_or(true)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn bluetooth_scan_available() -> bool {
+    true
+}
+
+#[cfg(target_os = "windows")]
+fn windows_bluetooth_radio_is_on() -> windows::core::Result<bool> {
+    use windows::Devices::Bluetooth::BluetoothAdapter;
+    use windows::Devices::Radios::RadioState;
+
+    let Some(adapter) = BluetoothAdapter::GetDefaultAsync()?.join().ok() else {
+        return Ok(false);
+    };
+    let radio = adapter.GetRadioAsync()?.join()?;
+    Ok(radio.State()? == RadioState::On)
 }
 
 pub struct ZmkData {
