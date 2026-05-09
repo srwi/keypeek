@@ -1,4 +1,4 @@
- #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 mod cli;
 mod connection;
 mod device_discovery;
@@ -14,53 +14,102 @@ mod ui_wake;
 mod zmk_keycode_labels;
 
 use clap::Parser;
-use cli::{Cli, parse_vid_pid};
+use cli::{parse_vid_pid, Cli};
 use device_discovery::discover_devices;
 use eframe::egui;
 use interprocess::local_socket::{prelude::*, GenericNamespaced, ListenerOptions, Stream};
 use overlay_window::OverlayApp;
 use protocols::{ConnectionSpec, ZmkTransportConfig};
 use settings::Settings;
+use std::io::ErrorKind;
 use std::io::{Read, Write};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use ui_wake::UiWake;
+
+const SOCKET_BASENAME: &str = "keypeek.sock";
+
+fn send_command_to_running_instance(cli: &Cli, mut stream: Stream) -> Result<(), eframe::Error> {
+    if cli.settings {
+        stream
+            .write_all(b"settings")
+            .map_err(|e| eframe::Error::AppCreation(Box::new(e)))?;
+        stream
+            .flush()
+            .map_err(|e| eframe::Error::AppCreation(Box::new(e)))?;
+    } else if cli.toggle {
+        stream
+            .write_all(b"toggle")
+            .map_err(|e| eframe::Error::AppCreation(Box::new(e)))?;
+        stream
+            .flush()
+            .map_err(|e| eframe::Error::AppCreation(Box::new(e)))?;
+    } else {
+        eprintln!(
+            "App is already running but no command was provided; use --settings or --toggle."
+        );
+        std::process::exit(1);
+    }
+
+    Ok(())
+}
 
 fn main() -> Result<(), eframe::Error> {
     let cli = Cli::parse();
 
-    let socket_name = "keypeek.sock"
+    let socket_name = SOCKET_BASENAME
         .to_ns_name::<GenericNamespaced>()
         .expect("Failed to create socket name");
 
-    if let Ok(mut stream) = Stream::connect(socket_name.clone()) {
-        if cli.settings {
-            stream
-                .write_all(b"settings")
-                .map_err(|e| eframe::Error::AppCreation(Box::new(e)))?;
-            stream
-                .flush()
-                .map_err(|e| eframe::Error::AppCreation(Box::new(e)))?;
-        } else if cli.toggle {
-            stream
-                .write_all(b"toggle")
-                .map_err(|e| eframe::Error::AppCreation(Box::new(e)))?;
-            stream
-                .flush()
-                .map_err(|e| eframe::Error::AppCreation(Box::new(e)))?;
-        } else {
-            eprintln!(
-                "App is already running but no command was provided; use --settings or --toggle."
-            );
-            std::process::exit(1);
-        }
+    if let Ok(stream) = Stream::connect(socket_name.clone()) {
+        send_command_to_running_instance(&cli, stream)?;
         return Ok(());
     }
 
-    let listener = ListenerOptions::new()
-        .name(socket_name)
+    let listener = match ListenerOptions::new()
+        .name(socket_name.clone())
         .create_sync()
-        .expect("Failed to bind local socket");
+    {
+        Ok(listener) => listener,
+        Err(err) if err.kind() == ErrorKind::AddrInUse => {
+            if let Ok(stream) = Stream::connect(socket_name.clone()) {
+                send_command_to_running_instance(&cli, stream)?;
+                return Ok(());
+            }
+
+            #[cfg(unix)]
+            {
+                let stale_socket_path = std::path::Path::new("/tmp").join(SOCKET_BASENAME);
+                if stale_socket_path.exists() {
+                    std::fs::remove_file(&stale_socket_path).unwrap_or_else(|remove_err| {
+                        panic!(
+                            "Failed to bind local socket and could not remove stale socket '{}': {}",
+                            stale_socket_path.display(),
+                            remove_err
+                        )
+                    });
+
+                    ListenerOptions::new()
+                        .name(socket_name.clone())
+                        .create_sync()
+                        .unwrap_or_else(|retry_err| {
+                            panic!(
+                                "Failed to bind local socket after stale-socket cleanup: {}",
+                                retry_err
+                            )
+                        })
+                } else {
+                    panic!("Failed to bind local socket: {}", err);
+                }
+            }
+
+            #[cfg(not(unix))]
+            {
+                panic!("Failed to bind local socket: {}", err);
+            }
+        }
+        Err(err) => panic!("Failed to bind local socket: {}", err),
+    };
 
     let manual_visible = Arc::new(AtomicBool::new(cli.toggle));
     let force_settings = Arc::new(AtomicBool::new(cli.settings));
@@ -106,8 +155,7 @@ fn main() -> Result<(), eframe::Error> {
             Err(err) => {
                 eprintln!(
                     "Invalid Vial VID:PID '{}': {}. Expected VID:PID like 1234:5678",
-                    vial_str,
-                    err
+                    vial_str, err
                 );
                 std::process::exit(1);
             }
@@ -118,8 +166,7 @@ fn main() -> Result<(), eframe::Error> {
             Err(err) => {
                 eprintln!(
                     "Invalid ZMK VID:PID '{}': {}. Expected VID:PID like 1234:5678",
-                    zmk_str,
-                    err
+                    zmk_str, err
                 );
                 std::process::exit(1);
             }
@@ -131,7 +178,10 @@ fn main() -> Result<(), eframe::Error> {
             ZmkTransportConfig::Ble(id)
         } else {
             let serial_ports = protocols::zmk_rpc::scan_serial_ports();
-            if let Some(port) = serial_ports.into_iter().find(|p| p.vid == vid && p.pid == pid) {
+            if let Some(port) = serial_ports
+                .into_iter()
+                .find(|p| p.vid == vid && p.pid == pid)
+            {
                 ZmkTransportConfig::Serial(port.port_name)
             } else {
                 ZmkTransportConfig::Serial("AUTO".to_string())
