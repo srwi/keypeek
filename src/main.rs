@@ -23,11 +23,28 @@ use protocols::{ConnectionSpec, ZmkTransportConfig};
 use settings::Settings;
 use std::io::ErrorKind;
 use std::io::{Read, Write};
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use ui_wake::UiWake;
 
 const SOCKET_BASENAME: &str = "keypeek.sock";
+const DETACHED_TOGGLE_ENV: &str = "KEYPEEK_DETACHED_TOGGLE";
+
+fn spawn_detached_self() -> std::io::Result<()> {
+    let current_exe = std::env::current_exe()?;
+
+    let mut command = Command::new(current_exe);
+    command
+        .args(std::env::args_os().skip(1))
+        .env(DETACHED_TOGGLE_ENV, "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+
+    command.spawn()?;
+    Ok(())
+}
 
 fn send_command_to_running_instance(cli: &Cli, mut stream: Stream) -> Result<(), eframe::Error> {
     if cli.settings {
@@ -63,6 +80,11 @@ fn main() -> Result<(), eframe::Error> {
 
     if let Ok(stream) = Stream::connect(socket_name.clone()) {
         send_command_to_running_instance(&cli, stream)?;
+        return Ok(());
+    }
+
+    if cli.toggle && std::env::var_os(DETACHED_TOGGLE_ENV).is_none() {
+        spawn_detached_self().map_err(|e| eframe::Error::AppCreation(Box::new(e)))?;
         return Ok(());
     }
 
