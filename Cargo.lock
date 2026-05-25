@@ -2547,7 +2547,7 @@ dependencies = [
 
 [[package]]
 name = "keypeek"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "dirs",
  "eframe",
@@ -2564,6 +2564,7 @@ dependencies = [
  "serde_json",
  "serialport",
  "tray-icon",
+ "windows 0.62.2",
  "winit",
  "zmk-studio-api",
 ]

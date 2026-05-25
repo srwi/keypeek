@@ -5,7 +5,7 @@ description = "Keyboard layer overlay for VIA, Vial, and ZMK"
 authors = ["Stephan Rumswinkel"]
 repository = "https://github.com/srwi/keypeek"
 readme = "README.md"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 
 [dependencies]
@@ -30,6 +30,9 @@ gtk = "0.18"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 winit = "0.30.13"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62.2", features = ["Devices_Bluetooth", "Devices_Radios", "Foundation"] }
 
 [package.metadata.bundle]
 name = "KeyPeek"
