@@ -1,4 +1,3 @@
-```yaml
 name: Build and release
 
 on:
@@ -165,4 +164,3 @@ jobs:
             ./artifacts/* \
             --draft \
             --title "${{ github.ref_name }}"
-```
