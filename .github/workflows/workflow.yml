@@ -1,3 +1,4 @@
+```yaml
 name: Build and release
 
 on:
@@ -14,19 +15,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Set up Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-          override: true
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libudev-dev libglib2.0-dev libgtk-3-dev libpango1.0-dev libatk1.0-dev libgdk-pixbuf-2.0-dev libcairo2-dev libxdo-dev libxdo3 wget
+          sudo apt-get install -y libudev-dev libglib2.0-dev libgtk-3-dev libpango1.0-dev libatk1.0-dev libgdk-pixbuf-2.0-dev libcairo2-dev libxdo-dev libxdo3 wget librsvg2-bin
+
+      - name: Convert icon
+        run: |
+          rsvg-convert -w 256 -h 256 resources/icon.svg -o resources/icon.png
+          cp resources/icon.png icon.png
 
       - name: Install appimagetool
         run: |
@@ -38,9 +40,7 @@ jobs:
         run: cargo install cargo-appimage
 
       - name: Build AppImage
-        run: |
-          cp resources/icon.png icon.png
-          cargo appimage
+        run: cargo appimage
         env:
           APPIMAGE_EXTRACT_AND_RUN: 1
           APPIMAGE_LINUXDEPLOY_EXTRA_ARGS: "--library /usr/lib/x86_64-linux-gnu/libxdo.so.3"
@@ -64,14 +64,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Set up Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-          override: true
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Build
         run: cargo build --release
@@ -96,22 +92,18 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: macos-26
+          - os: macos-15
             target: aarch64-apple-darwin
             arch: arm64
-          - os: macos-26-intel
+          - os: macos-13
             target: x86_64-apple-darwin
             arch: x86_64
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Set up Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-          override: true
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Add target
         run: rustup target add ${{ matrix.target }}
@@ -144,7 +136,7 @@ jobs:
     if: ${{ startsWith(github.ref, 'refs/tags/') }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Download Linux artifact
         uses: actions/download-artifact@v4
@@ -158,7 +150,7 @@ jobs:
           name: windows-binary
           path: ./artifacts
 
-      - name: Download macOS artifact
+      - name: Download macOS artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: macos-*
@@ -173,3 +165,4 @@ jobs:
             ./artifacts/* \
             --draft \
             --title "${{ github.ref_name }}"
+```
