@@ -30,6 +30,8 @@ Session.vim
 .cargo
 # Included because it is part of the test case
 !/tests/run-make/thumb-none-qemu/example/.cargo
+.direnv
+.pre-commit-config.yaml
 
 ## Configuration
 /config.toml
@@ -54,6 +56,7 @@ build/
 /src/tools/x/target
 # Created by default with `src/ci/docker/run.sh`
 /obj/
+/result
 
 ## Temporary files
 *~
