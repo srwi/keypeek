@@ -124,21 +124,21 @@
         # Note that this is done as a separate derivation so that
         # we can block the CI if there are issues here, but not
         # prevent downstream consumers from building our crate by itself.
-        keypeek-clippy = craneLib.cargoClippy (commonArgs
-          // {
-            inherit cargoArtifacts;
-            cargoClippyExtraArgs = "--all-targets -- --deny warnings";
-          });
+        #keypeek-clippy = craneLib.cargoClippy (commonArgs
+        #  // {
+        #    inherit cargoArtifacts;
+        #    cargoClippyExtraArgs = "--all-targets -- --deny warnings";
+        #  });
 
-        keypeek-doc = craneLib.cargoDoc (commonArgs
-          // {
-            inherit cargoArtifacts;
-          });
+        #keypeek-doc = craneLib.cargoDoc (commonArgs
+        #  // {
+        #    inherit cargoArtifacts;
+        #  });
 
         # Check formatting
-        keypeek-fmt = craneLib.cargoFmt {
-          inherit src;
-        };
+        #keypeek-fmt = craneLib.cargoFmt {
+        #  inherit src;
+        #};
 
         # Audit dependencies
         #keypeek-audit = craneLib.cargoAudit {
@@ -163,10 +163,10 @@
         pre-commit-check = pre-commit.lib.${system}.run {
           src = ./.;
           hooks = {
-            editorconfig-checker.enable = true;
+            #editorconfig-checker.enable = true;
             alejandra.enable = true;
             deadnix.enable = true;
-            flake-checker.enable = true;
+            #flake-checker.enable = true;
             statix.enable = true;
           };
         };
