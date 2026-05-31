@@ -24,6 +24,8 @@ pub struct Key {
     pub y: f32,
     pub w: f32,
     pub h: f32,
+    #[serde(default)]
+    pub r: f32,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -78,13 +80,13 @@ pub trait KeyboardProtocol: Send {
     fn hid_read(&self) -> Result<Vec<u8>, Box<dyn Error>>;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ZmkTransportConfig {
     Serial(String),
     Ble(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ConnectionSpec {
     Via {
         json_path: String,

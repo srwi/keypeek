@@ -157,6 +157,7 @@ fn build_from_zmk_data(
                 y,
                 w,
                 h,
+                r: angle_deg,
             }
         })
         .collect();

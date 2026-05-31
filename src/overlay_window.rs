@@ -29,8 +29,10 @@ impl OverlayApp {
         ui_wake: UiWake,
         base_settings: Settings,
         available_devices: Vec<DiscoveredDevice>,
+        manual_visible: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        force_settings: std::sync::Arc<std::sync::atomic::AtomicBool>,
     ) -> Self {
-        Self {
+        let mut app = Self {
             _tray_icon: tray_icon,
             ui_wake,
             ui: UiState {
@@ -38,6 +40,8 @@ impl OverlayApp {
                 settings_error: None,
                 settings_warning: None,
                 mouse_passthrough: None,
+                manual_visible,
+                force_settings,
                 #[cfg(target_os = "macos")]
                 macos_maximized: false,
                 file_dialog: egui_file_dialog::FileDialog::new(),
@@ -48,7 +52,7 @@ impl OverlayApp {
             },
             session: SessionState {
                 connection: AppConnectionState::Disconnected,
-                ever_connected: false,
+                has_connected: false,
                 connected_definition: None,
                 layout_names: Vec::new(),
                 active_layout_name: String::new(),
@@ -62,7 +66,14 @@ impl OverlayApp {
                 },
                 pending_connect: None,
             },
+        };
+
+        if let Some(spec) = app.settings.active.last_connection.clone() {
+            app.begin_connect_with_spec(spec);
+            app.ui.settings_visible = false;
         }
+
+        app
     }
 
     fn sync_mouse_passthrough(&mut self, ctx: &egui::Context) {
@@ -84,17 +95,25 @@ impl OverlayApp {
             return;
         };
 
-        let Some(time_to_hide) = keyboard
+        let mut min_delay: Option<std::time::Duration> = None;
+
+        if let Some(time_to_hide) = keyboard
             .time_to_hide_overlay
             .lock()
             .unwrap()
             .as_ref()
             .copied()
-        else {
-            return;
-        };
+        {
+            if let Some(delay) = time_to_hide.checked_duration_since(Instant::now()) {
+                min_delay = Some(delay);
+            }
+        }
 
-        if let Some(delay) = time_to_hide.checked_duration_since(Instant::now()) {
+        if let Some(highlight_delay) = keyboard.get_highlight_timeout() {
+            min_delay = Some(min_delay.map_or(highlight_delay, |min| min.min(highlight_delay)));
+        }
+
+        if let Some(delay) = min_delay {
             ctx.request_repaint_after(delay);
         }
     }
@@ -113,7 +132,7 @@ impl eframe::App for OverlayApp {
         let ctx = ui.ctx();
 
         // On macOS, with_maximized(true) doesn't work for undecorated transparent
-        // windows. Explicitly size the window to fill the monitor on the first frame.
+        // Explicitly size the window to fill the monitor on the first frame.
         #[cfg(target_os = "macos")]
         if !self.ui.macos_maximized {
             if let Some(monitor_size) = ctx.input(|i| i.viewport().monitor_size) {
@@ -123,7 +142,20 @@ impl eframe::App for OverlayApp {
             }
         }
 
+        if self.ui.force_settings.swap(false, std::sync::atomic::Ordering::Relaxed) {
+            self.ui.settings_visible = true;
+        }
+
+        if let AppConnectionState::Connected { keyboard } = &self.session.connection {
+            if keyboard.is_disconnected() {
+                self.disconnect();
+                self.ui.settings_visible = true;
+                self.ui.settings_warning = Some("Device disconnected".to_string());
+            }
+        }
+
         self.poll_connect_result();
+
         self.apply_live_visual_settings();
         self.apply_live_layout_settings();
         self.ui.file_dialog.update(ctx);

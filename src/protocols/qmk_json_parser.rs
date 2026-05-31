@@ -142,6 +142,7 @@ fn collect_layout_keys(layout: &Value) -> Result<Vec<Key>, Box<dyn Error>> {
             y,
             w,
             h,
+            r: angle_deg,
         });
     }
 

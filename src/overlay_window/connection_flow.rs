@@ -3,6 +3,7 @@ use super::OverlayApp;
 use crate::connection::{ConnectedState, ConnectionRequest, ConnectionTask};
 use crate::device_discovery::DeviceKind;
 use crate::protocols::{ConnectionSpec, ZmkTransportConfig};
+use std::sync::atomic::Ordering;
 
 impl OverlayApp {
     pub(super) fn select_device(&mut self, index: usize) {
@@ -92,13 +93,32 @@ impl OverlayApp {
         self.session.active_layout_name = connected.selected_layout_name.clone();
         self.session.draft_layout_name = connected.selected_layout_name;
         self.session.connected_definition = Some(connected.definition);
-        self.session.connection = AppConnectionState::Connected {
-            keyboard: connected.keyboard,
-        };
-        self.session.ever_connected = true;
+
+        let keyboard = connected.keyboard;
+        keyboard
+            .show_on_layer_change
+            .store(self.settings.active.show_on_layer_change, Ordering::SeqCst);
+
+        self.session.connection = AppConnectionState::Connected { keyboard };
+        self.session.has_connected = true;
         self.ui.settings_error = None;
         self.ui.settings_warning = None;
 
+        self.settings.active.last_connection = Some(connected.spec);
+        self.settings.draft.last_connection = self.settings.active.last_connection.clone();
+        self.persist_settings();
+    }
+
+    pub(super) fn disconnect(&mut self) {
+        self.session.connection = AppConnectionState::Disconnected;
+        self.session.layout_names.clear();
+        self.session.active_layout_name.clear();
+        self.session.draft_layout_name.clear();
+        self.session.connected_definition = None;
+        self.session.has_connected = false;
+
+        self.settings.active.last_connection = None;
+        self.settings.draft.last_connection = None;
         self.persist_settings();
     }
 
@@ -109,17 +129,6 @@ impl OverlayApp {
     }
 
     pub(super) fn connect_from_ui(&mut self) {
-        if matches!(
-            self.session.connection,
-            AppConnectionState::Connected { .. }
-        ) {
-            self.ui.settings_warning = Some(
-                "Switching device/protocol/layout requires app restart in this version."
-                    .to_string(),
-            );
-            return;
-        }
-
         if self.connect.selected_device_index.is_none() {
             self.ui.settings_error = Some("No device selected".to_string());
             return;
@@ -133,6 +142,25 @@ impl OverlayApp {
         }
 
         self.begin_connect_with_current_draft();
+    }
+
+    pub(super) fn begin_connect_with_spec(&mut self, spec: ConnectionSpec) {
+        if self.connect.pending_connect.is_some() {
+            return;
+        }
+
+        let request = ConnectionRequest {
+            spec,
+            timeout: self.settings.draft.timeout,
+            layout_name: None,
+        };
+
+        self.connect.pending_connect = Some(ConnectionTask::start(
+            request,
+            self.ui_wake.clone(),
+            self.ui.manual_visible.clone(),
+        ));
+        self.ui.settings_error = None;
     }
 
     fn begin_connect_with_current_draft(&mut self) {
@@ -158,7 +186,11 @@ impl OverlayApp {
             },
         };
 
-        self.connect.pending_connect = Some(ConnectionTask::start(request, self.ui_wake.clone()));
+        self.connect.pending_connect = Some(ConnectionTask::start(
+            request,
+            self.ui_wake.clone(),
+            self.ui.manual_visible.clone(),
+        ));
         self.ui.settings_error = None;
     }
 

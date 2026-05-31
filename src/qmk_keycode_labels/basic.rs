@@ -799,31 +799,57 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             ..Default::default()
         }),
         Keycode::QK_MOUSE_CURSOR_UP => Some(LayoutKey {
-            tap: Label::new("Mouse ↑"),
+            tap: Label::new(""),
+            symbol: Some(format!(
+                "{}\n{}",
+                egui_phosphor::regular::ARROW_UP,
+                egui_phosphor::regular::MOUSE_SIMPLE
+            )),
             ..Default::default()
         }),
         Keycode::QK_MOUSE_CURSOR_DOWN => Some(LayoutKey {
-            tap: Label::new("Mouse ↓"),
+            tap: Label::new(""),
+            symbol: Some(format!(
+                "{}\n{}",
+                egui_phosphor::regular::MOUSE_SIMPLE,
+                egui_phosphor::regular::ARROW_DOWN
+            )),
             ..Default::default()
         }),
         Keycode::QK_MOUSE_CURSOR_LEFT => Some(LayoutKey {
-            tap: Label::new("Mouse ←"),
+            tap: Label::new(""),
+            symbol: Some(format!(
+                "{} {}",
+                egui_phosphor::regular::ARROW_LEFT,
+                egui_phosphor::regular::MOUSE_SIMPLE
+            )),
             ..Default::default()
         }),
         Keycode::QK_MOUSE_CURSOR_RIGHT => Some(LayoutKey {
-            tap: Label::new("Mouse →"),
+            tap: Label::new(""),
+            symbol: Some(format!(
+                "{} {}",
+                egui_phosphor::regular::MOUSE_SIMPLE,
+                egui_phosphor::regular::ARROW_RIGHT
+            )),
             ..Default::default()
         }),
+        // Mouse buttons 1–3 use icon symbols for the common left/right/middle buttons,
+        // while buttons 4–8 fall back to text labels because standard auxiliary mouse button
+        // icons are not available/standardized.
         Keycode::QK_MOUSE_BUTTON_1 => Some(LayoutKey {
-            tap: Label::new("Mouse Btn1"),
+            tap: Label::new(""),
+            symbol: Some(egui_phosphor::regular::MOUSE_LEFT_CLICK.to_string()),
             ..Default::default()
         }),
         Keycode::QK_MOUSE_BUTTON_2 => Some(LayoutKey {
-            tap: Label::new("Mouse Btn2"),
+            tap: Label::new(""),
+            symbol: Some(egui_phosphor::regular::MOUSE_RIGHT_CLICK.to_string()),
             ..Default::default()
         }),
         Keycode::QK_MOUSE_BUTTON_3 => Some(LayoutKey {
-            tap: Label::new("Mouse Btn3"),
+            tap: Label::new(""),
+            symbol: Some(egui_phosphor::regular::MOUSE_MIDDLE_CLICK.to_string()),
             ..Default::default()
         }),
         Keycode::QK_MOUSE_BUTTON_4 => Some(LayoutKey {
@@ -847,19 +873,39 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             ..Default::default()
         }),
         Keycode::QK_MOUSE_WHEEL_UP => Some(LayoutKey {
-            tap: Label::new("Mouse Wh ↑"),
+            tap: Label::new(""),
+            symbol: Some(format!(
+                "{}\n{}",
+                egui_phosphor::regular::ARROW_UP,
+                egui_phosphor::regular::MOUSE_SCROLL
+            )),
             ..Default::default()
         }),
         Keycode::QK_MOUSE_WHEEL_DOWN => Some(LayoutKey {
-            tap: Label::new("Mouse Wh ↓"),
+            tap: Label::new(""),
+            symbol: Some(format!(
+                "{}\n{}",
+                egui_phosphor::regular::MOUSE_SCROLL,
+                egui_phosphor::regular::ARROW_DOWN
+            )),
             ..Default::default()
         }),
         Keycode::QK_MOUSE_WHEEL_LEFT => Some(LayoutKey {
-            tap: Label::new("Mouse Wh ←"),
+            tap: Label::new(""),
+            symbol: Some(format!(
+                "{} {}",
+                egui_phosphor::regular::ARROW_LEFT,
+                egui_phosphor::regular::MOUSE_SCROLL
+            )),
             ..Default::default()
         }),
         Keycode::QK_MOUSE_WHEEL_RIGHT => Some(LayoutKey {
-            tap: Label::new("Mouse Wh →"),
+            tap: Label::new(""),
+            symbol: Some(format!(
+                "{} {}",
+                egui_phosphor::regular::MOUSE_SCROLL,
+                egui_phosphor::regular::ARROW_RIGHT
+            )),
             ..Default::default()
         }),
         Keycode::QK_MOUSE_ACCELERATION_0 => Some(LayoutKey {
@@ -875,46 +921,50 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             ..Default::default()
         }),
         Keycode::KC_LEFT_CTRL => Some(LayoutKey {
-            tap: Label::new("Ctrl"),
+            tap: Label::new(""),
+            symbol: Some("\u{2388}".to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()
         }),
         Keycode::KC_LEFT_SHIFT => Some(LayoutKey {
-            tap: Label::new("Shift"),
+            tap: Label::new(""),
             symbol: Some(egui_phosphor::regular::ARROW_FAT_UP.to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()
         }),
         Keycode::KC_LEFT_ALT => Some(LayoutKey {
-            tap: Label::new("Alt"),
+            tap: Label::new(""),
+            symbol: Some(egui_phosphor::regular::OPTION.to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()
         }),
         Keycode::KC_LEFT_GUI => Some(LayoutKey {
-            tap: Label::new("Win"),
-            symbol: Some(egui_phosphor::regular::WINDOWS_LOGO.to_string()),
+            tap: Label::new(""),
+            symbol: Some(egui_phosphor::fill::DIAMOND.to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()
         }),
         Keycode::KC_RIGHT_CTRL => Some(LayoutKey {
-            tap: Label::new("Ctrl"),
+            tap: Label::new(""),
+            symbol: Some("\u{2388}".to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()
         }),
         Keycode::KC_RIGHT_SHIFT => Some(LayoutKey {
-            tap: Label::new("Shift"),
+            tap: Label::new(""),
             symbol: Some(egui_phosphor::regular::ARROW_FAT_UP.to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()
         }),
         Keycode::KC_RIGHT_ALT => Some(LayoutKey {
-            tap: Label::new("Alt"),
+            tap: Label::new(""),
+            symbol: Some(egui_phosphor::regular::OPTION.to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()
         }),
         Keycode::KC_RIGHT_GUI => Some(LayoutKey {
-            tap: Label::new("Win"),
-            symbol: Some(egui_phosphor::regular::WINDOWS_LOGO.to_string()),
+            tap: Label::new(""),
+            symbol: Some(egui_phosphor::fill::DIAMOND.to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()
         }),

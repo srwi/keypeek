@@ -3,6 +3,8 @@ use crate::device_discovery::DiscoveredDevice;
 use crate::keyboard::Keyboard;
 use crate::protocols::KeyboardDefinition;
 use crate::settings::{ProtocolType, Settings};
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use eframe::egui;
 use egui_file_dialog::FileDialog;
@@ -10,6 +12,7 @@ use egui_file_dialog::FileDialog;
 pub struct LabelGalleys {
     pub symbol: Option<std::sync::Arc<egui::Galley>>,
     pub text: Option<std::sync::Arc<egui::Galley>>,
+    pub hold: Option<std::sync::Arc<egui::Galley>>,
 }
 
 pub enum AppConnectionState {
@@ -45,6 +48,8 @@ pub struct UiState {
     pub settings_error: Option<String>,
     pub settings_warning: Option<String>,
     pub mouse_passthrough: Option<bool>,
+    pub manual_visible: Arc<AtomicBool>,
+    pub force_settings: Arc<AtomicBool>,
     #[cfg(target_os = "macos")]
     pub macos_maximized: bool,
     pub file_dialog: FileDialog,
@@ -57,7 +62,7 @@ pub struct SettingsState {
 
 pub struct SessionState {
     pub connection: AppConnectionState,
-    pub ever_connected: bool,
+    pub has_connected: bool,
     pub connected_definition: Option<KeyboardDefinition>,
     pub layout_names: Vec<String>,
     pub active_layout_name: String,

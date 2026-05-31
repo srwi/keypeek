@@ -12,6 +12,7 @@ pub const QK_TOGGLE_LAYER: Range<u16> = 0x5260..0x5280;
 pub const QK_ONE_SHOT_LAYER: Range<u16> = 0x5280..0x52A0;
 pub const QK_ONE_SHOT_MOD: Range<u16> = 0x52a0..0x52c0;
 pub const QK_LAYER_TAP_TOGGLE: Range<u16> = 0x52C0..0x52E0;
+pub const QK_TAP_DANCE: Range<u16> = 0x5700..0x5720;
 pub const QK_MACRO: Range<u16> = 0x7700..0x7780;
 pub const QK_KB: Range<u16> = 0x7E00..0x7F00;
 
@@ -29,10 +30,6 @@ pub const MOD_LCTL: u16 = 0x01;
 pub const MOD_LSFT: u16 = 0x02;
 pub const MOD_LALT: u16 = 0x04;
 pub const MOD_LGUI: u16 = 0x08;
-pub const MOD_RCTL: u16 = 0x10;
-pub const MOD_RSFT: u16 = 0x20;
-pub const MOD_RALT: u16 = 0x40;
-pub const MOD_RGUI: u16 = 0x80;
 
 pub const MODIFIER_KEY_TO_VALUE: &[(&str, u16)] = &[
     ("LCTL", QK_LCTL),

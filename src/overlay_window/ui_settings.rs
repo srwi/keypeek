@@ -58,12 +58,12 @@ impl OverlayApp {
                         .spacing([20.0, 10.0])
                         .show(ui, |ui| {
                             ui.label("Device");
-                            ui.add_enabled_ui(!connection_locked, |ui| {
-                                ui.horizontal(|ui| {
-                                    let combo_width = (ui.available_width()
-                                        - RIGHT_COLUMN_WIDTH
-                                        - control_spacing)
-                                        .max(120.0);
+                            ui.horizontal(|ui| {
+                                let combo_width = (ui.available_width()
+                                    - RIGHT_COLUMN_WIDTH
+                                    - control_spacing)
+                                    .max(120.0);
+                                ui.add_enabled_ui(!connection_locked, |ui| {
                                     egui::ComboBox::from_id_salt("device_combo")
                                         .width(combo_width)
                                         .selected_text(selected_device_text.clone())
@@ -86,15 +86,27 @@ impl OverlayApp {
                                                 ui.weak("No devices found");
                                             }
                                         });
+                                });
 
-                                    ui.allocate_ui_with_layout(
-                                        egui::vec2(RIGHT_COLUMN_WIDTH, 20.0),
-                                        egui::Layout::left_to_right(egui::Align::Center),
-                                        |ui| {
-                                            let connect_in_progress =
-                                                self.connect.pending_connect.is_some();
-                                            let can_connect = !connection_locked
-                                                && !connect_in_progress
+                                ui.allocate_ui_with_layout(
+                                    egui::vec2(RIGHT_COLUMN_WIDTH, 20.0),
+                                    egui::Layout::left_to_right(egui::Align::Center),
+                                    |ui| {
+                                        let connect_in_progress =
+                                            self.connect.pending_connect.is_some();
+
+                                        if connection_locked {
+                                            if ui
+                                                .add_sized(
+                                                    [RIGHT_COLUMN_WIDTH, 20.0],
+                                                    egui::Button::new("Disconnect"),
+                                                )
+                                                .clicked()
+                                            {
+                                                self.disconnect();
+                                            }
+                                        } else {
+                                            let can_connect = !connect_in_progress
                                                 && self.connect.selected_device_index.is_some();
                                             let button_label = if connect_in_progress {
                                                 "Connecting..."
@@ -112,9 +124,9 @@ impl OverlayApp {
                                                     self.connect_from_ui();
                                                 }
                                             });
-                                        },
-                                    );
-                                });
+                                        }
+                                    },
+                                );
                             });
                             ui.end_row();
 
@@ -236,6 +248,13 @@ impl OverlayApp {
                                 "Fit long labels to available space",
                             );
                             ui.end_row();
+
+                            ui.label("Show on layer change");
+                            ui.checkbox(
+                                &mut self.settings.draft.show_on_layer_change,
+                                "Automatically show overlay when switching layers",
+                            );
+                            ui.end_row();
                         });
                 });
 
@@ -312,7 +331,7 @@ impl OverlayApp {
 
         if self.ui.settings_visible && !open {
             self.ui.settings_visible = false;
-            if !self.session.ever_connected {
+            if !self.session.has_connected {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
         }

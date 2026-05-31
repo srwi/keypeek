@@ -2,6 +2,7 @@ use super::state::AppConnectionState;
 use super::OverlayApp;
 use crate::settings::{ProtocolType, WindowPosition};
 use eframe::egui::{self, Align2};
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 impl OverlayApp {
@@ -15,7 +16,9 @@ impl OverlayApp {
             || self.settings.active.margin != self.settings.draft.margin
             || self.settings.active.position != self.settings.draft.position
             || self.settings.active.timeout != self.settings.draft.timeout
-            || self.settings.active.theme != self.settings.draft.theme;
+            || self.settings.active.theme != self.settings.draft.theme
+            || self.settings.active.show_on_layer_change
+                != self.settings.draft.show_on_layer_change;
 
         if !changed {
             return;
@@ -29,11 +32,15 @@ impl OverlayApp {
         self.settings.active.position = self.settings.draft.position;
         self.settings.active.timeout = self.settings.draft.timeout;
         self.settings.active.theme = self.settings.draft.theme.clone();
+        self.settings.active.show_on_layer_change = self.settings.draft.show_on_layer_change;
 
         if let AppConnectionState::Connected { keyboard } = &self.session.connection {
             if old_timeout != self.settings.active.timeout {
                 keyboard.set_timeout(self.settings.active.timeout);
             }
+            keyboard
+                .show_on_layer_change
+                .store(self.settings.active.show_on_layer_change, Ordering::SeqCst);
         }
 
         self.persist_settings();
@@ -125,7 +132,21 @@ impl OverlayApp {
                 if self.ui.settings_visible {
                     true
                 } else {
-                    match keyboard.time_to_hide_overlay.lock().unwrap().as_ref() {
+                    let manual = self
+                        .ui
+                        .manual_visible
+                        .load(std::sync::atomic::Ordering::Relaxed);
+
+                    if !self.settings.active.show_on_layer_change {
+                        return manual;
+                    }
+
+                    if manual {
+                        return true;
+                    }
+
+                    let time_to_hide_guard = keyboard.time_to_hide_overlay.lock().unwrap();
+                    match time_to_hide_guard.as_ref() {
                         Some(time_to_hide) => Instant::now() < *time_to_hide,
                         None => true,
                     }

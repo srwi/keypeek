@@ -59,7 +59,7 @@ fn parse_kle_keymap(keymap: &[Value]) -> Result<Vec<Key>, Box<dyn Error>> {
     for row in keymap {
         let row_array = match row.as_array() {
             Some(arr) => arr,
-            None => continue, // Skip non-array rows
+            None => continue,
         };
 
         let mut current_x: f32 = 0.0;
@@ -68,19 +68,22 @@ fn parse_kle_keymap(keymap: &[Value]) -> Result<Vec<Key>, Box<dyn Error>> {
 
         for item in row_array {
             if let Some(obj) = item.as_object() {
-                // This is a key property object which modifies the next key
-
                 // Handle rotation properties (these persist until changed)
-                // When rx or ry changes, reset the current position to the rotation origin
+                let mut origin_changed = false;
                 if let Some(rx) = obj.get("rx").and_then(|v| v.as_f64()) {
                     rotation_x = rx as f32;
-                    current_x = 0.0; // Reset x relative to new rotation origin
-                    current_y = 0.0; // Reset y relative to new rotation origin
+                    origin_changed = true;
                 }
                 if let Some(ry) = obj.get("ry").and_then(|v| v.as_f64()) {
                     rotation_y = ry as f32;
-                    current_y = 0.0; // Reset y relative to new rotation origin
+                    origin_changed = true;
                 }
+
+                if origin_changed {
+                    current_x = 0.0;
+                    current_y = 0.0;
+                }
+
                 if let Some(r) = obj.get("r").and_then(|v| v.as_f64()) {
                     rotation_angle = r as f32;
                 }
@@ -98,11 +101,10 @@ fn parse_kle_keymap(keymap: &[Value]) -> Result<Vec<Key>, Box<dyn Error>> {
                     current_y += y as f32;
                 }
             } else if let Some(label) = item.as_str() {
-                // This is a key with a label
                 if let Some((row, col)) = parse_matrix_label(label) {
-                    // Normalize KLE-relative coordinates to absolute space, then flatten rotation.
                     let absolute_x = rotation_x + current_x;
                     let absolute_y = rotation_y + current_y;
+
                     let (final_x, final_y) = flattened_top_left_after_center_rotation(
                         absolute_x,
                         absolute_y,
@@ -120,21 +122,17 @@ fn parse_kle_keymap(keymap: &[Value]) -> Result<Vec<Key>, Box<dyn Error>> {
                         y: final_y,
                         w: current_w,
                         h: current_h,
+                        r: rotation_angle,
                     });
                 }
 
                 current_x += current_w;
-
                 current_w = 1.0;
                 current_h = 1.0;
             }
         }
 
-        // Only increment y for non-rotated keys.
-        // For rotated keys, y is relative to rotation origin.
-        if rotation_angle == 0.0 {
-            current_y += 1.0;
-        }
+        current_y += 1.0;
     }
 
     Ok(keys)
