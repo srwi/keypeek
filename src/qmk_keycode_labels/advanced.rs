@@ -96,7 +96,7 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
 
             Some(LayoutKey {
                 tap: tap_key.tap,
-                hold: Some(Label::new(mod_str)),
+                function: Some(Label::new(mod_str)),
                 shifted: tap_key.shifted,
                 symbol: tap_key.symbol,
                 kind: KeycodeKind::Basic,
@@ -114,7 +114,8 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             let mod_str = mod_value_to_string(mod_value);
 
             Some(LayoutKey {
-                tap: Label::new(format!("LM({},{})", layer, mod_str)),
+                tap: Label::new(mod_str),
+                function: Some(Label::new(format!("L{}", layer))),
                 kind: KeycodeKind::Modifier,
                 layer_ref: Some(layer as u8),
                 ..Default::default()
@@ -126,7 +127,8 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             let mod_str = mod_value_to_string(remainder);
 
             Some(LayoutKey {
-                tap: Label::new(format!("OSM({})", mod_str)),
+                tap: Label::new(mod_str),
+                function: Some(Label::new("OSM")),
                 kind: KeycodeKind::Modifier,
                 ..Default::default()
             })
@@ -141,7 +143,7 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
 
             Some(LayoutKey {
                 tap: tap_key.tap,
-                hold: Some(Label::new(format!("L{}", layer))),
+                function: Some(Label::new(format!("L{}", layer))),
                 shifted: tap_key.shifted,
                 symbol: tap_key.symbol,
                 kind: KeycodeKind::Modifier,

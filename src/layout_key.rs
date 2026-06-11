@@ -52,8 +52,10 @@ pub struct LayoutKey {
     /// Primary key action label (e.g., "A", "Enter", "L1")
     pub tap: Label,
 
-    /// Hold action label for hold-tap keys (e.g., "Shift" for MT(LSFT, KC_A))
-    pub hold: Option<Label>,
+    /// Secondary "function" legend describing the key's modifier, target layer,
+    /// or behavior (e.g. "⎈" for MT, "L2" for LT, "MO"/"OSM"/"Toggle"). Rendered
+    /// in a small strip along the bottom edge of the key.
+    pub function: Option<Label>,
 
     /// Shifted legend for keys that produce a different character when shift is
     /// held (e.g. "!" for KC_1). Rendered as a second line above `tap`.
@@ -73,7 +75,7 @@ impl Default for LayoutKey {
     fn default() -> Self {
         LayoutKey {
             tap: Label::default(),
-            hold: None,
+            function: None,
             shifted: None,
             symbol: None,
             kind: KeycodeKind::Basic,

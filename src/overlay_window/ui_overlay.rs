@@ -45,8 +45,12 @@ impl OverlayApp {
         color: egui::Color32,
     ) -> LabelGalleys {
         let (symbol, text) = self.generate_tap_galleys(ui, key, rect, font, color);
-        let hold = self.generate_hold_galley(ui, key, rect, color);
-        LabelGalleys { symbol, text, hold }
+        let function = self.generate_function_galley(ui, key, rect, color);
+        LabelGalleys {
+            symbol,
+            text,
+            function,
+        }
     }
 
     fn generate_tap_galleys(
@@ -151,27 +155,27 @@ impl OverlayApp {
         (None, None)
     }
 
-    fn generate_hold_galley(
+    fn generate_function_galley(
         &self,
         ui: &egui::Ui,
         key: &LayoutKey,
         rect: egui::Rect,
         color: egui::Color32,
     ) -> Option<std::sync::Arc<egui::Galley>> {
-        let hold = key.hold.as_ref()?;
+        let function = key.function.as_ref()?;
         let size = self.settings.active.size as f32;
         let font_scale = self.settings.active.font_size_multiplier;
         let max_width = rect.width() * 0.85;
-        let hold_font = egui::FontId::proportional(0.20 * size * font_scale);
+        let function_font = egui::FontId::proportional(0.20 * size * font_scale);
         let create_galley =
             |text: String, fid: egui::FontId| ui.painter().layout_no_wrap(text, fid, color);
 
-        let galley = create_galley(hold.full.clone(), hold_font.clone());
+        let galley = create_galley(function.full.clone(), function_font.clone());
         if galley.rect.width() <= max_width {
             return Some(galley);
         }
-        if let Some(short) = &hold.short {
-            let short_galley = create_galley(short.clone(), hold_font);
+        if let Some(short) = &function.short {
+            let short_galley = create_galley(short.clone(), function_font);
             if short_galley.rect.width() <= max_width {
                 return Some(short_galley);
             }
@@ -306,21 +310,21 @@ impl OverlayApp {
                     let galleys =
                         self.generate_key_label_galleys(ui, &layout_key, rect, font, font_color);
 
-                    // When a hold label is present, reserve a strip along the bottom edge for it
-                    // and center the primary label in the remaining area above.
-                    let hold_height = rect.height() * 0.22;
-                    let main_label_rect = if galleys.hold.is_some() {
+                    // When a function label is present, reserve a strip along the bottom edge for
+                    // it and center the primary label in the remaining area above.
+                    let function_height = rect.height() * 0.22;
+                    let main_label_rect = if galleys.function.is_some() {
                         egui::Rect::from_min_max(
                             rect.left_top(),
-                            egui::pos2(rect.right(), rect.bottom() - hold_height),
+                            egui::pos2(rect.right(), rect.bottom() - function_height),
                         )
                     } else {
                         rect
                     };
 
-                    if let Some(hold_galley) = galleys.hold {
+                    if let Some(function_galley) = galleys.function {
                         let strip = egui::Rect::from_min_max(
-                            egui::pos2(rect.left(), rect.bottom() - hold_height),
+                            egui::pos2(rect.left(), rect.bottom() - function_height),
                             rect.max,
                         );
                         // RectShape rotates around its own center, so orbit the strip's center
@@ -345,10 +349,10 @@ impl OverlayApp {
                             )
                             .with_angle(angle),
                         );
-                        let hold_pos = strip.center() - hold_galley.rect.center().to_vec2();
+                        let function_pos = strip.center() - function_galley.rect.center().to_vec2();
                         ui.painter().add(rotated_text_shape(
-                            hold_pos,
-                            hold_galley,
+                            function_pos,
+                            function_galley,
                             font_color.gamma_multiply(0.7),
                             center,
                             angle,

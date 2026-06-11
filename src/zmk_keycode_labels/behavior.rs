@@ -14,7 +14,7 @@ pub fn behavior_to_layout_key(behavior: &Behavior) -> Option<LayoutKey> {
         Behavior::KeyPress(keycode) => Some(hid_usage_to_layout_key(*keycode)),
         Behavior::KeyToggle(keycode) => {
             let mut key = hid_usage_to_layout_key(*keycode);
-            key.hold = Some(Label::new("Toggle"));
+            key.function = Some(Label::new("Toggle"));
             Some(key)
         }
         Behavior::MomentaryLayer { layer_id } => Some(layer_layout_key("MO", *layer_id)),
@@ -25,7 +25,7 @@ pub fn behavior_to_layout_key(behavior: &Behavior) -> Option<LayoutKey> {
             let tap_key = hid_usage_to_layout_key(*tap);
             Some(LayoutKey {
                 tap: tap_key.tap,
-                hold: Some(Label::with_short(
+                function: Some(Label::with_short(
                     format!("L{}", layer_id),
                     format!("L{}", layer_id),
                 )),
@@ -45,7 +45,7 @@ pub fn behavior_to_layout_key(behavior: &Behavior) -> Option<LayoutKey> {
             };
             Some(LayoutKey {
                 tap: tap_key.tap,
-                hold: Some(hold_label),
+                function: Some(hold_label),
                 shifted: tap_key.shifted,
                 symbol: tap_key.symbol,
                 kind: KeycodeKind::Basic,
@@ -55,10 +55,10 @@ pub fn behavior_to_layout_key(behavior: &Behavior) -> Option<LayoutKey> {
         Behavior::StickyKey(keycode) => {
             let key = hid_usage_to_layout_key(*keycode);
             Some(LayoutKey {
-                tap: Label::with_short(
-                    format!("OS {}", key.tap.full),
-                    format!("OS{}", key.tap.short.as_deref().unwrap_or(&key.tap.full)),
-                ),
+                tap: key.tap,
+                function: Some(Label::new("OS")),
+                shifted: key.shifted,
+                symbol: key.symbol,
                 kind: KeycodeKind::Modifier,
                 ..Default::default()
             })
@@ -258,10 +258,8 @@ fn decode_mouse_xy(value: u32) -> (i16, i16) {
 
 fn layer_layout_key(abbreviation: &str, layer_id: u32) -> LayoutKey {
     LayoutKey {
-        tap: Label::with_short(
-            format!("{} {}", abbreviation, layer_id),
-            format!("{}{}", abbreviation, layer_id),
-        ),
+        tap: Label::new(format!("L{}", layer_id)),
+        function: Some(Label::new(abbreviation.to_string())),
         kind: KeycodeKind::Special,
         layer_ref: Some(layer_id as u8),
         ..Default::default()
