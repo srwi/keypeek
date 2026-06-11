@@ -25,30 +25,29 @@ pub const QK_RSFT: u16 = 0x1200;
 pub const QK_RALT: u16 = 0x1400;
 pub const QK_RGUI: u16 = 0x1800;
 
-pub const MOD_LCTL: u16 = 0x01;
-pub const MOD_LSFT: u16 = 0x02;
-pub const MOD_LALT: u16 = 0x04;
-pub const MOD_LGUI: u16 = 0x08;
-pub const MOD_RCTL: u16 = 0x10;
-pub const MOD_RSFT: u16 = 0x20;
-pub const MOD_RALT: u16 = 0x40;
-pub const MOD_RGUI: u16 = 0x80;
-
 pub const MODIFIER_KEY_TO_VALUE: &[(&str, u16)] = &[
+    ("LCtl", QK_LCTL),
     ("LCTL", QK_LCTL),
     ("C", QK_LCTL),
+    ("LSft", QK_LSFT),
     ("LSFT", QK_LSFT),
     ("S", QK_LSFT),
+    ("LAlt", QK_LALT),
     ("LALT", QK_LALT),
     ("A", QK_LALT),
+    ("LGui", QK_LGUI),
     ("LGUI", QK_LGUI),
     ("LCMD", QK_LGUI),
     ("LWIN", QK_LGUI),
     ("G", QK_LGUI),
+    ("RCtl", QK_RCTL),
     ("RCTL", QK_RCTL),
+    ("RSft", QK_RSFT),
     ("RSFT", QK_RSFT),
+    ("RAlt", QK_RALT),
     ("ALGR", QK_RALT),
     ("RALT", QK_RALT),
+    ("RGui", QK_RGUI),
     ("RCMD", QK_RGUI),
     ("RWIN", QK_RGUI),
     ("RGUI", QK_RGUI),
