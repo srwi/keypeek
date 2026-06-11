@@ -1,5 +1,8 @@
+use crate::layout_key::modifier_symbols;
 use crate::layout_key::{KeycodeKind, Label, LayoutKey};
-use zmk_studio_api::{HidUsage, MOD_LSFT, MOD_RSFT};
+use zmk_studio_api::{
+    HidUsage, MOD_LALT, MOD_LCTL, MOD_LGUI, MOD_LSFT, MOD_RALT, MOD_RCTL, MOD_RGUI, MOD_RSFT,
+};
 
 use super::keycode_label::keycode_to_layout_key;
 
@@ -35,24 +38,24 @@ pub fn hid_usage_to_layout_key(usage: HidUsage) -> LayoutKey {
         }
     }
 
-    let base_label = if let Some(base_keycode) = base.known_keycode() {
+    // Otherwise show the base key in `tap` and the applied modifiers as glyphs in
+    // the function strip (e.g. "C" + "⎈" for LC(C)).
+    let (tap, symbol) = if let Some(base_keycode) = base.known_keycode() {
         let base_key = keycode_to_layout_key(&base_keycode);
-        if let Some(symbol) = base_key.symbol {
-            symbol
-        } else {
-            base_key.tap.full
-        }
+        (base_key.tap, base_key.symbol)
     } else {
-        format!("0x{:08X}", base.to_hid_usage())
+        (Label::new(format!("0x{:08X}", base.to_hid_usage())), None)
     };
 
-    let mut rendered = base_label;
-    for modifier in usage.modifier_labels().iter().rev() {
-        rendered = format!("{modifier}({rendered})");
-    }
-
     LayoutKey {
-        tap: Label::new(rendered),
+        tap,
+        function: Some(Label::new(modifier_symbols::glyphs(
+            mods & (MOD_LCTL | MOD_RCTL) != 0,
+            mods & (MOD_LSFT | MOD_RSFT) != 0,
+            mods & (MOD_LALT | MOD_RALT) != 0,
+            mods & (MOD_LGUI | MOD_RGUI) != 0,
+        ))),
+        symbol,
         kind: KeycodeKind::Modifier,
         ..Default::default()
     }

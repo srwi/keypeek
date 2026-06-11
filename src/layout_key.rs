@@ -8,6 +8,23 @@ pub mod modifier_symbols {
     pub const MOD_SYMBOL_SHIFT: &str = egui_phosphor::regular::ARROW_FAT_UP;
     pub const MOD_SYMBOL_ALT: &str = egui_phosphor::regular::OPTION;
     pub const MOD_SYMBOL_GUI: &str = egui_phosphor::fill::DIAMOND;
+
+    pub fn glyphs(ctrl: bool, shift: bool, alt: bool, gui: bool) -> String {
+        let mut out = String::new();
+        if ctrl {
+            out.push_str(MOD_SYMBOL_CTRL);
+        }
+        if shift {
+            out.push_str(MOD_SYMBOL_SHIFT);
+        }
+        if alt {
+            out.push_str(MOD_SYMBOL_ALT);
+        }
+        if gui {
+            out.push_str(MOD_SYMBOL_GUI);
+        }
+        out
+    }
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Default, serde::Serialize, serde::Deserialize)]

@@ -16,52 +16,7 @@ pub const QK_TAP_DANCE: Range<u16> = 0x5700..0x5800;
 pub const QK_MACRO: Range<u16> = 0x7700..0x7780;
 pub const QK_KB: Range<u16> = 0x7E00..0x7F00;
 
-pub const QK_LCTL: u16 = 0x0100;
-pub const QK_LSFT: u16 = 0x0200;
-pub const QK_LALT: u16 = 0x0400;
-pub const QK_LGUI: u16 = 0x0800;
-pub const QK_RMODS_MIN: u16 = 0x1000;
-pub const QK_RCTL: u16 = 0x1100;
-pub const QK_RSFT: u16 = 0x1200;
-pub const QK_RALT: u16 = 0x1400;
-pub const QK_RGUI: u16 = 0x1800;
-
 pub const MOD_LCTL: u16 = 0x01;
 pub const MOD_LSFT: u16 = 0x02;
 pub const MOD_LALT: u16 = 0x04;
 pub const MOD_LGUI: u16 = 0x08;
-
-pub const MODIFIER_KEY_TO_VALUE: &[(&str, u16)] = &[
-    ("LCTL", QK_LCTL),
-    ("C", QK_LCTL),
-    ("LSFT", QK_LSFT),
-    ("S", QK_LSFT),
-    ("LALT", QK_LALT),
-    ("A", QK_LALT),
-    ("LGUI", QK_LGUI),
-    ("LCMD", QK_LGUI),
-    ("LWIN", QK_LGUI),
-    ("G", QK_LGUI),
-    ("RCTL", QK_RCTL),
-    ("RSFT", QK_RSFT),
-    ("ALGR", QK_RALT),
-    ("RALT", QK_RALT),
-    ("RCMD", QK_RGUI),
-    ("RWIN", QK_RGUI),
-    ("RGUI", QK_RGUI),
-    ("SCMD", QK_LSFT | QK_LGUI),
-    ("SWIN", QK_LSFT | QK_LGUI),
-    ("SGUI", QK_LSFT | QK_LGUI),
-    ("LSG", QK_LSFT | QK_LGUI),
-    ("LAG", QK_LALT | QK_LGUI),
-    ("RSG", QK_RSFT | QK_RGUI),
-    ("RAG", QK_RALT | QK_RGUI),
-    ("LCA", QK_LCTL | QK_LALT),
-    ("LSA", QK_LSFT | QK_LALT),
-    ("SAGR", QK_RSFT | QK_RALT),
-    ("RSA", QK_RSFT | QK_RALT),
-    ("RCS", QK_RCTL | QK_RSFT),
-    ("LCAG", QK_LCTL | QK_LALT | QK_LGUI),
-    ("MEH", QK_LCTL | QK_LALT | QK_LSFT),
-    ("HYPR", QK_LCTL | QK_LALT | QK_LSFT | QK_LGUI),
-];

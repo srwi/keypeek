@@ -1,4 +1,4 @@
-use crate::layout_key::modifier_symbols::*;
+use crate::layout_key::modifier_symbols;
 use crate::layout_key::{KeycodeKind, Label, LayoutKey};
 use crate::qmk_keycode_labels::basic::get_basic_layout_key;
 use crate::qmk_keycode_labels::constants::*;
@@ -8,16 +8,13 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
         input_bytes if QK_MODS.contains(&input_bytes) => {
             let keycode = input_bytes & 0xff;
             let inner_key = get_basic_layout_key(keycode);
-            let keycode_str = inner_key
-                .as_ref()
-                .map(|k| k.tap.full.clone())
-                .unwrap_or_else(|| format!("0x{:02X}", keycode));
 
             let input_modifiers = input_bytes & 0x1f00;
 
-            // A lone shift over a key that has a shifted legend just produces that
-            // shifted character (e.g. S(KC_1) == "!"), so render it as a plain key.
-            if input_modifiers == QK_LSFT || input_modifiers == QK_RSFT {
+            // A lone shift (either side) over a key that has a shifted legend just
+            // produces that shifted character (e.g. S(KC_1) == "!"), so render it as
+            // a plain key. Mask out the side bit and compare only the low nibble.
+            if (input_modifiers >> 8) & 0x0f == MOD_LSFT {
                 if let Some(shifted) = inner_key.as_ref().and_then(|k| k.shifted.clone()) {
                     return Some(LayoutKey {
                         tap: Label::new(shifted),
@@ -26,64 +23,19 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
                 }
             }
 
-            // Try to find exact matches first
-            if let Some((name, _)) = MODIFIER_KEY_TO_VALUE
-                .iter()
-                .find(|(_, v)| *v == input_modifiers)
-            {
-                return Some(LayoutKey {
-                    tap: Label::new(format!("{}({})", name, keycode_str)),
-                    kind: KeycodeKind::Modifier,
-                    ..Default::default()
-                });
-            }
-
-            // Left and right side modifiers are mutually exclusive. Therefore a single boolean
-            // is used to indicate which side to use.
-            let is_right_side_mods = (input_modifiers & QK_RMODS_MIN) != 0;
-            let enabled: Vec<&str> = MODIFIER_KEY_TO_VALUE
-                .iter()
-                .filter(|(_, modifiers)| {
-                    if is_right_side_mods {
-                        *modifiers >= QK_RMODS_MIN
-                    } else {
-                        *modifiers < QK_RMODS_MIN
-                    }
-                })
-                .filter_map(|(modifiers_name, modifiers)| {
-                    if (input_modifiers & *modifiers) == *modifiers {
-                        Some(*modifiers_name)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
-            if !enabled.is_empty() {
-                // Build nested parentheses style, e.g. LCTL(LALT(A))
-                let mut nested_mods = String::new();
-                for (i, part) in enabled.iter().enumerate() {
-                    if i > 0 {
-                        nested_mods.push('(');
-                    }
-                    nested_mods.push_str(part);
-                }
-                if !nested_mods.is_empty() {
-                    nested_mods.push('(');
-                }
-                nested_mods.push_str(&keycode_str);
-                for _ in 0..enabled.len() {
-                    nested_mods.push(')');
-                }
-
-                return Some(LayoutKey {
-                    tap: Label::new(nested_mods),
-                    kind: KeycodeKind::Modifier,
-                    ..Default::default()
-                });
-            }
-
-            None
+            // Otherwise show the modified key in `tap` and the applied modifiers as
+            // glyphs in the function strip (e.g. "C" + "⎈" for LCTL(KC_C)).
+            let (tap, symbol) = match inner_key {
+                Some(k) => (k.tap, k.symbol),
+                None => (Label::new(format!("0x{:02X}", keycode)), None),
+            };
+            Some(LayoutKey {
+                tap,
+                function: Some(Label::new(mod_value_to_string(input_modifiers >> 8))),
+                symbol,
+                kind: KeycodeKind::Modifier,
+                ..Default::default()
+            })
         }
         input_bytes if QK_MOD_TAP.contains(&input_bytes) => {
             let remainder = input_bytes & !(QK_MOD_TAP.start);
@@ -96,7 +48,7 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
 
             Some(LayoutKey {
                 tap: tap_key.tap,
-                function: Some(Label::new(mod_str)),
+                function: Some(Label::new(format!("MT: {}", mod_str))),
                 shifted: tap_key.shifted,
                 symbol: tap_key.symbol,
                 kind: KeycodeKind::Basic,
@@ -114,8 +66,8 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             let mod_str = mod_value_to_string(mod_value);
 
             Some(LayoutKey {
-                tap: Label::new(mod_str),
-                function: Some(Label::new(format!("L{}", layer))),
+                tap: Label::new(format!("L{}", layer)),
+                function: Some(Label::new(mod_str)),
                 kind: KeycodeKind::Modifier,
                 layer_ref: Some(layer as u8),
                 ..Default::default()
@@ -156,24 +108,11 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
 
 fn mod_value_to_string(mod_mask: u16) -> String {
     // Left and right share the same low-nibble encoding and render to the same
-    // symbol, so only bits 0-3 need to be checked.
-    let mut mods = Vec::new();
-    if mod_mask & MOD_LCTL != 0 {
-        mods.push(MOD_SYMBOL_CTRL);
-    }
-    if mod_mask & MOD_LSFT != 0 {
-        mods.push(MOD_SYMBOL_SHIFT);
-    }
-    if mod_mask & MOD_LALT != 0 {
-        mods.push(MOD_SYMBOL_ALT);
-    }
-    if mod_mask & MOD_LGUI != 0 {
-        mods.push(MOD_SYMBOL_GUI);
-    }
-
-    if mods.is_empty() {
-        "None".to_string()
-    } else {
-        mods.join("")
-    }
+    // glyph, so only bits 0-3 need to be checked.
+    modifier_symbols::glyphs(
+        mod_mask & MOD_LCTL != 0,
+        mod_mask & MOD_LSFT != 0,
+        mod_mask & MOD_LALT != 0,
+        mod_mask & MOD_LGUI != 0,
+    )
 }

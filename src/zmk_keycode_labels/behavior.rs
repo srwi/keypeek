@@ -25,10 +25,7 @@ pub fn behavior_to_layout_key(behavior: &Behavior) -> Option<LayoutKey> {
             let tap_key = hid_usage_to_layout_key(*tap);
             Some(LayoutKey {
                 tap: tap_key.tap,
-                function: Some(Label::with_short(
-                    format!("L{}", layer_id),
-                    format!("L{}", layer_id),
-                )),
+                function: Some(Label::new(format!("LT: L{}", layer_id))),
                 shifted: tap_key.shifted,
                 symbol: tap_key.symbol,
                 kind: KeycodeKind::Modifier,
@@ -38,14 +35,10 @@ pub fn behavior_to_layout_key(behavior: &Behavior) -> Option<LayoutKey> {
         Behavior::ModTap { hold, tap } => {
             let hold_key = hid_usage_to_layout_key(*hold);
             let tap_key = hid_usage_to_layout_key(*tap);
-            let hold_label = if let Some(symbol) = hold_key.symbol {
-                Label::new(symbol)
-            } else {
-                hold_key.tap
-            };
+            let mod_text = hold_key.symbol.unwrap_or(hold_key.tap.full);
             Some(LayoutKey {
                 tap: tap_key.tap,
-                function: Some(hold_label),
+                function: Some(Label::new(format!("MT: {}", mod_text))),
                 shifted: tap_key.shifted,
                 symbol: tap_key.symbol,
                 kind: KeycodeKind::Basic,
@@ -258,8 +251,7 @@ fn decode_mouse_xy(value: u32) -> (i16, i16) {
 
 fn layer_layout_key(abbreviation: &str, layer_id: u32) -> LayoutKey {
     LayoutKey {
-        tap: Label::new(format!("L{}", layer_id)),
-        function: Some(Label::new(abbreviation.to_string())),
+        tap: Label::new(format!("{}({})", abbreviation, layer_id)),
         kind: KeycodeKind::Special,
         layer_ref: Some(layer_id as u8),
         ..Default::default()
