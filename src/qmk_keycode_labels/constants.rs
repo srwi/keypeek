@@ -29,10 +29,6 @@ pub const MOD_LCTL: u16 = 0x01;
 pub const MOD_LSFT: u16 = 0x02;
 pub const MOD_LALT: u16 = 0x04;
 pub const MOD_LGUI: u16 = 0x08;
-pub const MOD_RCTL: u16 = 0x10;
-pub const MOD_RSFT: u16 = 0x20;
-pub const MOD_RALT: u16 = 0x40;
-pub const MOD_RGUI: u16 = 0x80;
 
 pub const MODIFIER_KEY_TO_VALUE: &[(&str, u16)] = &[
     ("LCTL", QK_LCTL),

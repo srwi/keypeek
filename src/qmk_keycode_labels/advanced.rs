@@ -139,6 +139,8 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
 }
 
 fn mod_value_to_string(mod_mask: u16) -> String {
+    // Left and right share the same low-nibble encoding and render to the same
+    // symbol, so only bits 0-3 need to be checked.
     let mut mods = Vec::new();
     if mod_mask & MOD_LCTL != 0 {
         mods.push(MOD_SYMBOL_CTRL);
@@ -150,18 +152,6 @@ fn mod_value_to_string(mod_mask: u16) -> String {
         mods.push(MOD_SYMBOL_ALT);
     }
     if mod_mask & MOD_LGUI != 0 {
-        mods.push(MOD_SYMBOL_GUI);
-    }
-    if mod_mask & MOD_RCTL != 0 {
-        mods.push(MOD_SYMBOL_CTRL);
-    }
-    if mod_mask & MOD_RSFT != 0 {
-        mods.push(MOD_SYMBOL_SHIFT);
-    }
-    if mod_mask & MOD_RALT != 0 {
-        mods.push(MOD_SYMBOL_ALT);
-    }
-    if mod_mask & MOD_RGUI != 0 {
         mods.push(MOD_SYMBOL_GUI);
     }
 
