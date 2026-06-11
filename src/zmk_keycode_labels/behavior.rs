@@ -107,41 +107,120 @@ pub fn behavior_to_layout_key(behavior: &Behavior) -> Option<LayoutKey> {
                 ..Default::default()
             })
         }
-        Behavior::OutputSelection { value } => Some(LayoutKey {
-            tap: Label::with_short(format!("Out {}", value), format!("Out{}", value)),
-            kind: KeycodeKind::Special,
-            ..Default::default()
-        }),
-        Behavior::ExternalPower { value } => Some(LayoutKey {
-            tap: Label::with_short(format!("ExtPwr {}", value), format!("EP{}", value)),
-            kind: KeycodeKind::Special,
-            ..Default::default()
-        }),
-        Behavior::Backlight { command, .. } => Some(LayoutKey {
-            tap: Label::with_short(format!("BL {}", command), format!("BL{}", command)),
-            kind: KeycodeKind::Special,
-            ..Default::default()
-        }),
-        Behavior::Underglow { command, .. } => Some(LayoutKey {
-            tap: Label::with_short(format!("RGB {}", command), format!("RGB{}", command)),
-            kind: KeycodeKind::Special,
-            ..Default::default()
-        }),
-        Behavior::MouseKeyPress { value } => Some(LayoutKey {
-            tap: Label::with_short(format!("Mouse {}", value), format!("M{}", value)),
-            kind: KeycodeKind::Special,
-            ..Default::default()
-        }),
-        Behavior::MouseMove { value } => Some(LayoutKey {
-            tap: Label::with_short(format!("Move {}", value), format!("Mv{}", value)),
-            kind: KeycodeKind::Special,
-            ..Default::default()
-        }),
-        Behavior::MouseScroll { value } => Some(LayoutKey {
-            tap: Label::with_short(format!("Scroll {}", value), format!("Scr{}", value)),
-            kind: KeycodeKind::Special,
-            ..Default::default()
-        }),
+        Behavior::OutputSelection { value } => {
+            let label = match *value {
+                0 => Label::with_short("Out Tog", "OutTg"),
+                1 => Label::new("Out USB"),
+                2 => Label::new("Out BLE"),
+                3 => Label::with_short("Out None", "OutNo"),
+                n => Label::new(format!("Out {}", n)),
+            };
+            Some(LayoutKey {
+                tap: label,
+                kind: KeycodeKind::Special,
+                ..Default::default()
+            })
+        }
+        Behavior::ExternalPower { value } => {
+            let label = match *value {
+                0 => Label::with_short("ExtPwr Off", "EPOff"),
+                1 => Label::with_short("ExtPwr On", "EPOn"),
+                2 => Label::with_short("ExtPwr Tog", "EPTog"),
+                n => Label::with_short(format!("ExtPwr {}", n), format!("EP{}", n)),
+            };
+            Some(LayoutKey {
+                tap: label,
+                kind: KeycodeKind::Special,
+                ..Default::default()
+            })
+        }
+        Behavior::Backlight { command, value } => {
+            let label = match *command {
+                0 => Label::new("BL On"),
+                1 => Label::new("BL Off"),
+                2 => Label::new("BL Tog"),
+                3 => Label::with_short("BL Inc", "BL+"),
+                4 => Label::with_short("BL Dec", "BL-"),
+                5 => Label::with_short("BL Cycle", "BLCyc"),
+                6 => Label::with_short(format!("BL Set {}", value), format!("BL{}", value)),
+                n => Label::new(format!("BL {}", n)),
+            };
+            Some(LayoutKey {
+                tap: label,
+                kind: KeycodeKind::Special,
+                ..Default::default()
+            })
+        }
+        Behavior::Underglow { command, .. } => {
+            let label = match *command {
+                0 => Label::new("RGB Tog"),
+                1 => Label::new("RGB On"),
+                2 => Label::new("RGB Off"),
+                3 => Label::with_short("Hue +", "Hue+"),
+                4 => Label::with_short("Hue -", "Hue-"),
+                5 => Label::with_short("Sat +", "Sat+"),
+                6 => Label::with_short("Sat -", "Sat-"),
+                7 => Label::with_short("Bright +", "Bri+"),
+                8 => Label::with_short("Bright -", "Bri-"),
+                9 => Label::with_short("Speed +", "Spd+"),
+                10 => Label::with_short("Speed -", "Spd-"),
+                11 => Label::with_short("Effect +", "Eff+"),
+                12 => Label::with_short("Effect -", "Eff-"),
+                13 => Label::with_short("Effect Set", "EffS"),
+                14 => Label::with_short("RGB Color", "Color"),
+                n => Label::new(format!("RGB {}", n)),
+            };
+            Some(LayoutKey {
+                tap: label,
+                kind: KeycodeKind::Special,
+                ..Default::default()
+            })
+        }
+        Behavior::MouseKeyPress { value } => {
+            let label = match *value {
+                1 => Label::with_short("L Click", "LClk"),
+                2 => Label::with_short("R Click", "RClk"),
+                4 => Label::with_short("M Click", "MClk"),
+                8 => Label::with_short("Mouse 4", "MB4"),
+                16 => Label::with_short("Mouse 5", "MB5"),
+                n => Label::with_short(format!("Mouse {}", n), format!("M{}", n)),
+            };
+            Some(LayoutKey {
+                tap: label,
+                kind: KeycodeKind::Special,
+                ..Default::default()
+            })
+        }
+        Behavior::MouseMove { value } => {
+            let (x, y) = decode_mouse_xy(*value);
+            let label = match (x.signum(), y.signum()) {
+                (0, -1) => Label::with_short("Mouse Up", "MsUp"),
+                (0, 1) => Label::with_short("Mouse Down", "MsDn"),
+                (-1, 0) => Label::with_short("Mouse Left", "MsLt"),
+                (1, 0) => Label::with_short("Mouse Right", "MsRt"),
+                _ => Label::with_short(format!("Move {}", value), format!("Mv{}", value)),
+            };
+            Some(LayoutKey {
+                tap: label,
+                kind: KeycodeKind::Special,
+                ..Default::default()
+            })
+        }
+        Behavior::MouseScroll { value } => {
+            let (x, y) = decode_mouse_xy(*value);
+            let label = match (x.signum(), y.signum()) {
+                (0, 1) => Label::with_short("Scroll Up", "ScrUp"),
+                (0, -1) => Label::with_short("Scroll Down", "ScrDn"),
+                (-1, 0) => Label::with_short("Scroll Left", "ScrLt"),
+                (1, 0) => Label::with_short("Scroll Right", "ScrRt"),
+                _ => Label::with_short(format!("Scroll {}", value), format!("Scr{}", value)),
+            };
+            Some(LayoutKey {
+                tap: label,
+                kind: KeycodeKind::Special,
+                ..Default::default()
+            })
+        }
         Behavior::Unknown {
             behavior_id,
             param1,
@@ -160,6 +239,14 @@ pub fn behavior_to_layout_key(behavior: &Behavior) -> Option<LayoutKey> {
             })
         }
     }
+}
+
+/// Decode a ZMK pointing move/scroll value into signed (x, y) components.
+/// ZMK packs these as `(x << 16) | (y & 0xFFFF)` (see dt-bindings/zmk/pointing.h).
+fn decode_mouse_xy(value: u32) -> (i16, i16) {
+    let x = ((value >> 16) & 0xFFFF) as i16;
+    let y = (value & 0xFFFF) as i16;
+    (x, y)
 }
 
 fn layer_layout_key(abbreviation: &str, layer_id: u32) -> LayoutKey {
