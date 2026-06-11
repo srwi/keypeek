@@ -24,6 +24,9 @@ pub struct Key {
     pub y: f32,
     pub w: f32,
     pub h: f32,
+    /// Rotation angle in degrees, clockwise around the key's center.
+    #[serde(default)]
+    pub r: f32,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]

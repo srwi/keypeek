@@ -143,7 +143,8 @@ fn build_from_zmk_data(
             let x = k.x as f32 / 100.0;
             let y = k.y as f32 / 100.0;
 
-            // Keypeek does not support rotated keys, so we recalculate the position adjusted for rotation around the pivot point.
+            // Resolve the key's position to where its center ends up after rotating around the
+            // pivot; the rotation itself is then applied at render time via the `r` field.
             let angle_deg = k.r as f32 / 100.0;
             let pivot_x = if k.rx == 0 { k.x } else { k.rx } as f32 / 100.0;
             let pivot_y = if k.ry == 0 { k.y } else { k.ry } as f32 / 100.0;
@@ -157,6 +158,7 @@ fn build_from_zmk_data(
                 y,
                 w,
                 h,
+                r: angle_deg,
             }
         })
         .collect();

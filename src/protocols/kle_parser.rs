@@ -68,19 +68,23 @@ fn parse_kle_keymap(keymap: &[Value]) -> Result<Vec<Key>, Box<dyn Error>> {
 
         for item in row_array {
             if let Some(obj) = item.as_object() {
-                // This is a key property object which modifies the next key
-
                 // Handle rotation properties (these persist until changed)
                 // When rx or ry changes, reset the current position to the rotation origin
+                let mut origin_changed = false;
                 if let Some(rx) = obj.get("rx").and_then(|v| v.as_f64()) {
                     rotation_x = rx as f32;
-                    current_x = 0.0; // Reset x relative to new rotation origin
-                    current_y = 0.0; // Reset y relative to new rotation origin
+                    origin_changed = true;
                 }
                 if let Some(ry) = obj.get("ry").and_then(|v| v.as_f64()) {
                     rotation_y = ry as f32;
-                    current_y = 0.0; // Reset y relative to new rotation origin
+                    origin_changed = true;
                 }
+
+                if origin_changed {
+                    current_x = 0.0;
+                    current_y = 0.0;
+                }
+
                 if let Some(r) = obj.get("r").and_then(|v| v.as_f64()) {
                     rotation_angle = r as f32;
                 }
@@ -120,6 +124,7 @@ fn parse_kle_keymap(keymap: &[Value]) -> Result<Vec<Key>, Box<dyn Error>> {
                         y: final_y,
                         w: current_w,
                         h: current_h,
+                        r: rotation_angle,
                     });
                 }
 
@@ -130,11 +135,7 @@ fn parse_kle_keymap(keymap: &[Value]) -> Result<Vec<Key>, Box<dyn Error>> {
             }
         }
 
-        // Only increment y for non-rotated keys.
-        // For rotated keys, y is relative to rotation origin.
-        if rotation_angle == 0.0 {
-            current_y += 1.0;
-        }
+        current_y += 1.0;
     }
 
     Ok(keys)

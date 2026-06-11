@@ -5,6 +5,36 @@ use crate::layout_key::{KeycodeKind, LayoutKey};
 use crate::settings::ThemeColor;
 use eframe::egui::{self, Window};
 
+/// Rotate `point` clockwise around `origin` by `angle_rad` (screen space, y-down).
+fn rotate_point(point: egui::Pos2, origin: egui::Pos2, angle_rad: f32) -> egui::Pos2 {
+    if angle_rad == 0.0 {
+        return point;
+    }
+    let (sin_a, cos_a) = angle_rad.sin_cos();
+    let dx = point.x - origin.x;
+    let dy = point.y - origin.y;
+    egui::pos2(
+        origin.x + dx * cos_a - dy * sin_a,
+        origin.y + dx * sin_a + dy * cos_a,
+    )
+}
+
+/// Build a text shape positioned and tilted as if the whole key were rotated by
+/// `angle` around `center`: the galley's anchor moves along the arc, and the
+/// glyphs tilt by the same angle (`TextShape::angle` pivots around the anchor).
+fn rotated_text_shape(
+    pos: egui::Pos2,
+    galley: std::sync::Arc<egui::Galley>,
+    color: egui::Color32,
+    center: egui::Pos2,
+    angle: f32,
+) -> egui::Shape {
+    egui::Shape::Text(
+        egui::epaint::TextShape::new(rotate_point(pos, center, angle), galley, color)
+            .with_angle(angle),
+    )
+}
+
 impl OverlayApp {
     pub(super) fn generate_key_label_galleys(
         &self,
@@ -227,12 +257,18 @@ impl OverlayApp {
                     )
                     .shrink(0.06 * size);
 
-                    ui.painter().rect(
-                        rect,
-                        0.1 * size,
-                        fill_color,
-                        egui::Stroke::new(border_thickness, stroke_color),
-                        egui::StrokeKind::Outside,
+                    let angle = key.r.to_radians();
+                    let center = rect.center();
+
+                    ui.painter().add(
+                        egui::epaint::RectShape::new(
+                            rect,
+                            0.1 * size,
+                            fill_color,
+                            egui::Stroke::new(border_thickness, stroke_color),
+                            egui::StrokeKind::Outside,
+                        )
+                        .with_angle(angle),
                     );
 
                     let font = egui::FontId::proportional(0.25 * size * font_scale);
@@ -255,22 +291,46 @@ impl OverlayApp {
                                 start_x,
                                 rect.center().y - symbol_galley.rect.center().y,
                             );
-                            ui.painter().galley(sym_pos, symbol_galley, font_color);
-                            ui.painter().galley(text_pos, text_galley, font_color);
+                            ui.painter().add(rotated_text_shape(
+                                sym_pos,
+                                symbol_galley,
+                                font_color,
+                                center,
+                                angle,
+                            ));
+                            ui.painter().add(rotated_text_shape(
+                                text_pos,
+                                text_galley,
+                                font_color,
+                                center,
+                                angle,
+                            ));
                         }
                         LabelGalleys {
                             symbol: Some(symbol_galley),
                             text: None,
                         } => {
                             let sym_pos = rect.center() - symbol_galley.rect.center().to_vec2();
-                            ui.painter().galley(sym_pos, symbol_galley, font_color);
+                            ui.painter().add(rotated_text_shape(
+                                sym_pos,
+                                symbol_galley,
+                                font_color,
+                                center,
+                                angle,
+                            ));
                         }
                         LabelGalleys {
                             symbol: None,
                             text: Some(text_galley),
                         } => {
                             let label_pos = rect.center() - text_galley.rect.center().to_vec2();
-                            ui.painter().galley(label_pos, text_galley, font_color);
+                            ui.painter().add(rotated_text_shape(
+                                label_pos,
+                                text_galley,
+                                font_color,
+                                center,
+                                angle,
+                            ));
                         }
                         _ => {}
                     }
