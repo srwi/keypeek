@@ -27,6 +27,10 @@ pub fn get_layer_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             let l = (b - QK_DEF_LAYER.start) as u8;
             (format!("DF({})", l), None)
         }
+        b if QK_TAP_DANCE.contains(&b) => {
+            let n = b - QK_TAP_DANCE.start;
+            (format!("TD({})", n), None)
+        }
         b if QK_KB.contains(&b) => {
             let n = b - QK_KB.start;
             (format!("CUSTOM({})", n), None)
