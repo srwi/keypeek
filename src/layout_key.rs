@@ -55,6 +55,10 @@ pub struct LayoutKey {
     /// Hold action label for hold-tap keys (e.g., "Shift" for MT(LSFT, KC_A))
     pub hold: Option<Label>,
 
+    /// Shifted legend for keys that produce a different character when shift is
+    /// held (e.g. "!" for KC_1). Rendered as a second line above `tap`.
+    pub shifted: Option<String>,
+
     /// Symbol/icon for the key (using Phosphor icon font)
     pub symbol: Option<String>,
 
@@ -70,6 +74,7 @@ impl Default for LayoutKey {
         LayoutKey {
             tap: Label::default(),
             hold: None,
+            shifted: None,
             symbol: None,
             kind: KeycodeKind::Basic,
             layer_ref: None,

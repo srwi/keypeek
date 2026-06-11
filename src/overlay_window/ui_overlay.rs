@@ -68,6 +68,17 @@ impl OverlayApp {
             |galley: &std::sync::Arc<egui::Galley>, max: f32| galley.rect.width() <= max;
         let max_width = rect.width() * 0.85;
 
+        // Keys with a shifted legend (e.g. KC_1 -> "1"/"!") stack the shifted
+        // character above the base character on two lines.
+        if let Some(shifted) = &key.shifted {
+            let text = if key.tap.is_empty() {
+                shifted.clone()
+            } else {
+                format!("{}\n{}", shifted, key.tap.full)
+            };
+            return (None, Some(create_galley(text, font)));
+        }
+
         if let Some(symbol) = &key.symbol {
             let symbol_font = egui::FontId::proportional(0.33 * size * font_scale);
             let symbol_galley = create_galley(symbol.clone(), symbol_font);

@@ -1,5 +1,5 @@
 use crate::layout_key::{KeycodeKind, Label, LayoutKey};
-use zmk_studio_api::HidUsage;
+use zmk_studio_api::{HidUsage, MOD_LSFT, MOD_RSFT};
 
 use super::keycode_label::keycode_to_layout_key;
 
@@ -20,6 +20,21 @@ pub fn hid_usage_to_layout_key(usage: HidUsage) -> LayoutKey {
     }
 
     let base = usage.base();
+
+    // A lone shift over a key that has a shifted legend just produces that shifted
+    // character (e.g. LS(N1) == "!"), so render it as a plain key.
+    let mods = usage.modifiers();
+    if mods & !(MOD_LSFT | MOD_RSFT) == 0 {
+        if let Some(base_keycode) = base.known_keycode() {
+            if let Some(shifted) = keycode_to_layout_key(&base_keycode).shifted {
+                return LayoutKey {
+                    tap: Label::new(shifted),
+                    ..Default::default()
+                };
+            }
+        }
+    }
+
     let base_label = if let Some(base_keycode) = base.known_keycode() {
         let base_key = keycode_to_layout_key(&base_keycode);
         if let Some(symbol) = base_key.symbol {
