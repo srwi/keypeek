@@ -1,3 +1,4 @@
+use crate::layout_key::modifier_symbols::*;
 use crate::layout_key::{KeycodeKind, Label, LayoutKey};
 use zmk_studio_api::Keycode;
 
@@ -700,54 +701,45 @@ fn keycode_label(keycode: &Keycode) -> Option<LayoutKey> {
             ..Default::default()
         }),
         Keycode::LEFT_CONTROL => Some(LayoutKey {
-            tap: Label::new(""),
-            symbol: Some("\u{2388}".to_string()),
+            symbol: Some(MOD_SYMBOL_CTRL.to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()
         }),
         Keycode::LEFT_SHIFT => Some(LayoutKey {
-            tap: Label::new(""),
-            symbol: Some(egui_phosphor::regular::ARROW_FAT_UP.to_string()),
+            symbol: Some(MOD_SYMBOL_SHIFT.to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()
         }),
         Keycode::LEFT_ALT => Some(LayoutKey {
-            tap: Label::new(""),
-            symbol: Some(egui_phosphor::regular::OPTION.to_string()),
+            symbol: Some(MOD_SYMBOL_ALT.to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()
         }),
         Keycode::LEFT_COMMAND => Some(LayoutKey {
-            tap: Label::new(""),
-            symbol: Some(egui_phosphor::fill::DIAMOND.to_string()),
+            symbol: Some(MOD_SYMBOL_GUI.to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()
         }),
         Keycode::RIGHT_CONTROL => Some(LayoutKey {
-            tap: Label::new(""),
-            symbol: Some("\u{2388}".to_string()),
+            symbol: Some(MOD_SYMBOL_CTRL.to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()
         }),
         Keycode::RIGHT_SHIFT => Some(LayoutKey {
-            tap: Label::new(""),
-            symbol: Some(egui_phosphor::regular::ARROW_FAT_UP.to_string()),
+            symbol: Some(MOD_SYMBOL_SHIFT.to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()
         }),
         Keycode::RIGHT_ALT => Some(LayoutKey {
-            tap: Label::new(""),
-            symbol: Some(egui_phosphor::regular::OPTION.to_string()),
+            symbol: Some(MOD_SYMBOL_ALT.to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()
         }),
         Keycode::RIGHT_COMMAND => Some(LayoutKey {
-            tap: Label::new(""),
-            symbol: Some(egui_phosphor::fill::DIAMOND.to_string()),
+            symbol: Some(MOD_SYMBOL_GUI.to_string()),
             kind: KeycodeKind::Modifier,
             ..Default::default()
         }),
-
         Keycode::K_PLAY_PAUSE => Some(LayoutKey {
             symbol: Some(egui_phosphor::regular::PLAY_PAUSE.to_string()),
             ..Default::default()

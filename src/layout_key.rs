@@ -1,3 +1,15 @@
+/// Symbols used to render the four modifier keys across all protocols.
+///
+/// Three are Phosphor glyphs (guaranteed present by the loaded Phosphor fonts);
+/// `MOD_SYMBOL_CTRL` is a raw Unicode codepoint (⎈ U+2388) because Phosphor has no
+/// control symbol.
+pub mod modifier_symbols {
+    pub const MOD_SYMBOL_CTRL: &str = "\u{2388}";
+    pub const MOD_SYMBOL_SHIFT: &str = egui_phosphor::regular::ARROW_FAT_UP;
+    pub const MOD_SYMBOL_ALT: &str = egui_phosphor::regular::OPTION;
+    pub const MOD_SYMBOL_GUI: &str = egui_phosphor::fill::DIAMOND;
+}
+
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub enum KeycodeKind {
     #[default]

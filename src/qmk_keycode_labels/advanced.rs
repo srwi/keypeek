@@ -1,3 +1,4 @@
+use crate::layout_key::modifier_symbols::*;
 use crate::layout_key::{KeycodeKind, Label, LayoutKey};
 use crate::qmk_keycode_labels::basic::get_basic_layout_key;
 use crate::qmk_keycode_labels::constants::*;
@@ -140,33 +141,33 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
 fn mod_value_to_string(mod_mask: u16) -> String {
     let mut mods = Vec::new();
     if mod_mask & MOD_LCTL != 0 {
-        mods.push("\u{2388}");
+        mods.push(MOD_SYMBOL_CTRL);
     }
     if mod_mask & MOD_LSFT != 0 {
-        mods.push(egui_phosphor::regular::ARROW_FAT_UP);
+        mods.push(MOD_SYMBOL_SHIFT);
     }
     if mod_mask & MOD_LALT != 0 {
-        mods.push(egui_phosphor::regular::OPTION);
+        mods.push(MOD_SYMBOL_ALT);
     }
     if mod_mask & MOD_LGUI != 0 {
-        mods.push(egui_phosphor::fill::DIAMOND);
+        mods.push(MOD_SYMBOL_GUI);
     }
     if mod_mask & MOD_RCTL != 0 {
-        mods.push("\u{2388}");
+        mods.push(MOD_SYMBOL_CTRL);
     }
     if mod_mask & MOD_RSFT != 0 {
-        mods.push(egui_phosphor::regular::ARROW_FAT_UP);
+        mods.push(MOD_SYMBOL_SHIFT);
     }
     if mod_mask & MOD_RALT != 0 {
-        mods.push(egui_phosphor::regular::OPTION);
+        mods.push(MOD_SYMBOL_ALT);
     }
     if mod_mask & MOD_RGUI != 0 {
-        mods.push(egui_phosphor::fill::DIAMOND);
+        mods.push(MOD_SYMBOL_GUI);
     }
 
     if mods.is_empty() {
         "None".to_string()
     } else {
-        mods.into_iter().map(|s| s.to_string()).collect::<Vec<_>>().join("")
+        mods.join("")
     }
 }
