@@ -44,6 +44,22 @@ impl OverlayApp {
         font: egui::FontId,
         color: egui::Color32,
     ) -> LabelGalleys {
+        let (symbol, text) = self.generate_tap_galleys(ui, key, rect, font, color);
+        let hold = self.generate_hold_galley(ui, key, rect, color);
+        LabelGalleys { symbol, text, hold }
+    }
+
+    fn generate_tap_galleys(
+        &self,
+        ui: &egui::Ui,
+        key: &LayoutKey,
+        rect: egui::Rect,
+        font: egui::FontId,
+        color: egui::Color32,
+    ) -> (
+        Option<std::sync::Arc<egui::Galley>>,
+        Option<std::sync::Arc<egui::Galley>>,
+    ) {
         let size = self.settings.active.size as f32;
         let font_scale = self.settings.active.font_size_multiplier;
         let create_galley =
@@ -61,10 +77,7 @@ impl OverlayApp {
                 let gap = 0.06 * size;
                 let total_width = symbol_galley.rect.width() + gap + text_galley.rect.width();
                 if total_width <= max_width {
-                    return LabelGalleys {
-                        symbol: Some(symbol_galley),
-                        text: Some(text_galley),
-                    };
+                    return (Some(symbol_galley), Some(text_galley));
                 }
             }
 
@@ -73,34 +86,22 @@ impl OverlayApp {
                 let gap = 0.06 * size;
                 let total_width = symbol_galley.rect.width() + gap + text_galley.rect.width();
                 if total_width <= max_width {
-                    return LabelGalleys {
-                        symbol: Some(symbol_galley),
-                        text: Some(text_galley),
-                    };
+                    return (Some(symbol_galley), Some(text_galley));
                 }
             }
 
-            return LabelGalleys {
-                symbol: Some(symbol_galley),
-                text: None,
-            };
+            return (Some(symbol_galley), None);
         }
 
         let full_galley = create_galley(key.tap.full.clone(), font.clone());
         if fits_width(&full_galley, max_width) {
-            return LabelGalleys {
-                symbol: None,
-                text: Some(full_galley),
-            };
+            return (None, Some(full_galley));
         }
 
         let mut truncated = if let Some(short) = &key.tap.short {
             let short_galley = create_galley(short.clone(), font.clone());
             if fits_width(&short_galley, max_width) {
-                return LabelGalleys {
-                    symbol: None,
-                    text: Some(short_galley),
-                };
+                return (None, Some(short_galley));
             }
             short.clone()
         } else {
@@ -124,10 +125,7 @@ impl OverlayApp {
             let scale = width_scale.min(height_scale).min(1.0);
             let fitted_text =
                 create_galley(fit_text, egui::FontId::proportional(font.size * scale));
-            return LabelGalleys {
-                symbol: None,
-                text: Some(fitted_text),
-            };
+            return (None, Some(fitted_text));
         }
 
         while truncated.len() > 1 {
@@ -135,17 +133,39 @@ impl OverlayApp {
             let truncated_with_ellipsis = format!("{}...", truncated);
             let truncated_galley = create_galley(truncated_with_ellipsis, font.clone());
             if fits_width(&truncated_galley, max_width) {
-                return LabelGalleys {
-                    symbol: None,
-                    text: Some(truncated_galley),
-                };
+                return (None, Some(truncated_galley));
             }
         }
 
-        LabelGalleys {
-            symbol: None,
-            text: None,
+        (None, None)
+    }
+
+    fn generate_hold_galley(
+        &self,
+        ui: &egui::Ui,
+        key: &LayoutKey,
+        rect: egui::Rect,
+        color: egui::Color32,
+    ) -> Option<std::sync::Arc<egui::Galley>> {
+        let hold = key.hold.as_ref()?;
+        let size = self.settings.active.size as f32;
+        let font_scale = self.settings.active.font_size_multiplier;
+        let max_width = rect.width() * 0.85;
+        let hold_font = egui::FontId::proportional(0.20 * size * font_scale);
+        let create_galley =
+            |text: String, fid: egui::FontId| ui.painter().layout_no_wrap(text, fid, color);
+
+        let galley = create_galley(hold.full.clone(), hold_font.clone());
+        if galley.rect.width() <= max_width {
+            return Some(galley);
         }
+        if let Some(short) = &hold.short {
+            let short_galley = create_galley(short.clone(), hold_font);
+            if short_galley.rect.width() <= max_width {
+                return Some(short_galley);
+            }
+        }
+        None
     }
 
     pub(super) fn get_keycode_color(
@@ -272,24 +292,73 @@ impl OverlayApp {
                     );
 
                     let font = egui::FontId::proportional(0.25 * size * font_scale);
-                    match self.generate_key_label_galleys(ui, &layout_key, rect, font, font_color) {
-                        LabelGalleys {
-                            symbol: Some(symbol_galley),
-                            text: Some(text_galley),
-                        } => {
+                    let galleys =
+                        self.generate_key_label_galleys(ui, &layout_key, rect, font, font_color);
+
+                    // When a hold label is present, reserve a strip along the bottom edge for it
+                    // and center the primary label in the remaining area above.
+                    let hold_height = rect.height() * 0.22;
+                    let main_label_rect = if galleys.hold.is_some() {
+                        egui::Rect::from_min_max(
+                            rect.left_top(),
+                            egui::pos2(rect.right(), rect.bottom() - hold_height),
+                        )
+                    } else {
+                        rect
+                    };
+
+                    if let Some(hold_galley) = galleys.hold {
+                        let strip = egui::Rect::from_min_max(
+                            egui::pos2(rect.left(), rect.bottom() - hold_height),
+                            rect.max,
+                        );
+                        // RectShape rotates around its own center, so orbit the strip's center
+                        // around the key center first, then tilt it in place.
+                        let strip_rect = egui::Rect::from_center_size(
+                            rotate_point(strip.center(), center, angle),
+                            strip.size(),
+                        );
+                        let radius = (0.08 * size) as u8;
+                        ui.painter().add(
+                            egui::epaint::RectShape::new(
+                                strip_rect,
+                                egui::CornerRadius {
+                                    nw: 0,
+                                    ne: 0,
+                                    sw: radius,
+                                    se: radius,
+                                },
+                                fill_color.lerp_to_gamma(egui::Color32::BLACK, 0.15),
+                                egui::Stroke::NONE,
+                                egui::StrokeKind::Outside,
+                            )
+                            .with_angle(angle),
+                        );
+                        let hold_pos = strip.center() - hold_galley.rect.center().to_vec2();
+                        ui.painter().add(rotated_text_shape(
+                            hold_pos,
+                            hold_galley,
+                            font_color.gamma_multiply(0.7),
+                            center,
+                            angle,
+                        ));
+                    }
+
+                    match (galleys.symbol, galleys.text) {
+                        (Some(symbol_galley), Some(text_galley)) => {
                             let gap = 0.06 * size;
                             let total_width =
                                 symbol_galley.rect.width() + gap + text_galley.rect.width();
-                            let start_x = rect.center().x - total_width * 0.5;
+                            let start_x = main_label_rect.center().x - total_width * 0.5;
 
                             let text_pos_x = start_x + gap + symbol_galley.rect.width();
                             let text_pos = egui::pos2(
                                 text_pos_x,
-                                rect.center().y - text_galley.rect.center().y,
+                                main_label_rect.center().y - text_galley.rect.center().y,
                             );
                             let sym_pos = egui::pos2(
                                 start_x,
-                                rect.center().y - symbol_galley.rect.center().y,
+                                main_label_rect.center().y - symbol_galley.rect.center().y,
                             );
                             ui.painter().add(rotated_text_shape(
                                 sym_pos,
@@ -306,11 +375,9 @@ impl OverlayApp {
                                 angle,
                             ));
                         }
-                        LabelGalleys {
-                            symbol: Some(symbol_galley),
-                            text: None,
-                        } => {
-                            let sym_pos = rect.center() - symbol_galley.rect.center().to_vec2();
+                        (Some(symbol_galley), None) => {
+                            let sym_pos =
+                                main_label_rect.center() - symbol_galley.rect.center().to_vec2();
                             ui.painter().add(rotated_text_shape(
                                 sym_pos,
                                 symbol_galley,
@@ -319,11 +386,9 @@ impl OverlayApp {
                                 angle,
                             ));
                         }
-                        LabelGalleys {
-                            symbol: None,
-                            text: Some(text_galley),
-                        } => {
-                            let label_pos = rect.center() - text_galley.rect.center().to_vec2();
+                        (None, Some(text_galley)) => {
+                            let label_pos =
+                                main_label_rect.center() - text_galley.rect.center().to_vec2();
                             ui.painter().add(rotated_text_shape(
                                 label_pos,
                                 text_galley,

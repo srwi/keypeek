@@ -10,6 +10,7 @@ use egui_file_dialog::FileDialog;
 pub struct LabelGalleys {
     pub symbol: Option<std::sync::Arc<egui::Galley>>,
     pub text: Option<std::sync::Arc<egui::Galley>>,
+    pub hold: Option<std::sync::Arc<egui::Galley>>,
 }
 
 pub enum AppConnectionState {

@@ -30,7 +30,7 @@ pub fn behavior_to_layout_key(behavior: &Behavior) -> Option<LayoutKey> {
                     format!("L{}", layer_id),
                 )),
                 symbol: tap_key.symbol,
-                kind: KeycodeKind::Special,
+                kind: KeycodeKind::Modifier,
                 layer_ref: Some(*layer_id as u8),
             })
         }
@@ -46,7 +46,7 @@ pub fn behavior_to_layout_key(behavior: &Behavior) -> Option<LayoutKey> {
                 tap: tap_key.tap,
                 hold: Some(hold_label),
                 symbol: tap_key.symbol,
-                kind: KeycodeKind::Modifier,
+                kind: KeycodeKind::Basic,
                 layer_ref: None,
             })
         }

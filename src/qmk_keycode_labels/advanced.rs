@@ -79,13 +79,13 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             let mod_str = mod_value_to_string(mod_value);
 
             let keycode = (remainder & 0xFF) as u8;
-            let keycode_str = get_basic_layout_key(keycode as u16)
-                .map(|k| k.tap.full)
-                .unwrap_or_else(|| format!("0x{:02X}", keycode));
+            let tap_key = get_basic_layout_key(keycode as u16).unwrap_or_default();
 
             Some(LayoutKey {
-                tap: Label::new(format!("MT({},{})", mod_str, keycode_str)),
-                kind: KeycodeKind::Modifier,
+                tap: tap_key.tap,
+                hold: Some(Label::new(mod_str)),
+                symbol: tap_key.symbol,
+                kind: KeycodeKind::Basic,
                 ..Default::default()
             })
         }
@@ -123,15 +123,14 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             let layer = remainder >> 8;
 
             let keycode = (remainder & 0xFF) as u8;
-            let keycode_str = get_basic_layout_key(keycode as u16)
-                .map(|k| k.tap.full)
-                .unwrap_or_else(|| format!("0x{:02X}", keycode));
+            let tap_key = get_basic_layout_key(keycode as u16).unwrap_or_default();
 
             Some(LayoutKey {
-                tap: Label::new(format!("LT({},{})", layer, keycode_str)),
+                tap: tap_key.tap,
+                hold: Some(Label::new(format!("L{}", layer))),
+                symbol: tap_key.symbol,
                 kind: KeycodeKind::Modifier,
                 layer_ref: Some(layer as u8),
-                ..Default::default()
             })
         }
         _ => None,
