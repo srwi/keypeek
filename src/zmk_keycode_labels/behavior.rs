@@ -29,6 +29,7 @@ pub fn behavior_to_layout_key(behavior: &Behavior) -> Option<LayoutKey> {
                     format!("L{}", layer_id),
                     format!("L{}", layer_id),
                 )),
+                shifted: tap_key.shifted,
                 symbol: tap_key.symbol,
                 kind: KeycodeKind::Modifier,
                 layer_ref: Some(*layer_id as u8),
@@ -45,6 +46,7 @@ pub fn behavior_to_layout_key(behavior: &Behavior) -> Option<LayoutKey> {
             Some(LayoutKey {
                 tap: tap_key.tap,
                 hold: Some(hold_label),
+                shifted: tap_key.shifted,
                 symbol: tap_key.symbol,
                 kind: KeycodeKind::Basic,
                 layer_ref: None,

@@ -7,11 +7,24 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
     match keycode_bytes {
         input_bytes if QK_MODS.contains(&input_bytes) => {
             let keycode = input_bytes & 0xff;
-            let keycode_str = get_basic_layout_key(keycode)
-                .map(|k| k.tap.full)
+            let inner_key = get_basic_layout_key(keycode);
+            let keycode_str = inner_key
+                .as_ref()
+                .map(|k| k.tap.full.clone())
                 .unwrap_or_else(|| format!("0x{:02X}", keycode));
 
             let input_modifiers = input_bytes & 0x1f00;
+
+            // A lone shift over a key that has a shifted legend just produces that
+            // shifted character (e.g. S(KC_1) == "!"), so render it as a plain key.
+            if input_modifiers == QK_LSFT || input_modifiers == QK_RSFT {
+                if let Some(shifted) = inner_key.as_ref().and_then(|k| k.shifted.clone()) {
+                    return Some(LayoutKey {
+                        tap: Label::new(shifted),
+                        ..Default::default()
+                    });
+                }
+            }
 
             // Try to find exact matches first
             if let Some((name, _)) = MODIFIER_KEY_TO_VALUE
@@ -84,6 +97,7 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             Some(LayoutKey {
                 tap: tap_key.tap,
                 hold: Some(Label::new(mod_str)),
+                shifted: tap_key.shifted,
                 symbol: tap_key.symbol,
                 kind: KeycodeKind::Basic,
                 ..Default::default()
@@ -128,6 +142,7 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             Some(LayoutKey {
                 tap: tap_key.tap,
                 hold: Some(Label::new(format!("L{}", layer))),
+                shifted: tap_key.shifted,
                 symbol: tap_key.symbol,
                 kind: KeycodeKind::Modifier,
                 layer_ref: Some(layer as u8),

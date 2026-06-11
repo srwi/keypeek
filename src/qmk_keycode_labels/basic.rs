@@ -120,43 +120,53 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             ..Default::default()
         }),
         Keycode::KC_1 => Some(LayoutKey {
-            tap: Label::new("!\n1"),
+            tap: Label::new("1"),
+            shifted: Some("!".to_string()),
             ..Default::default()
         }),
         Keycode::KC_2 => Some(LayoutKey {
-            tap: Label::new("@\n2"),
+            tap: Label::new("2"),
+            shifted: Some("@".to_string()),
             ..Default::default()
         }),
         Keycode::KC_3 => Some(LayoutKey {
-            tap: Label::new("#\n3"),
+            tap: Label::new("3"),
+            shifted: Some("#".to_string()),
             ..Default::default()
         }),
         Keycode::KC_4 => Some(LayoutKey {
-            tap: Label::new("$\n4"),
+            tap: Label::new("4"),
+            shifted: Some("$".to_string()),
             ..Default::default()
         }),
         Keycode::KC_5 => Some(LayoutKey {
-            tap: Label::new("%\n5"),
+            tap: Label::new("5"),
+            shifted: Some("%".to_string()),
             ..Default::default()
         }),
         Keycode::KC_6 => Some(LayoutKey {
-            tap: Label::new("^\n6"),
+            tap: Label::new("6"),
+            shifted: Some("^".to_string()),
             ..Default::default()
         }),
         Keycode::KC_7 => Some(LayoutKey {
-            tap: Label::new("&\n7"),
+            tap: Label::new("7"),
+            shifted: Some("&".to_string()),
             ..Default::default()
         }),
         Keycode::KC_8 => Some(LayoutKey {
-            tap: Label::new("*\n8"),
+            tap: Label::new("8"),
+            shifted: Some("*".to_string()),
             ..Default::default()
         }),
         Keycode::KC_9 => Some(LayoutKey {
-            tap: Label::new("(\n9"),
+            tap: Label::new("9"),
+            shifted: Some("(".to_string()),
             ..Default::default()
         }),
         Keycode::KC_0 => Some(LayoutKey {
-            tap: Label::new(")\n0"),
+            tap: Label::new("0"),
+            shifted: Some(")".to_string()),
             ..Default::default()
         }),
         Keycode::KC_ENTER => Some(LayoutKey {
@@ -187,23 +197,28 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             ..Default::default()
         }),
         Keycode::KC_MINUS => Some(LayoutKey {
-            tap: Label::new("_\n-"),
+            tap: Label::new("-"),
+            shifted: Some("_".to_string()),
             ..Default::default()
         }),
         Keycode::KC_EQUAL => Some(LayoutKey {
-            tap: Label::new("+\n="),
+            tap: Label::new("="),
+            shifted: Some("+".to_string()),
             ..Default::default()
         }),
         Keycode::KC_LEFT_BRACKET => Some(LayoutKey {
-            tap: Label::new("{\n["),
+            tap: Label::new("["),
+            shifted: Some("{".to_string()),
             ..Default::default()
         }),
         Keycode::KC_RIGHT_BRACKET => Some(LayoutKey {
-            tap: Label::new("}\n]"),
+            tap: Label::new("]"),
+            shifted: Some("}".to_string()),
             ..Default::default()
         }),
         Keycode::KC_BACKSLASH => Some(LayoutKey {
-            tap: Label::new("|\n\\"),
+            tap: Label::new("\\"),
+            shifted: Some("|".to_string()),
             ..Default::default()
         }),
         Keycode::KC_NONUS_HASH => Some(LayoutKey {
@@ -211,27 +226,33 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             ..Default::default()
         }),
         Keycode::KC_SEMICOLON => Some(LayoutKey {
-            tap: Label::new(":\n;"),
+            tap: Label::new(";"),
+            shifted: Some(":".to_string()),
             ..Default::default()
         }),
         Keycode::KC_QUOTE => Some(LayoutKey {
-            tap: Label::new("\"\n\'"),
+            tap: Label::new("\'"),
+            shifted: Some("\"".to_string()),
             ..Default::default()
         }),
         Keycode::KC_GRAVE => Some(LayoutKey {
-            tap: Label::new("~\n`"),
+            tap: Label::new("`"),
+            shifted: Some("~".to_string()),
             ..Default::default()
         }),
         Keycode::KC_COMMA => Some(LayoutKey {
-            tap: Label::new("<\n,"),
+            tap: Label::new(","),
+            shifted: Some("<".to_string()),
             ..Default::default()
         }),
         Keycode::KC_DOT => Some(LayoutKey {
-            tap: Label::new(">\n."),
+            tap: Label::new("."),
+            shifted: Some(">".to_string()),
             ..Default::default()
         }),
         Keycode::KC_SLASH => Some(LayoutKey {
-            tap: Label::new("?\n/"),
+            tap: Label::new("/"),
+            shifted: Some("?".to_string()),
             ..Default::default()
         }),
         Keycode::KC_CAPS_LOCK => Some(LayoutKey {
