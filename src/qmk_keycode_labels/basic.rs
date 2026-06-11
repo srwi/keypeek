@@ -800,19 +800,23 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             ..Default::default()
         }),
         Keycode::QK_MOUSE_CURSOR_UP => Some(LayoutKey {
-            tap: Label::new("Mouse ↑"),
+            tap: Label::new(egui_phosphor::regular::ARROW_UP),
+            symbol: Some(egui_phosphor::regular::MOUSE_SIMPLE.to_string()),
             ..Default::default()
         }),
         Keycode::QK_MOUSE_CURSOR_DOWN => Some(LayoutKey {
-            tap: Label::new("Mouse ↓"),
+            tap: Label::new(egui_phosphor::regular::ARROW_DOWN),
+            symbol: Some(egui_phosphor::regular::MOUSE_SIMPLE.to_string()),
             ..Default::default()
         }),
         Keycode::QK_MOUSE_CURSOR_LEFT => Some(LayoutKey {
-            tap: Label::new("Mouse ←"),
+            tap: Label::new(egui_phosphor::regular::ARROW_LEFT),
+            symbol: Some(egui_phosphor::regular::MOUSE_SIMPLE.to_string()),
             ..Default::default()
         }),
         Keycode::QK_MOUSE_CURSOR_RIGHT => Some(LayoutKey {
-            tap: Label::new("Mouse →"),
+            tap: Label::new(egui_phosphor::regular::ARROW_RIGHT),
+            symbol: Some(egui_phosphor::regular::MOUSE_SIMPLE.to_string()),
             ..Default::default()
         }),
         Keycode::QK_MOUSE_BUTTON_1 => Some(LayoutKey {
@@ -851,19 +855,23 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             ..Default::default()
         }),
         Keycode::QK_MOUSE_WHEEL_UP => Some(LayoutKey {
-            tap: Label::new("Mouse Wh ↑"),
+            tap: Label::new(egui_phosphor::regular::ARROW_UP),
+            symbol: Some(egui_phosphor::regular::MOUSE_SCROLL.to_string()),
             ..Default::default()
         }),
         Keycode::QK_MOUSE_WHEEL_DOWN => Some(LayoutKey {
-            tap: Label::new("Mouse Wh ↓"),
+            tap: Label::new(egui_phosphor::regular::ARROW_DOWN),
+            symbol: Some(egui_phosphor::regular::MOUSE_SCROLL.to_string()),
             ..Default::default()
         }),
         Keycode::QK_MOUSE_WHEEL_LEFT => Some(LayoutKey {
-            tap: Label::new("Mouse Wh ←"),
+            tap: Label::new(egui_phosphor::regular::ARROW_LEFT),
+            symbol: Some(egui_phosphor::regular::MOUSE_SCROLL.to_string()),
             ..Default::default()
         }),
         Keycode::QK_MOUSE_WHEEL_RIGHT => Some(LayoutKey {
-            tap: Label::new("Mouse Wh →"),
+            tap: Label::new(egui_phosphor::regular::ARROW_RIGHT),
+            symbol: Some(egui_phosphor::regular::MOUSE_SCROLL.to_string()),
             ..Default::default()
         }),
         Keycode::QK_MOUSE_ACCELERATION_0 => Some(LayoutKey {
