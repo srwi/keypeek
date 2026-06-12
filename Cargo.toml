@@ -23,7 +23,7 @@ egui-file-dialog = "0.13.0"
 image = "0.25.10"
 lzma-rs = "0.3"
 serialport = "4.9.0"
-zmk-studio-api = { version = "0.3.1", features = ["serial", "ble"] }
+zmk-studio-api = { git = "https://github.com/srwi/zmk-studio-api", features = ["serial", "ble"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"

@@ -5,7 +5,7 @@ use std::io::{Read, Write};
 use std::time::Duration;
 use zmk_studio_api::proto::zmk::{core, keymap};
 use zmk_studio_api::transport::{BleDiscoveryMode, PlatformBleTransport};
-use zmk_studio_api::{Behavior, StudioClient};
+use zmk_studio_api::StudioClient;
 
 pub struct ZmkSerialDevice {
     pub port_name: String,
@@ -130,12 +130,23 @@ fn fetch_zmk_data_from_client<T: Read + Write>(
 
     let physical_layouts = client.get_physical_layouts()?;
 
-    let resolved_layers: Vec<Vec<Behavior>> = client.resolve_keymap()?;
+    let resolved_layers = client.resolve_keymap()?;
     let layer_count = resolved_layers.len();
+
+    let layer_names: Vec<String> = resolved_layers
+        .iter()
+        .map(|layer| layer.name.clone())
+        .collect();
 
     let layout_keys: Vec<Vec<Option<LayoutKey>>> = resolved_layers
         .iter()
-        .map(|layer| layer.iter().map(behavior_to_layout_key).collect())
+        .map(|layer| {
+            layer
+                .bindings
+                .iter()
+                .map(|behavior| behavior_to_layout_key(behavior, &layer_names))
+                .collect()
+        })
         .collect();
 
     // Drop the ZMK RPC connection and give transport time to settle before
