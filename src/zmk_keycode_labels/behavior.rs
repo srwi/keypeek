@@ -3,7 +3,7 @@ use zmk_studio_api::Behavior;
 
 use super::hid_usage::hid_usage_to_layout_key;
 
-pub fn behavior_to_layout_key(behavior: &Behavior) -> Option<LayoutKey> {
+pub fn behavior_to_layout_key(behavior: &Behavior, layer_names: &[String]) -> Option<LayoutKey> {
     match behavior {
         Behavior::Transparent => None,
 
@@ -17,15 +17,20 @@ pub fn behavior_to_layout_key(behavior: &Behavior) -> Option<LayoutKey> {
             key.function = Some(Label::new("Toggle"));
             Some(key)
         }
-        Behavior::MomentaryLayer { layer_id } => Some(layer_layout_key("MO", *layer_id)),
-        Behavior::ToggleLayer { layer_id } => Some(layer_layout_key("TG", *layer_id)),
-        Behavior::ToLayer { layer_id } => Some(layer_layout_key("TO", *layer_id)),
-        Behavior::StickyLayer { layer_id } => Some(layer_layout_key("SL", *layer_id)),
+        Behavior::MomentaryLayer { layer_id } => {
+            Some(layer_layout_key("MO", *layer_id, layer_names))
+        }
+        Behavior::ToggleLayer { layer_id } => Some(layer_layout_key("TG", *layer_id, layer_names)),
+        Behavior::ToLayer { layer_id } => Some(layer_layout_key("TO", *layer_id, layer_names)),
+        Behavior::StickyLayer { layer_id } => Some(layer_layout_key("SL", *layer_id, layer_names)),
         Behavior::LayerTap { layer_id, tap } => {
             let tap_key = hid_usage_to_layout_key(*tap);
+            let target = layer_name(layer_names, *layer_id)
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("L{}", layer_id));
             Some(LayoutKey {
                 tap: tap_key.tap,
-                function: Some(Label::new(format!("LT: L{}", layer_id))),
+                function: Some(Label::new(format!("LT: {}", target))),
                 shifted: tap_key.shifted,
                 symbol: tap_key.symbol,
                 kind: KeycodeKind::Modifier,
@@ -249,11 +254,23 @@ fn decode_mouse_xy(value: u32) -> (i16, i16) {
     (x, y)
 }
 
-fn layer_layout_key(abbreviation: &str, layer_id: u32) -> LayoutKey {
+fn layer_layout_key(abbreviation: &str, layer_id: u32, layer_names: &[String]) -> LayoutKey {
+    let target = layer_name(layer_names, layer_id)
+        .map(str::to_string)
+        .unwrap_or_else(|| layer_id.to_string());
     LayoutKey {
-        tap: Label::new(format!("{}({})", abbreviation, layer_id)),
+        tap: Label::new(format!("{}({})", abbreviation, target)),
         kind: KeycodeKind::Special,
         layer_ref: Some(layer_id as u8),
         ..Default::default()
     }
+}
+
+/// The user-facing name of layer `id`, or `None` if the device reports no
+/// (non-empty) name for it (e.g. VIA/Vial, or an unnamed ZMK layer).
+fn layer_name(layer_names: &[String], id: u32) -> Option<&str> {
+    layer_names
+        .get(id as usize)
+        .map(String::as_str)
+        .filter(|name| !name.is_empty())
 }
