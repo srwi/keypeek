@@ -1,4 +1,6 @@
-use super::{qmk_json_parser, KeyboardDefinition, KeyboardProtocol};
+use super::{
+    qmk_json_parser, KeyboardDefinition, KeyboardProtocol, RawHidSubscription, SubscriptionSender,
+};
 use crate::layout_key::LayoutKey;
 use crate::qmk_keycode_labels::get_layout_key;
 use qmk_via_api::api::{KeyboardApi, MatrixInfo};
@@ -79,5 +81,9 @@ impl KeyboardProtocol for ViaProtocol {
         self.api
             .hid_read()
             .map_err(|e| format!("HID read error: {e}").into())
+    }
+
+    fn subscription_sender(&self) -> Option<Box<dyn SubscriptionSender>> {
+        RawHidSubscription::open(self.definition.vid, self.definition.pid)
     }
 }

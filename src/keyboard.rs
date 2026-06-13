@@ -1,3 +1,4 @@
+use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -7,6 +8,9 @@ use crate::layout_key::LayoutKey;
 use crate::protocols::{KeyboardLayout, KeyboardProtocol};
 use crate::ui_wake::UiWake;
 
+/// A layer packet's size field is `sizeof(layer_state_t)` and at most 4 bytes.
+const MAX_LAYER_STATE_BYTES: usize = 4;
+
 pub struct Keyboard {
     pub layout: KeyboardLayout,
     pub time_to_hide_overlay: Arc<Mutex<Option<Instant>>>,
@@ -14,6 +18,7 @@ pub struct Keyboard {
     layer_state: Arc<Mutex<u32>>,
     default_layer_state: Arc<Mutex<u32>>,
     timeout_ms: Arc<Mutex<i64>>,
+    _keepalive: Option<mpsc::Sender<()>>,
 }
 
 impl Keyboard {
@@ -42,6 +47,21 @@ impl Keyboard {
         let timeout_ms = Arc::new(Mutex::new(timeout));
         let matrix = Arc::new(Mutex::new(matrix));
 
+        let keepalive = protocol.subscription_sender().map(|sender| {
+            let (tx, rx) = mpsc::channel::<()>();
+            thread::spawn(move || {
+                loop {
+                    let _ = sender.set_active(true);
+                    match rx.recv_timeout(Duration::from_millis(1000)) {
+                        Err(RecvTimeoutError::Timeout) => continue,
+                        _ => break,
+                    }
+                }
+                let _ = sender.set_active(false);
+            });
+            tx
+        });
+
         let keyboard = Keyboard {
             layout,
             matrix: Arc::clone(&matrix),
@@ -49,6 +69,7 @@ impl Keyboard {
             layer_state: Arc::clone(&layer_state),
             default_layer_state: Arc::clone(&default_layer_state),
             timeout_ms: Arc::clone(&timeout_ms),
+            _keepalive: keepalive,
         };
 
         let layer_state_clone = Arc::clone(&keyboard.layer_state);
@@ -62,6 +83,15 @@ impl Keyboard {
                 let mut needs_repaint = false;
                 if response[0] == 0xff {
                     let size = response[1] as usize;
+
+                    // Not every 0xff packet is a layer packet: firmware without
+                    // this module echoes our subscribe command back starting with 0xff,
+                    // causing an unexpected length here. A real layer packet's length is
+                    // sizeof(layer_state_t) (<=4), so anything outside that range
+                    // is foreign and should be skipped.
+                    if size == 0 || size > MAX_LAYER_STATE_BYTES || 2 + 2 * size > response.len() {
+                        continue;
+                    }
 
                     let mut default_bytes = [0u8; 4];
                     default_bytes[..size].copy_from_slice(&response[2..2 + size]);

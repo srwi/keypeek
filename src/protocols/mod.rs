@@ -7,11 +7,16 @@ pub mod zmk;
 pub mod zmk_rpc;
 
 use crate::layout_key::LayoutKey;
+use qmk_via_api::api::KeyboardApi;
 use std::error::Error;
 
 use self::via::ViaProtocol;
 use self::vial::VialProtocol;
 use self::zmk::ZmkProtocol;
+
+pub const KEYPEEK_SUBSCRIBE_MARKER: u8 = 0xC0;
+pub const KEYPEEK_SUBSCRIBE_ACTIVE: u8 = 0xA1;
+pub const KEYPEEK_SUBSCRIBE_INACTIVE: u8 = 0xA0;
 
 pub type Row = usize;
 pub type Column = usize;
@@ -79,6 +84,39 @@ pub trait KeyboardProtocol: Send {
     ) -> Vec<Vec<Vec<Option<LayoutKey>>>>;
 
     fn hid_read(&self) -> Result<Vec<u8>, Box<dyn Error>>;
+
+    fn subscription_sender(&self) -> Option<Box<dyn SubscriptionSender>> {
+        None
+    }
+}
+
+pub trait SubscriptionSender: Send {
+    fn set_active(&self, active: bool) -> Result<(), Box<dyn Error>>;
+}
+
+pub struct RawHidSubscription {
+    api: KeyboardApi,
+}
+
+impl RawHidSubscription {
+    pub fn open(vid: u16, pid: u16) -> Option<Box<dyn SubscriptionSender>> {
+        KeyboardApi::new(vid, pid, 0xff60)
+            .ok()
+            .map(|api| Box::new(Self { api }) as Box<dyn SubscriptionSender>)
+    }
+}
+
+impl SubscriptionSender for RawHidSubscription {
+    fn set_active(&self, active: bool) -> Result<(), Box<dyn Error>> {
+        let value = if active {
+            KEYPEEK_SUBSCRIBE_ACTIVE
+        } else {
+            KEYPEEK_SUBSCRIBE_INACTIVE
+        };
+        self.api
+            .hid_send(vec![KEYPEEK_SUBSCRIBE_MARKER, value])
+            .map_err(|e| format!("Subscription keepalive write error: {e}").into())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
