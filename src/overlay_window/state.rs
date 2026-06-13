@@ -1,11 +1,12 @@
 use crate::connection::ConnectionTask;
 use crate::device_discovery::DiscoveredDevice;
 use crate::keyboard::Keyboard;
-use crate::protocols::KeyboardDefinition;
+use crate::protocols::{ConnectionSpec, KeyboardDefinition};
 use crate::settings::{ProtocolType, Settings};
 
 use eframe::egui;
 use egui_file_dialog::FileDialog;
+use std::time::Instant;
 
 pub struct LabelGalleys {
     pub symbol: Option<std::sync::Arc<egui::Galley>>,
@@ -16,6 +17,7 @@ pub struct LabelGalleys {
 pub enum AppConnectionState {
     Disconnected,
     Connected { keyboard: Keyboard },
+    Reconnecting { next_attempt_at: Instant },
 }
 
 #[derive(Clone)]
@@ -59,6 +61,7 @@ pub struct SettingsState {
 pub struct SessionState {
     pub connection: AppConnectionState,
     pub ever_connected: bool,
+    pub last_spec: Option<ConnectionSpec>,
     pub connected_definition: Option<KeyboardDefinition>,
     pub layout_names: Vec<String>,
     pub active_layout_name: String,

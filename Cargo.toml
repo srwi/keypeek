@@ -18,7 +18,7 @@ qmk-via-api = { version = "0.7.0" }
 hidapi = "2.6.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0.149"
-egui-phosphor = { version = "0.12.0", features = ["fill"] }
+egui-phosphor = "0.12.0"
 egui-file-dialog = "0.13.0"
 image = "0.25.10"
 lzma-rs = "0.3"

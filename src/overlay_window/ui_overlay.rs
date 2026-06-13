@@ -67,8 +67,6 @@ impl OverlayApp {
         let font_scale = self.settings.active.font_size_multiplier;
         let create_galley =
             |text: String, fid: egui::FontId| ui.painter().layout_no_wrap(text, fid, color);
-        let fits_width =
-            |galley: &std::sync::Arc<egui::Galley>, max: f32| galley.rect.width() <= max;
         let max_width = rect.width() * 0.85;
 
         // Stack the shifted character above the base character.
@@ -106,51 +104,17 @@ impl OverlayApp {
             return (Some(symbol_galley), None);
         }
 
-        let full_galley = create_galley(key.tap.full.clone(), font.clone());
-        if fits_width(&full_galley, max_width) {
-            return (None, Some(full_galley));
-        }
-
-        let mut truncated = if let Some(short) = &key.tap.short {
-            let short_galley = create_galley(short.clone(), font.clone());
-            if fits_width(&short_galley, max_width) {
-                return (None, Some(short_galley));
-            }
-            short.clone()
-        } else {
-            key.tap.full.clone()
-        };
-
-        if self.settings.active.auto_fit_before_ellipsis {
-            let max_height = rect.height() * 0.85;
-            let fit_text = key.tap.short.as_ref().unwrap_or(&key.tap.full).clone();
-            let fit_galley = create_galley(fit_text.clone(), font.clone());
-            let width_scale = if fit_galley.rect.width() > 0.0 {
-                max_width / fit_galley.rect.width()
-            } else {
-                1.0
-            };
-            let height_scale = if fit_galley.rect.height() > 0.0 {
-                max_height / fit_galley.rect.height()
-            } else {
-                1.0
-            };
-            let scale = width_scale.min(height_scale).min(1.0);
-            let fitted_text =
-                create_galley(fit_text, egui::FontId::proportional(font.size * scale));
-            return (None, Some(fitted_text));
-        }
-
-        while truncated.len() > 1 {
-            truncated.pop();
-            let truncated_with_ellipsis = format!("{}...", truncated);
-            let truncated_galley = create_galley(truncated_with_ellipsis, font.clone());
-            if fits_width(&truncated_galley, max_width) {
-                return (None, Some(truncated_galley));
-            }
-        }
-
-        (None, None)
+        (
+            None,
+            self.fit_text_galley(
+                ui,
+                &key.tap.full,
+                key.tap.short.as_deref(),
+                font,
+                color,
+                egui::vec2(max_width, rect.height() * 0.85),
+            ),
+        )
     }
 
     fn generate_function_galley(
@@ -164,20 +128,81 @@ impl OverlayApp {
         let size = self.settings.active.size as f32;
         let font_scale = self.settings.active.font_size_multiplier;
         let max_width = rect.width() * 0.85;
+        // The strip reserved for the function legend is ~0.22 of the key height;
+        // keep a little slack so scaled text doesn't touch the strip edges.
+        let max_height = rect.height() * 0.20;
         let function_font = egui::FontId::proportional(0.20 * size * font_scale);
+        self.fit_text_galley(
+            ui,
+            &function.full,
+            function.short.as_deref(),
+            function_font,
+            color,
+            egui::vec2(max_width, max_height),
+        )
+    }
+
+    /// Lay out `full` (or `short`) within `max_width`; when neither fits, either
+    /// scale down (`auto_fit_before_ellipsis`) or truncate with an ellipsis.
+    fn fit_text_galley(
+        &self,
+        ui: &egui::Ui,
+        full: &str,
+        short: Option<&str>,
+        font: egui::FontId,
+        color: egui::Color32,
+        max: egui::Vec2,
+    ) -> Option<std::sync::Arc<egui::Galley>> {
+        let (max_width, max_height) = (max.x, max.y);
         let create_galley =
             |text: String, fid: egui::FontId| ui.painter().layout_no_wrap(text, fid, color);
+        let fits_width =
+            |galley: &std::sync::Arc<egui::Galley>| galley.rect.width() <= max_width;
 
-        let galley = create_galley(function.full.clone(), function_font.clone());
-        if galley.rect.width() <= max_width {
-            return Some(galley);
+        let full_galley = create_galley(full.to_string(), font.clone());
+        if fits_width(&full_galley) {
+            return Some(full_galley);
         }
-        if let Some(short) = &function.short {
-            let short_galley = create_galley(short.clone(), function_font);
-            if short_galley.rect.width() <= max_width {
+
+        let mut truncated = if let Some(short) = short {
+            let short_galley = create_galley(short.to_string(), font.clone());
+            if fits_width(&short_galley) {
                 return Some(short_galley);
             }
+            short.to_string()
+        } else {
+            full.to_string()
+        };
+
+        if self.settings.active.auto_fit_before_ellipsis {
+            let fit_text = short.unwrap_or(full).to_string();
+            let fit_galley = create_galley(fit_text.clone(), font.clone());
+            let width_scale = if fit_galley.rect.width() > 0.0 {
+                max_width / fit_galley.rect.width()
+            } else {
+                1.0
+            };
+            let height_scale = if fit_galley.rect.height() > 0.0 {
+                max_height / fit_galley.rect.height()
+            } else {
+                1.0
+            };
+            let scale = width_scale.min(height_scale).min(1.0);
+            return Some(create_galley(
+                fit_text,
+                egui::FontId::proportional(font.size * scale),
+            ));
         }
+
+        while truncated.len() > 1 {
+            truncated.pop();
+            let truncated_with_ellipsis = format!("{}...", truncated);
+            let truncated_galley = create_galley(truncated_with_ellipsis, font.clone());
+            if fits_width(&truncated_galley) {
+                return Some(truncated_galley);
+            }
+        }
+
         None
     }
 
@@ -309,9 +334,12 @@ impl OverlayApp {
                         self.generate_key_label_galleys(ui, &layout_key, rect, font, font_color);
 
                     // When a function label is present, reserve a strip along the bottom edge for
-                    // it and center the primary label in the remaining area above.
+                    // it and center the primary label in the remaining area above. The strip
+                    // (and its background) is tied to the label *existing*, not to whether its
+                    // text fits, so an over-long legend never blanks out the whole strip.
                     let function_height = rect.height() * 0.22;
-                    let main_label_rect = if galleys.function.is_some() {
+                    let has_function = layout_key.function.is_some();
+                    let main_label_rect = if has_function {
                         egui::Rect::from_min_max(
                             rect.left_top(),
                             egui::pos2(rect.right(), rect.bottom() - function_height),
@@ -320,7 +348,7 @@ impl OverlayApp {
                         rect
                     };
 
-                    if let Some(function_galley) = galleys.function {
+                    if has_function {
                         let strip = egui::Rect::from_min_max(
                             egui::pos2(rect.left(), rect.bottom() - function_height),
                             rect.max,
@@ -347,14 +375,17 @@ impl OverlayApp {
                             )
                             .with_angle(angle),
                         );
-                        let function_pos = strip.center() - function_galley.rect.center().to_vec2();
-                        ui.painter().add(rotated_text_shape(
-                            function_pos,
-                            function_galley,
-                            font_color.gamma_multiply(0.7),
-                            center,
-                            angle,
-                        ));
+                        if let Some(function_galley) = galleys.function {
+                            let function_pos =
+                                strip.center() - function_galley.rect.center().to_vec2();
+                            ui.painter().add(rotated_text_shape(
+                                function_pos,
+                                function_galley,
+                                font_color.gamma_multiply(0.7),
+                                center,
+                                angle,
+                            ));
+                        }
                     }
 
                     match (galleys.symbol, galleys.text) {

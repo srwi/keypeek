@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -18,6 +19,7 @@ pub struct Keyboard {
     layer_state: Arc<Mutex<u32>>,
     default_layer_state: Arc<Mutex<u32>>,
     timeout_ms: Arc<Mutex<i64>>,
+    alive: Arc<AtomicBool>,
     _keepalive: Option<mpsc::Sender<()>>,
 }
 
@@ -46,6 +48,7 @@ impl Keyboard {
         let time_to_hide_overlay = Arc::new(Mutex::new(Some(Instant::now())));
         let timeout_ms = Arc::new(Mutex::new(timeout));
         let matrix = Arc::new(Mutex::new(matrix));
+        let alive = Arc::new(AtomicBool::new(true));
 
         let keepalive = protocol.subscription_sender().map(|sender| {
             let (tx, rx) = mpsc::channel::<()>();
@@ -69,6 +72,7 @@ impl Keyboard {
             layer_state: Arc::clone(&layer_state),
             default_layer_state: Arc::clone(&default_layer_state),
             timeout_ms: Arc::clone(&timeout_ms),
+            alive: Arc::clone(&alive),
             _keepalive: keepalive,
         };
 
@@ -77,9 +81,32 @@ impl Keyboard {
         let time_to_hide_clone = Arc::clone(&keyboard.time_to_hide_overlay);
         let timeout_clone = Arc::clone(&keyboard.timeout_ms);
         let matrix_clone = Arc::clone(&matrix);
+        let alive_clone = Arc::clone(&alive);
 
-        thread::spawn(move || loop {
-            if let Ok(response) = protocol.hid_read() {
+        thread::spawn(move || {
+            // A dropped link (sleep, BLE/USB disconnect) makes `hid_read` error repeatedly.
+            // Mark the connection dead after a few consecutive errors to trigger reconnect.
+            const MAX_CONSECUTIVE_ERRORS: u32 = 5;
+            let mut consecutive_errors: u32 = 0;
+
+            loop {
+                let response = match protocol.hid_read() {
+                    Ok(response) => {
+                        consecutive_errors = 0;
+                        response
+                    }
+                    Err(_) => {
+                        consecutive_errors += 1;
+                        if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                            alive_clone.store(false, Ordering::Relaxed);
+                            ui_wake.request_repaint();
+                            break;
+                        }
+                        thread::sleep(Duration::from_millis(200));
+                        continue;
+                    }
+                };
+
                 let mut needs_repaint = false;
                 if response[0] == 0xff {
                     let size = response[1] as usize;
@@ -136,6 +163,10 @@ impl Keyboard {
         });
 
         Ok(keyboard)
+    }
+
+    pub fn is_alive(&self) -> bool {
+        self.alive.load(Ordering::Relaxed)
     }
 
     pub fn get_effective_key_layer(&self, row: usize, col: usize) -> (u8, bool) {

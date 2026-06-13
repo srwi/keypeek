@@ -49,6 +49,7 @@ impl OverlayApp {
             session: SessionState {
                 connection: AppConnectionState::Disconnected,
                 ever_connected: false,
+                last_spec: None,
                 connected_definition: None,
                 layout_names: Vec::new(),
                 active_layout_name: String::new(),
@@ -124,6 +125,7 @@ impl eframe::App for OverlayApp {
         }
 
         self.poll_connect_result();
+        self.maintain_connection(ctx);
         self.apply_live_visual_settings();
         self.apply_live_layout_settings();
         self.ui.file_dialog.update(ctx);

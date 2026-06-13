@@ -1,29 +1,106 @@
-/// Symbols used to render the four modifier keys across all protocols.
-///
-/// Three are Phosphor glyphs (guaranteed present by the loaded Phosphor fonts);
-/// `MOD_SYMBOL_CTRL` is a raw Unicode codepoint (⎈ U+2388) because Phosphor has no
-/// control symbol.
+/// Symbols for the four modifier keys. macOS uses native glyphs (⌃ ⇧ ⌥ ⌘);
+/// Windows/Linux keep ⇧ for Shift but use shrinkable text names for the rest.
 pub mod modifier_symbols {
-    pub const MOD_SYMBOL_CTRL: &str = "\u{2388}";
-    pub const MOD_SYMBOL_SHIFT: &str = egui_phosphor::regular::ARROW_FAT_UP;
-    pub const MOD_SYMBOL_ALT: &str = egui_phosphor::regular::OPTION;
-    pub const MOD_SYMBOL_GUI: &str = egui_phosphor::fill::DIAMOND;
+    /// Full/short display names for a modifier (same glyph for both on glyph modifiers).
+    pub struct ModName {
+        pub full: &'static str,
+        pub short: &'static str,
+    }
 
-    pub fn glyphs(ctrl: bool, shift: bool, alt: bool, gui: bool) -> String {
-        let mut out = String::new();
+    #[cfg(target_os = "macos")]
+    pub const MOD_CTRL: ModName = ModName {
+        full: egui_phosphor::regular::CONTROL,
+        short: egui_phosphor::regular::CONTROL,
+    };
+    #[cfg(not(target_os = "macos"))]
+    pub const MOD_CTRL: ModName = ModName {
+        full: "Ctrl",
+        short: "Ctl",
+    };
+
+    pub const MOD_SHIFT: ModName = ModName {
+        full: egui_phosphor::regular::ARROW_FAT_UP,
+        short: egui_phosphor::regular::ARROW_FAT_UP,
+    };
+
+    #[cfg(target_os = "macos")]
+    pub const MOD_ALT: ModName = ModName {
+        full: egui_phosphor::regular::OPTION,
+        short: egui_phosphor::regular::OPTION,
+    };
+    #[cfg(not(target_os = "macos"))]
+    pub const MOD_ALT: ModName = ModName {
+        full: "Alt",
+        short: "Alt",
+    };
+
+    #[cfg(target_os = "macos")]
+    pub const MOD_GUI: ModName = ModName {
+        full: egui_phosphor::regular::COMMAND,
+        short: egui_phosphor::regular::COMMAND,
+    };
+    #[cfg(target_os = "windows")]
+    pub const MOD_GUI: ModName = ModName {
+        full: "Win",
+        short: "Win",
+    };
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    pub const MOD_GUI: ModName = ModName {
+        full: "Super",
+        short: "Sup",
+    };
+
+    /// Chord separator: macOS packs glyphs tightly (⌃⇧⌥⌘); elsewhere "+" separates text names.
+    #[cfg(target_os = "macos")]
+    const MOD_SEP: &str = "";
+    #[cfg(not(target_os = "macos"))]
+    const MOD_SEP: &str = "+";
+
+    /// True when `s` is a single Private-Use-Area glyph rather than a text name.
+    fn is_glyph(s: &str) -> bool {
+        let mut chars = s.chars();
+        matches!(chars.next(), Some(c) if ('\u{E000}'..='\u{F8FF}').contains(&c))
+            && chars.next().is_none()
+    }
+
+    /// Build a standalone modifier key: glyph modifiers go in `symbol`, text names in `tap`.
+    pub fn modifier_key(m: &ModName) -> super::LayoutKey {
+        if is_glyph(m.full) {
+            super::LayoutKey {
+                symbol: Some(m.full.to_string()),
+                kind: super::KeycodeKind::Modifier,
+                ..Default::default()
+            }
+        } else {
+            super::LayoutKey {
+                tap: super::Label::with_short(m.full, m.short),
+                kind: super::KeycodeKind::Modifier,
+                ..Default::default()
+            }
+        }
+    }
+
+    /// Combined label for a set of held modifiers (e.g. "Ctrl+⇧"), with a short form to shrink.
+    pub fn glyphs(ctrl: bool, shift: bool, alt: bool, gui: bool) -> super::Label {
+        let mut full: Vec<&str> = Vec::new();
+        let mut short: Vec<&str> = Vec::new();
+        let mut push = |m: &ModName| {
+            full.push(m.full);
+            short.push(m.short);
+        };
         if ctrl {
-            out.push_str(MOD_SYMBOL_CTRL);
+            push(&MOD_CTRL);
         }
         if shift {
-            out.push_str(MOD_SYMBOL_SHIFT);
+            push(&MOD_SHIFT);
         }
         if alt {
-            out.push_str(MOD_SYMBOL_ALT);
+            push(&MOD_ALT);
         }
         if gui {
-            out.push_str(MOD_SYMBOL_GUI);
+            push(&MOD_GUI);
         }
-        out
+        super::Label::with_short(full.join(MOD_SEP), short.join(MOD_SEP))
     }
 }
 
@@ -56,6 +133,15 @@ impl Label {
         Label {
             full: full.into(),
             short: Some(short.into()),
+        }
+    }
+
+    /// Returns a copy with `prefix` prepended to both the full and short forms,
+    /// e.g. `Label{full:"Ctrl",short:"Ctl"}.prefixed("MT: ")` -> "MT: Ctrl"/"MT: Ctl".
+    pub fn prefixed(&self, prefix: &str) -> Label {
+        Label {
+            full: format!("{prefix}{}", self.full),
+            short: self.short.as_ref().map(|s| format!("{prefix}{s}")),
         }
     }
 

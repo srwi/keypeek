@@ -30,7 +30,7 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             };
             Some(LayoutKey {
                 tap,
-                function: Some(Label::new(mod_value_to_string(input_modifiers >> 8))),
+                function: Some(mod_value_to_label(input_modifiers >> 8)),
                 symbol,
                 kind: KeycodeKind::Modifier,
                 ..Default::default()
@@ -40,14 +40,14 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             let remainder = input_bytes & !(QK_MOD_TAP.start);
 
             let mod_value = (remainder >> 8) & 0x1F;
-            let mod_str = mod_value_to_string(mod_value);
+            let mod_label = mod_value_to_label(mod_value);
 
             let keycode = (remainder & 0xFF) as u8;
             let tap_key = get_basic_layout_key(keycode as u16).unwrap_or_default();
 
             Some(LayoutKey {
                 tap: tap_key.tap,
-                function: Some(Label::new(format!("MT: {}", mod_str))),
+                function: Some(mod_label.prefixed("MT: ")),
                 shifted: tap_key.shifted,
                 symbol: tap_key.symbol,
                 kind: KeycodeKind::Basic,
@@ -62,11 +62,11 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             let layer = remainder >> shift;
 
             let mod_value = remainder & mask;
-            let mod_str = mod_value_to_string(mod_value);
+            let mod_label = mod_value_to_label(mod_value);
 
             Some(LayoutKey {
                 tap: Label::new(format!("L{}", layer)),
-                function: Some(Label::new(mod_str)),
+                function: Some(mod_label),
                 kind: KeycodeKind::Modifier,
                 layer_ref: Some(layer as u8),
                 ..Default::default()
@@ -75,10 +75,10 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
         input_bytes if QK_ONE_SHOT_MOD.contains(&input_bytes) => {
             let remainder = input_bytes & !(QK_ONE_SHOT_MOD.start);
 
-            let mod_str = mod_value_to_string(remainder);
+            let mod_label = mod_value_to_label(remainder);
 
             Some(LayoutKey {
-                tap: Label::new(mod_str),
+                tap: mod_label,
                 function: Some(Label::new("OSM")),
                 kind: KeycodeKind::Modifier,
                 ..Default::default()
@@ -105,7 +105,7 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
     }
 }
 
-fn mod_value_to_string(mod_mask: u16) -> String {
+fn mod_value_to_label(mod_mask: u16) -> Label {
     // Left/right share the low-nibble encoding, so only bits 0-3 matter.
     modifier_symbols::glyphs(
         mod_mask & MOD_LCTL != 0,

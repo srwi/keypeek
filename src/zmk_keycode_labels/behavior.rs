@@ -40,10 +40,15 @@ pub fn behavior_to_layout_key(behavior: &Behavior, layer_names: &[String]) -> Op
         Behavior::ModTap { hold, tap } => {
             let hold_key = hid_usage_to_layout_key(*hold);
             let tap_key = hid_usage_to_layout_key(*tap);
-            let mod_text = hold_key.symbol.unwrap_or(hold_key.tap.full);
+            // A glyph modifier has no shorter form; a text modifier carries its
+            // short name in `tap`, so the "MT:" legend can shrink to fit.
+            let mod_label = match hold_key.symbol {
+                Some(sym) => Label::new(sym),
+                None => hold_key.tap,
+            };
             Some(LayoutKey {
                 tap: tap_key.tap,
-                function: Some(Label::new(format!("MT: {}", mod_text))),
+                function: Some(mod_label.prefixed("MT: ")),
                 shifted: tap_key.shifted,
                 symbol: tap_key.symbol,
                 kind: KeycodeKind::Basic,

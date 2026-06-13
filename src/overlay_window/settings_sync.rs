@@ -120,7 +120,7 @@ impl OverlayApp {
 
     pub(super) fn overlay_visible(&self) -> bool {
         match &self.session.connection {
-            AppConnectionState::Disconnected => false,
+            AppConnectionState::Disconnected | AppConnectionState::Reconnecting { .. } => false,
             AppConnectionState::Connected { keyboard } => {
                 if self.ui.settings_visible {
                     true
