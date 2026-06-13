@@ -22,10 +22,13 @@ impl OverlayApp {
 
     pub(super) fn draw_settings_window(&mut self, ctx: &egui::Context) {
         let mut open = self.ui.settings_visible;
-        let connection_locked = matches!(
+        let reconnecting = matches!(
             self.session.connection,
-            AppConnectionState::Connected { .. }
+            AppConnectionState::Reconnecting { .. }
         );
+        // Keep the device/protocol pickers locked while connected or reconnecting.
+        let connection_locked =
+            !matches!(self.session.connection, AppConnectionState::Disconnected);
         let selected_device = self
             .connect
             .selected_device_index
@@ -96,7 +99,9 @@ impl OverlayApp {
                                             let can_connect = !connection_locked
                                                 && !connect_in_progress
                                                 && self.connect.selected_device_index.is_some();
-                                            let button_label = if connect_in_progress {
+                                            let button_label = if reconnecting {
+                                                "Reconnecting..."
+                                            } else if connect_in_progress {
                                                 "Connecting..."
                                             } else {
                                                 "Connect"
