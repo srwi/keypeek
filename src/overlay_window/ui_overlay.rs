@@ -119,6 +119,19 @@ impl OverlayApp {
         )
     }
 
+    /// `(font_size, strip_height)` for the function legend. Both scale with the
+    /// font size (0.55x the main tap font), so the strip grows and shrinks with
+    /// the text instead of being a fixed fraction of the key height.
+    fn function_metrics(&self) -> (f32, f32) {
+        let size = self.settings.active.size as f32;
+        let font_scale = self.settings.active.font_size_multiplier;
+        // 0.55x the main tap font (0.25), so the legend is always a bit smaller.
+        let font_size = 0.55 * 0.25 * size * font_scale;
+        // Single text line is ~1.16x the font size; add a little vertical padding.
+        let strip_height = font_size * 1.4;
+        (font_size, strip_height)
+    }
+
     fn generate_function_galley(
         &self,
         ui: &egui::Ui,
@@ -127,20 +140,16 @@ impl OverlayApp {
         color: egui::Color32,
     ) -> Option<std::sync::Arc<egui::Galley>> {
         let function = key.function.as_ref()?;
-        let size = self.settings.active.size as f32;
-        let font_scale = self.settings.active.font_size_multiplier;
         let max_width = rect.width() * 0.85;
-        // The strip reserved for the function legend is ~0.22 of the key height;
-        // keep a little slack so scaled text doesn't touch the strip edges.
-        let max_height = rect.height() * 0.20;
-        let function_font = egui::FontId::proportional(0.20 * size * font_scale);
+        let (font_size, strip_height) = self.function_metrics();
+        let function_font = egui::FontId::proportional(font_size);
         self.fit_text_galley(
             ui,
             &function.full,
             function.short.as_deref(),
             function_font,
             color,
-            egui::vec2(max_width, max_height),
+            egui::vec2(max_width, strip_height),
         )
     }
 
@@ -160,8 +169,7 @@ impl OverlayApp {
         let (max_width, max_height) = (max.x, max.y);
         let create_galley =
             |text: String, fid: egui::FontId| ui.painter().layout_no_wrap(text, fid, color);
-        let fits_width =
-            |galley: &std::sync::Arc<egui::Galley>| galley.rect.width() <= max_width;
+        let fits_width = |galley: &std::sync::Arc<egui::Galley>| galley.rect.width() <= max_width;
 
         let full_galley = create_galley(full.to_string(), font.clone());
         if fits_width(&full_galley) {
@@ -337,11 +345,11 @@ impl OverlayApp {
                     let galleys =
                         self.generate_key_label_galleys(ui, &layout_key, rect, font, font_color);
 
-                    // When a function label is present, reserve a strip along the bottom edge for
-                    // it and center the primary label in the remaining area above. The strip
-                    // (and its background) is tied to the label *existing*, not to whether its
-                    // text fits, so an over-long legend never blanks out the whole strip.
-                    let function_height = rect.height() * 0.22;
+                    // When a function strip is present, reserve it along the bottom edge and
+                    // center the primary label in the remaining area above. The strip (and its
+                    // background) is tied to the label *existing*, not to whether its text fits,
+                    // so an over-long legend never blanks out the whole strip.
+                    let function_height = self.function_metrics().1;
                     let has_function = layout_key.function.is_some();
                     let main_label_rect = if has_function {
                         egui::Rect::from_min_max(
@@ -373,7 +381,7 @@ impl OverlayApp {
                                     sw: radius,
                                     se: radius,
                                 },
-                                fill_color.lerp_to_gamma(egui::Color32::BLACK, 0.15),
+                                stroke_color,
                                 egui::Stroke::NONE,
                                 egui::StrokeKind::Outside,
                             )
