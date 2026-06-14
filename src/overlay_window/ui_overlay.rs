@@ -45,11 +45,13 @@ impl OverlayApp {
         color: egui::Color32,
     ) -> LabelGalleys {
         let (symbol, text) = self.generate_tap_galleys(ui, key, rect, font, color);
-        let function = self.generate_function_galley(ui, key, rect, color);
+        let behavior = self.generate_strip_galley(ui, key.behavior.as_ref(), rect, color);
+        let argument = self.generate_strip_galley(ui, key.argument.as_ref(), rect, color);
         LabelGalleys {
             symbol,
             text,
-            function,
+            behavior,
+            argument,
         }
     }
 
@@ -119,10 +121,10 @@ impl OverlayApp {
         )
     }
 
-    /// `(font_size, strip_height)` for the function legend. Both scale with the
-    /// font size (0.55x the main tap font), so the strip grows and shrinks with
-    /// the text instead of being a fixed fraction of the key height.
-    fn function_metrics(&self) -> (f32, f32) {
+    /// `(font_size, strip_height)` for the top/bottom legend strips. Both scale
+    /// with the font size (0.55x the main tap font), so a strip grows and shrinks
+    /// with the text instead of being a fixed fraction of the key height.
+    fn strip_metrics(&self) -> (f32, f32) {
         let size = self.settings.active.size as f32;
         let font_scale = self.settings.active.font_size_multiplier;
         // 0.55x the main tap font (0.25), so the legend is always a bit smaller.
@@ -132,22 +134,24 @@ impl OverlayApp {
         (font_size, strip_height)
     }
 
-    fn generate_function_galley(
+    /// Lay out an optional strip label (the behavior name or its argument) to fit
+    /// within a strip. Shared by both the top (behavior) and bottom (argument) strips.
+    fn generate_strip_galley(
         &self,
         ui: &egui::Ui,
-        key: &LayoutKey,
+        label: Option<&crate::layout_key::Label>,
         rect: egui::Rect,
         color: egui::Color32,
     ) -> Option<std::sync::Arc<egui::Galley>> {
-        let function = key.function.as_ref()?;
+        let label = label?;
         let max_width = rect.width() * 0.85;
-        let (font_size, strip_height) = self.function_metrics();
-        let function_font = egui::FontId::proportional(font_size);
+        let (font_size, strip_height) = self.strip_metrics();
+        let strip_font = egui::FontId::proportional(font_size);
         self.fit_text_galley(
             ui,
-            &function.full,
-            function.short.as_deref(),
-            function_font,
+            &label.full,
+            label.short.as_deref(),
+            strip_font,
             color,
             egui::vec2(max_width, strip_height),
         )
@@ -216,6 +220,66 @@ impl OverlayApp {
         }
 
         None
+    }
+
+    /// Paint one legend strip (top behavior or bottom argument) along an edge of a
+    /// key: a rounded background tinted with the key border color plus the dimmed
+    /// legend text. `top` selects which pair of corners is rounded and is the only
+    /// difference between the two strips. `strip` is the un-rotated edge rect; both
+    /// background and text are rotated to match the key's `angle` about `center`.
+    #[allow(clippy::too_many_arguments)]
+    fn paint_strip(
+        &self,
+        ui: &egui::Ui,
+        strip: egui::Rect,
+        galley: Option<std::sync::Arc<egui::Galley>>,
+        top: bool,
+        size: f32,
+        center: egui::Pos2,
+        angle: f32,
+        background: egui::Color32,
+        font_color: egui::Color32,
+    ) {
+        // RectShape rotates around its own center, so orbit the strip's center
+        // around the key center first, then tilt it in place.
+        let strip_rect =
+            egui::Rect::from_center_size(rotate_point(strip.center(), center, angle), strip.size());
+        let radius = (0.08 * size) as u8;
+        let corners = if top {
+            egui::CornerRadius {
+                nw: radius,
+                ne: radius,
+                sw: 0,
+                se: 0,
+            }
+        } else {
+            egui::CornerRadius {
+                nw: 0,
+                ne: 0,
+                sw: radius,
+                se: radius,
+            }
+        };
+        ui.painter().add(
+            egui::epaint::RectShape::new(
+                strip_rect,
+                corners,
+                background,
+                egui::Stroke::NONE,
+                egui::StrokeKind::Outside,
+            )
+            .with_angle(angle),
+        );
+        if let Some(galley) = galley {
+            let pos = strip.center() - galley.rect.center().to_vec2();
+            ui.painter().add(rotated_text_shape(
+                pos,
+                galley,
+                font_color.gamma_multiply(0.7),
+                center,
+                angle,
+            ));
+        }
     }
 
     pub(super) fn get_keycode_color(
@@ -345,59 +409,50 @@ impl OverlayApp {
                     let galleys =
                         self.generate_key_label_galleys(ui, &layout_key, rect, font, font_color);
 
-                    // When a function strip is present, reserve it along the bottom edge and
-                    // center the primary label in the remaining area above. The strip (and its
-                    // background) is tied to the label *existing*, not to whether its text fits,
-                    // so an over-long legend never blanks out the whole strip.
-                    let function_height = self.function_metrics().1;
-                    let has_function = layout_key.function.is_some();
-                    let main_label_rect = if has_function {
-                        egui::Rect::from_min_max(
-                            rect.left_top(),
-                            egui::pos2(rect.right(), rect.bottom() - function_height),
-                        )
-                    } else {
-                        rect
-                    };
+                    // Draw a strip along each edge that carries a legend: the
+                    // behavior name on top, its argument on the bottom. The primary
+                    // label always stays centered on the full key (the strips overlay
+                    // its top/bottom edges rather than pushing it up or down). A strip
+                    // (and its background) is tied to the legend *existing*, not to
+                    // whether its text fits, so an over-long legend never blanks it out.
+                    let strip_height = self.strip_metrics().1;
+                    let has_behavior = layout_key.behavior.is_some();
+                    let has_argument = layout_key.argument.is_some();
 
-                    if has_function {
+                    if has_behavior {
                         let strip = egui::Rect::from_min_max(
-                            egui::pos2(rect.left(), rect.bottom() - function_height),
+                            rect.left_top(),
+                            egui::pos2(rect.right(), rect.top() + strip_height),
+                        );
+                        self.paint_strip(
+                            ui,
+                            strip,
+                            galleys.behavior,
+                            true,
+                            size,
+                            center,
+                            angle,
+                            stroke_color,
+                            font_color,
+                        );
+                    }
+
+                    if has_argument {
+                        let strip = egui::Rect::from_min_max(
+                            egui::pos2(rect.left(), rect.bottom() - strip_height),
                             rect.max,
                         );
-                        // RectShape rotates around its own center, so orbit the strip's center
-                        // around the key center first, then tilt it in place.
-                        let strip_rect = egui::Rect::from_center_size(
-                            rotate_point(strip.center(), center, angle),
-                            strip.size(),
+                        self.paint_strip(
+                            ui,
+                            strip,
+                            galleys.argument,
+                            false,
+                            size,
+                            center,
+                            angle,
+                            stroke_color,
+                            font_color,
                         );
-                        let radius = (0.08 * size) as u8;
-                        ui.painter().add(
-                            egui::epaint::RectShape::new(
-                                strip_rect,
-                                egui::CornerRadius {
-                                    nw: 0,
-                                    ne: 0,
-                                    sw: radius,
-                                    se: radius,
-                                },
-                                stroke_color,
-                                egui::Stroke::NONE,
-                                egui::StrokeKind::Outside,
-                            )
-                            .with_angle(angle),
-                        );
-                        if let Some(function_galley) = galleys.function {
-                            let function_pos =
-                                strip.center() - function_galley.rect.center().to_vec2();
-                            ui.painter().add(rotated_text_shape(
-                                function_pos,
-                                function_galley,
-                                font_color.gamma_multiply(0.7),
-                                center,
-                                angle,
-                            ));
-                        }
                     }
 
                     match (galleys.symbol, galleys.text) {
@@ -405,16 +460,16 @@ impl OverlayApp {
                             let gap = 0.06 * size;
                             let total_width =
                                 symbol_galley.rect.width() + gap + text_galley.rect.width();
-                            let start_x = main_label_rect.center().x - total_width * 0.5;
+                            let start_x = center.x - total_width * 0.5;
 
                             let text_pos_x = start_x + gap + symbol_galley.rect.width();
                             let text_pos = egui::pos2(
                                 text_pos_x,
-                                main_label_rect.center().y - text_galley.rect.center().y,
+                                center.y - text_galley.rect.center().y,
                             );
                             let sym_pos = egui::pos2(
                                 start_x,
-                                main_label_rect.center().y - symbol_galley.rect.center().y,
+                                center.y - symbol_galley.rect.center().y,
                             );
                             ui.painter().add(rotated_text_shape(
                                 sym_pos,
@@ -432,8 +487,7 @@ impl OverlayApp {
                             ));
                         }
                         (Some(symbol_galley), None) => {
-                            let sym_pos =
-                                main_label_rect.center() - symbol_galley.rect.center().to_vec2();
+                            let sym_pos = center - symbol_galley.rect.center().to_vec2();
                             ui.painter().add(rotated_text_shape(
                                 sym_pos,
                                 symbol_galley,
@@ -443,8 +497,7 @@ impl OverlayApp {
                             ));
                         }
                         (None, Some(text_galley)) => {
-                            let label_pos =
-                                main_label_rect.center() - text_galley.rect.center().to_vec2();
+                            let label_pos = center - text_galley.rect.center().to_vec2();
                             ui.painter().add(rotated_text_shape(
                                 label_pos,
                                 text_galley,

@@ -11,7 +11,8 @@ use std::time::Instant;
 pub struct LabelGalleys {
     pub symbol: Option<std::sync::Arc<egui::Galley>>,
     pub text: Option<std::sync::Arc<egui::Galley>>,
-    pub function: Option<std::sync::Arc<egui::Galley>>,
+    pub behavior: Option<std::sync::Arc<egui::Galley>>,
+    pub argument: Option<std::sync::Arc<egui::Galley>>,
 }
 
 pub enum AppConnectionState {

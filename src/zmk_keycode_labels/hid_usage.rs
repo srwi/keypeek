@@ -39,7 +39,7 @@ pub fn hid_usage_to_layout_key(usage: HidUsage) -> LayoutKey {
     }
 
     // Otherwise show the base key in `tap` and the applied modifiers as glyphs in
-    // the function strip (e.g. "C" + "⎈" for LC(C)).
+    // the argument strip (e.g. "C" + "⎈" for LC(C)).
     let (tap, symbol) = if let Some(base_keycode) = base.known_keycode() {
         let base_key = keycode_to_layout_key(&base_keycode);
         (base_key.tap, base_key.symbol)
@@ -49,7 +49,7 @@ pub fn hid_usage_to_layout_key(usage: HidUsage) -> LayoutKey {
 
     LayoutKey {
         tap,
-        function: Some(modifier_symbols::glyphs(
+        argument: Some(modifier_symbols::glyphs(
             mods & (MOD_LCTL | MOD_RCTL) != 0,
             mods & (MOD_LSFT | MOD_RSFT) != 0,
             mods & (MOD_LALT | MOD_RALT) != 0,

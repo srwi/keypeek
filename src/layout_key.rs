@@ -117,6 +117,53 @@ pub mod modifier_symbols {
     }
 }
 
+/// Display names for the tap/hold and layer behaviors, shown in the top strip of
+/// a key. Each entry is `(full, short)`; the short form is used by the auto-fit
+/// logic when the key is too small for the full word. Shared by the ZMK and QMK
+/// label producers so both protocols render the same wording.
+pub mod behavior_names {
+    use super::Label;
+
+    /// `(full, short)` behavior label pair.
+    pub struct BehaviorName {
+        pub full: &'static str,
+        pub short: &'static str,
+    }
+
+    impl BehaviorName {
+        /// Build a `Label` carrying both the full and short forms.
+        pub fn label(&self) -> Label {
+            Label::with_short(self.full, self.short)
+        }
+    }
+
+    macro_rules! behavior_name {
+        ($name:ident, $full:expr, $short:expr) => {
+            pub const $name: BehaviorName = BehaviorName {
+                full: $full,
+                short: $short,
+            };
+        };
+    }
+
+    behavior_name!(MOD_TAP, "Mod-Tap", "MT");
+    behavior_name!(LAYER_TAP, "Layer-Tap", "LT");
+    behavior_name!(LAYER_MOD, "Layer-Mod", "LM");
+    behavior_name!(MOMENTARY, "Momentary", "MO");
+    behavior_name!(TOGGLE, "Toggle", "TG");
+    behavior_name!(TO_LAYER, "To Layer", "TO");
+    behavior_name!(DEFAULT_LAYER, "Default", "DF");
+    behavior_name!(ONE_SHOT_LAYER, "One-Shot Layer", "OSL");
+    behavior_name!(ONE_SHOT_MOD, "One-Shot Mod", "OSM");
+    behavior_name!(LAYER_TAP_TOGGLE, "Layer Tap-Toggle", "TT");
+    behavior_name!(STICKY_LAYER, "Sticky Layer", "SL");
+    behavior_name!(STICKY_KEY, "Sticky Key", "SK");
+    behavior_name!(KEY_TOGGLE, "Key Toggle", "KT");
+    behavior_name!(TAP_DANCE, "Tap Dance", "TD");
+    behavior_name!(MACRO, "Macro", "MACRO");
+    behavior_name!(CUSTOM, "Custom", "CUSTOM");
+}
+
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub enum KeycodeKind {
     #[default]
@@ -149,15 +196,6 @@ impl Label {
         }
     }
 
-    /// Returns a copy with `prefix` prepended to both the full and short forms,
-    /// e.g. `Label{full:"Ctrl",short:"Ctl"}.prefixed("MT: ")` -> "MT: Ctrl"/"MT: Ctl".
-    pub fn prefixed(&self, prefix: &str) -> Label {
-        Label {
-            full: format!("{prefix}{}", self.full),
-            short: self.short.as_ref().map(|s| format!("{prefix}{s}")),
-        }
-    }
-
     pub fn is_empty(&self) -> bool {
         self.full.is_empty()
     }
@@ -168,10 +206,14 @@ pub struct LayoutKey {
     /// Primary key action label (e.g., "A", "Enter", "L1")
     pub tap: Label,
 
-    /// Secondary "function" legend describing the key's modifier, target layer,
-    /// or behavior (e.g. "⎈" for MT, "L2" for LT, "MO"/"OSM"/"Toggle"). Rendered
-    /// in a small strip along the bottom edge of the key.
-    pub function: Option<Label>,
+    /// Behavior name shown in a small strip along the top edge of the key
+    /// (e.g. "Mod-Tap", "Momentary", "Layer-Tap"). `None` for plain keys.
+    pub behavior: Option<Label>,
+
+    /// The behavior's argument, shown in a small strip along the bottom edge of
+    /// the key (e.g. the held modifier "Ctrl" for Mod-Tap, the target layer "L2" for
+    /// Layer-Tap). `None` when the behavior takes no separate argument.
+    pub argument: Option<Label>,
 
     /// Shifted legend for keys that produce a different character when shift is
     /// held (e.g. "!" for KC_1). Rendered as a second line above `tap`.
@@ -191,7 +233,8 @@ impl Default for LayoutKey {
     fn default() -> Self {
         LayoutKey {
             tap: Label::default(),
-            function: None,
+            behavior: None,
+            argument: None,
             shifted: None,
             symbol: None,
             kind: KeycodeKind::Basic,
