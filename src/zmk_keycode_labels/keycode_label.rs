@@ -721,46 +721,14 @@ fn keycode_label(keycode: &Keycode) -> Option<LayoutKey> {
             tap: Label::new("ExSel"),
             ..Default::default()
         }),
-        Keycode::LEFT_CONTROL => Some(LayoutKey {
-            symbol: Some(MOD_SYMBOL_CTRL.to_string()),
-            kind: KeycodeKind::Modifier,
-            ..Default::default()
-        }),
-        Keycode::LEFT_SHIFT => Some(LayoutKey {
-            symbol: Some(MOD_SYMBOL_SHIFT.to_string()),
-            kind: KeycodeKind::Modifier,
-            ..Default::default()
-        }),
-        Keycode::LEFT_ALT => Some(LayoutKey {
-            symbol: Some(MOD_SYMBOL_ALT.to_string()),
-            kind: KeycodeKind::Modifier,
-            ..Default::default()
-        }),
-        Keycode::LEFT_COMMAND => Some(LayoutKey {
-            symbol: Some(MOD_SYMBOL_GUI.to_string()),
-            kind: KeycodeKind::Modifier,
-            ..Default::default()
-        }),
-        Keycode::RIGHT_CONTROL => Some(LayoutKey {
-            symbol: Some(MOD_SYMBOL_CTRL.to_string()),
-            kind: KeycodeKind::Modifier,
-            ..Default::default()
-        }),
-        Keycode::RIGHT_SHIFT => Some(LayoutKey {
-            symbol: Some(MOD_SYMBOL_SHIFT.to_string()),
-            kind: KeycodeKind::Modifier,
-            ..Default::default()
-        }),
-        Keycode::RIGHT_ALT => Some(LayoutKey {
-            symbol: Some(MOD_SYMBOL_ALT.to_string()),
-            kind: KeycodeKind::Modifier,
-            ..Default::default()
-        }),
-        Keycode::RIGHT_COMMAND => Some(LayoutKey {
-            symbol: Some(MOD_SYMBOL_GUI.to_string()),
-            kind: KeycodeKind::Modifier,
-            ..Default::default()
-        }),
+        Keycode::LEFT_CONTROL => Some(modifier_key(&MOD_CTRL)),
+        Keycode::LEFT_SHIFT => Some(modifier_key(&MOD_SHIFT)),
+        Keycode::LEFT_ALT => Some(modifier_key(&MOD_ALT)),
+        Keycode::LEFT_COMMAND => Some(modifier_key(&MOD_GUI)),
+        Keycode::RIGHT_CONTROL => Some(modifier_key(&MOD_CTRL)),
+        Keycode::RIGHT_SHIFT => Some(modifier_key(&MOD_SHIFT)),
+        Keycode::RIGHT_ALT => Some(modifier_key(&MOD_ALT)),
+        Keycode::RIGHT_COMMAND => Some(modifier_key(&MOD_GUI)),
         Keycode::K_PLAY_PAUSE => Some(LayoutKey {
             symbol: Some(egui_phosphor::regular::PLAY_PAUSE.to_string()),
             ..Default::default()

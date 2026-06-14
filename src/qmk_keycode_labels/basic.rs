@@ -907,46 +907,14 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             tap: Label::new("Mouse Acc2"),
             ..Default::default()
         }),
-        Keycode::KC_LEFT_CTRL => Some(LayoutKey {
-            symbol: Some(MOD_SYMBOL_CTRL.to_string()),
-            kind: KeycodeKind::Modifier,
-            ..Default::default()
-        }),
-        Keycode::KC_LEFT_SHIFT => Some(LayoutKey {
-            symbol: Some(MOD_SYMBOL_SHIFT.to_string()),
-            kind: KeycodeKind::Modifier,
-            ..Default::default()
-        }),
-        Keycode::KC_LEFT_ALT => Some(LayoutKey {
-            symbol: Some(MOD_SYMBOL_ALT.to_string()),
-            kind: KeycodeKind::Modifier,
-            ..Default::default()
-        }),
-        Keycode::KC_LEFT_GUI => Some(LayoutKey {
-            symbol: Some(MOD_SYMBOL_GUI.to_string()),
-            kind: KeycodeKind::Modifier,
-            ..Default::default()
-        }),
-        Keycode::KC_RIGHT_CTRL => Some(LayoutKey {
-            symbol: Some(MOD_SYMBOL_CTRL.to_string()),
-            kind: KeycodeKind::Modifier,
-            ..Default::default()
-        }),
-        Keycode::KC_RIGHT_SHIFT => Some(LayoutKey {
-            symbol: Some(MOD_SYMBOL_SHIFT.to_string()),
-            kind: KeycodeKind::Modifier,
-            ..Default::default()
-        }),
-        Keycode::KC_RIGHT_ALT => Some(LayoutKey {
-            symbol: Some(MOD_SYMBOL_ALT.to_string()),
-            kind: KeycodeKind::Modifier,
-            ..Default::default()
-        }),
-        Keycode::KC_RIGHT_GUI => Some(LayoutKey {
-            symbol: Some(MOD_SYMBOL_GUI.to_string()),
-            kind: KeycodeKind::Modifier,
-            ..Default::default()
-        }),
+        Keycode::KC_LEFT_CTRL => Some(modifier_key(&MOD_CTRL)),
+        Keycode::KC_LEFT_SHIFT => Some(modifier_key(&MOD_SHIFT)),
+        Keycode::KC_LEFT_ALT => Some(modifier_key(&MOD_ALT)),
+        Keycode::KC_LEFT_GUI => Some(modifier_key(&MOD_GUI)),
+        Keycode::KC_RIGHT_CTRL => Some(modifier_key(&MOD_CTRL)),
+        Keycode::KC_RIGHT_SHIFT => Some(modifier_key(&MOD_SHIFT)),
+        Keycode::KC_RIGHT_ALT => Some(modifier_key(&MOD_ALT)),
+        Keycode::KC_RIGHT_GUI => Some(modifier_key(&MOD_GUI)),
         Keycode::QK_SWAP_HANDS_TOGGLE => Some(LayoutKey {
             tap: Label::with_short("Swap Hands Toggle", "SwpHT"),
             ..Default::default()

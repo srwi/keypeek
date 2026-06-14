@@ -49,7 +49,6 @@ fn main() -> Result<(), eframe::Error> {
 
             let mut fonts = egui::FontDefinitions::default();
             egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
-            egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Fill);
             cc.egui_ctx.set_fonts(fonts);
 
             Ok(Box::new(OverlayApp::new(
