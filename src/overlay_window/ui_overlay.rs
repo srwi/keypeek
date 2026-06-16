@@ -426,9 +426,14 @@ impl OverlayApp {
         ui.add_space(4.0);
     }
 
-    pub(super) fn draw_overlay_window(&self, ctx: &egui::Context, keyboard: &Keyboard) {
+    pub(super) fn draw_overlay_window(
+        &self,
+        ctx: &egui::Context,
+        keyboard: &Keyboard,
+        visible: bool,
+    ) {
         let anchor_params = self.get_anchor_params();
-        let mut window_open = true;
+        let mut window_open = visible;
         let size = self.settings.active.size as f32;
         let font_scale = self.settings.active.font_size_multiplier;
 

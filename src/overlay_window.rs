@@ -141,9 +141,7 @@ impl eframe::App for OverlayApp {
         self.sync_mouse_passthrough(ctx);
 
         if let AppConnectionState::Connected { keyboard } = &self.session.connection {
-            if self.overlay_visible() {
-                self.draw_overlay_window(ctx, keyboard);
-            }
+            self.draw_overlay_window(ctx, keyboard, self.overlay_visible());
         }
 
         if self.ui.settings_visible {
