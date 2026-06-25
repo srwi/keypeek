@@ -3,7 +3,7 @@ use super::OverlayApp;
 use crate::keyboard::Keyboard;
 use crate::layout_key::{BorderStyle, KeycodeKind, LayoutKey};
 use crate::settings::ThemeColor;
-use eframe::egui::{self, Window};
+use egui::Window;
 
 /// Rotate `point` clockwise around `origin` by `angle_rad` (screen space, y-down).
 fn rotate_point(point: egui::Pos2, origin: egui::Pos2, angle_rad: f32) -> egui::Pos2 {

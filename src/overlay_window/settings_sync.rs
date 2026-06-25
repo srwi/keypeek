@@ -1,7 +1,7 @@
 use super::state::AppConnectionState;
 use super::OverlayApp;
 use crate::settings::{ProtocolType, WindowPosition};
-use eframe::egui::{self, Align2};
+use egui::Align2;
 use std::time::Instant;
 
 impl OverlayApp {

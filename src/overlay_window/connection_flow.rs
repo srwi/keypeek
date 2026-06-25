@@ -3,7 +3,6 @@ use super::OverlayApp;
 use crate::connection::{ConnectedState, ConnectionRequest, ConnectionTask};
 use crate::device_discovery::DeviceKind;
 use crate::protocols::{ConnectionSpec, Reopener, ZmkTransportConfig};
-use eframe::egui;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 

@@ -1,7 +1,7 @@
 use super::state::AppConnectionState;
 use super::OverlayApp;
 use crate::settings::WindowPosition;
-use eframe::egui::{self, Window};
+use egui::Window;
 
 impl OverlayApp {
     fn timeout_to_ui_value(timeout: i64) -> u32 {
@@ -20,7 +20,11 @@ impl OverlayApp {
         }
     }
 
-    pub(super) fn draw_settings_window(&mut self, ctx: &egui::Context) {
+    pub(super) fn draw_settings_window(
+        &mut self,
+        ctx: &egui::Context,
+        host: &mut dyn crate::platform::OverlayHost,
+    ) {
         let mut open = self.ui.settings_visible;
         let reconnecting = matches!(
             self.session.connection,
@@ -318,7 +322,7 @@ impl OverlayApp {
         if self.ui.settings_visible && !open {
             self.ui.settings_visible = false;
             if !self.session.ever_connected {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                host.request_close();
             }
         }
     }

@@ -4,7 +4,6 @@ use crate::keyboard::Keyboard;
 use crate::protocols::{ConnectionSpec, KeyboardDefinition, Reopener};
 use crate::settings::{ProtocolType, Settings};
 
-use eframe::egui;
 use egui_file_dialog::FileDialog;
 use std::sync::Arc;
 use std::time::Instant;
@@ -58,8 +57,6 @@ pub struct UiState {
     pub settings_error: Option<String>,
     pub settings_warning: Option<String>,
     pub mouse_passthrough: Option<bool>,
-    #[cfg(target_os = "macos")]
-    pub macos_maximized: bool,
     pub file_dialog: FileDialog,
 }
 

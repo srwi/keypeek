@@ -1,8 +1,8 @@
 use crate::device_discovery::DiscoveredDevice;
+use crate::platform::OverlayHost;
 use crate::settings::Settings;
 use crate::ui_wake::UiWake;
 
-use eframe::egui;
 use std::time::Instant;
 
 mod connection_flow;
@@ -38,8 +38,6 @@ impl OverlayApp {
                 settings_error: None,
                 settings_warning: None,
                 mouse_passthrough: None,
-                #[cfg(target_os = "macos")]
-                macos_maximized: false,
                 file_dialog: egui_file_dialog::FileDialog::new(),
             },
             settings: SettingsState {
@@ -67,13 +65,13 @@ impl OverlayApp {
         }
     }
 
-    fn sync_mouse_passthrough(&mut self, ctx: &egui::Context) {
+    fn sync_mouse_passthrough(&mut self, host: &mut dyn OverlayHost) {
         let mouse_passthrough = !self.ui.settings_visible;
         if self.ui.mouse_passthrough == Some(mouse_passthrough) {
             return;
         }
 
-        ctx.send_viewport_cmd(egui::ViewportCommand::MousePassthrough(mouse_passthrough));
+        host.set_passthrough(mouse_passthrough);
         self.ui.mouse_passthrough = Some(mouse_passthrough);
     }
 
@@ -120,29 +118,21 @@ impl OverlayApp {
     }
 }
 
-impl eframe::App for OverlayApp {
-    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+impl OverlayApp {
+    /// Backdrop color for the whole viewport: a dimmed veil while settings are open,
+    /// otherwise fully transparent so only the overlay is visible. Each host clears
+    /// its framebuffer with this before egui paints.
+    pub fn clear_color(&self) -> egui::Rgba {
         if self.ui.settings_visible {
-            egui::Rgba::from_black_alpha(0.65).to_array()
+            egui::Rgba::from_black_alpha(0.65)
         } else {
-            egui::Rgba::TRANSPARENT.to_array()
+            egui::Rgba::TRANSPARENT
         }
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        let ctx = ui.ctx();
-
-        // On macOS, with_maximized(true) doesn't work for undecorated transparent
-        // windows. Explicitly size the window to fill the monitor on the first frame.
-        #[cfg(target_os = "macos")]
-        if !self.ui.macos_maximized {
-            if let Some(monitor_size) = ctx.input(|i| i.viewport().monitor_size) {
-                ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(0.0, 0.0)));
-                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(monitor_size));
-                self.ui.macos_maximized = true;
-            }
-        }
-
+    /// One frame of UI. Driven by whichever [`OverlayHost`] owns the windowing loop
+    /// (eframe on Windows/macOS/X11, the Wayland layer-shell host otherwise).
+    pub fn ui(&mut self, ctx: &egui::Context, host: &mut dyn OverlayHost) {
         self.poll_connect_result();
         self.maintain_connection(ctx);
         self.apply_live_visual_settings();
@@ -156,14 +146,14 @@ impl eframe::App for OverlayApp {
             self.connect_from_ui();
         }
 
-        self.sync_mouse_passthrough(ctx);
+        self.sync_mouse_passthrough(host);
 
         if let AppConnectionState::Connected { keyboard } = &self.session.connection {
             self.draw_overlay_window(ctx, keyboard, self.overlay_visible());
         }
 
         if self.ui.settings_visible {
-            self.draw_settings_window(ctx);
+            self.draw_settings_window(ctx, host);
         }
 
         Self::message_window(ctx, "Error", &mut self.ui.settings_error);

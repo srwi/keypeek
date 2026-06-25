@@ -83,6 +83,12 @@
           pkg-config
 
           libxcb
+
+          # Wayland layer-shell host: link libwayland-egl/-client, libEGL (khronos-egl
+          # `static` feature), and libxkbcommon (sctk keyboard).
+          wayland
+          libGL
+          libxkbcommon
         ];
 
         # Additional environment variables can be set directly
