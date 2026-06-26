@@ -28,6 +28,9 @@ zmk-studio-api = { git = "https://github.com/srwi/zmk-studio-api", features = ["
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
+# Force the XWayland (X11) backend in the GNOME fallback so the overlay can stay
+# always-on-top (`_NET_WM_STATE_ABOVE`); native Wayland ignores always-on-top.
+winit = { version = "0.30.13", features = ["x11"] }
 # Wayland layer-shell host (used at runtime only when WAYLAND_DISPLAY is set).
 egui_glow = "0.34.3"
 smithay-client-toolkit = "0.19.2"
