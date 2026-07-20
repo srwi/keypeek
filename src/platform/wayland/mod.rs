@@ -52,7 +52,7 @@ use egui_glow::glow;
 
 use crate::device_discovery::DiscoveredDevice;
 use crate::overlay_window::OverlayApp;
-use crate::platform::OverlayHost;
+use crate::platform::{OverlayHost, ScreenInfo};
 use crate::settings::Settings;
 use crate::ui_wake::UiWake;
 
@@ -65,6 +65,8 @@ use input::InputState;
 struct WaylandHost {
     close: bool,
     passthrough: Option<bool>,
+    screens: Vec<ScreenInfo>,
+    current_screen: Option<String>,
 }
 
 impl OverlayHost for WaylandHost {
@@ -74,6 +76,19 @@ impl OverlayHost for WaylandHost {
 
     fn request_close(&mut self) {
         self.close = true;
+    }
+
+    fn available_screens(&self) -> Vec<ScreenInfo> {
+        self.screens.clone()
+    }
+
+    fn current_screen(&self) -> Option<String> {
+        self.current_screen.clone()
+    }
+
+    fn move_to_screen(&mut self, _screen_id: &str) {
+        // The Wayland host currently targets a single default output, so there is
+        // nothing to do. Multi-output support would recreate the layer surface here.
     }
 }
 
@@ -284,7 +299,14 @@ impl WaylandApp {
         let raw_input = self.input.take_raw_input((self.width, self.height));
 
         let ctx = self.egui_ctx.clone();
-        let mut host = WaylandHost::default();
+        let mut host = WaylandHost {
+            screens: vec![ScreenInfo {
+                id: "wayland-default".to_string(),
+                name: "Default display".to_string(),
+            }],
+            current_screen: Some("wayland-default".to_string()),
+            ..Default::default()
+        };
         let full_output = {
             let app = &mut self.app;
             ctx.begin_pass(raw_input);

@@ -1,5 +1,6 @@
 use super::state::AppConnectionState;
 use super::OverlayApp;
+use crate::platform::OverlayHost;
 use crate::settings::{ProtocolType, WindowPosition};
 use egui::Align2;
 use std::time::Instant;
@@ -114,6 +115,51 @@ impl OverlayApp {
                     }
                 }
             }
+        }
+    }
+
+    /// Ensure the draft screen points to an available screen, falling back to the
+    /// current screen (or the first available one) when the saved value is stale.
+    pub(super) fn ensure_valid_draft_screen(&mut self, host: &dyn OverlayHost) {
+        let screens = host.available_screens();
+        if screens.is_empty() {
+            return;
+        }
+        if screens
+            .iter()
+            .any(|screen| screen.id == self.settings.draft.screen)
+        {
+            return;
+        }
+        self.settings.draft.screen = host
+            .current_screen()
+            .filter(|id| screens.iter().any(|screen| screen.id == *id))
+            .unwrap_or_else(|| screens[0].id.clone());
+    }
+
+    pub(super) fn apply_live_screen_setting(
+        &mut self,
+        ctx: &egui::Context,
+        host: &mut dyn OverlayHost,
+    ) {
+        self.ensure_valid_draft_screen(host);
+
+        let screens = host.available_screens();
+        if screens.is_empty() {
+            // The windowing system hasn't reported screens yet; retry next frame.
+            return;
+        }
+
+        let screen_changed = self.settings.active.screen != self.settings.draft.screen;
+        if screen_changed || !self.ui.screen_applied {
+            host.move_to_screen(&self.settings.draft.screen);
+            // The overlay egui Window is positioned absolutely in screen space;
+            // after moving the native window we must reset its cached area so it
+            // re-anchors to the new viewport instead of staying on the old monitor.
+            ctx.memory_mut(|mem| mem.reset_areas());
+            self.settings.active.screen = self.settings.draft.screen.clone();
+            self.ui.screen_applied = true;
+            self.persist_settings();
         }
     }
 }

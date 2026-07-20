@@ -46,6 +46,8 @@ impl OverlayApp {
         let settings_window_size = egui::vec2(450.0, 700.0);
         let settings_window_pos = ctx.viewport_rect().center() - settings_window_size * 0.5;
 
+        self.ensure_valid_draft_screen(host);
+
         Window::new("KeyPeek Settings")
             .open(&mut open)
             .default_size(settings_window_size)
@@ -189,6 +191,29 @@ impl OverlayApp {
                                         );
                                     }
                                 });
+                            ui.end_row();
+
+                            let screens = host.available_screens();
+                            let selected_screen_name = screens
+                                .iter()
+                                .find(|screen| screen.id == self.settings.draft.screen)
+                                .map(|screen| screen.name.clone())
+                                .unwrap_or_else(|| "Default".to_string());
+                            ui.label("Screen");
+                            ui.add_enabled_ui(screens.len() > 1, |ui| {
+                                egui::ComboBox::from_id_salt("screen_combo")
+                                    .width(ui.available_width())
+                                    .selected_text(selected_screen_name)
+                                    .show_ui(ui, |ui| {
+                                        for screen in &screens {
+                                            ui.selectable_value(
+                                                &mut self.settings.draft.screen,
+                                                screen.id.clone(),
+                                                &screen.name,
+                                            );
+                                        }
+                                    });
+                            });
                             ui.end_row();
 
                             ui.label("Display duration");

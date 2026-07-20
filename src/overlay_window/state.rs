@@ -58,6 +58,7 @@ pub struct UiState {
     pub settings_warning: Option<String>,
     pub mouse_passthrough: Option<bool>,
     pub file_dialog: FileDialog,
+    pub screen_applied: bool,
 }
 
 pub struct SettingsState {

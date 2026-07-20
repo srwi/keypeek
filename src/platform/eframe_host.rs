@@ -1,4 +1,4 @@
-use super::OverlayHost;
+use super::{OverlayHost, ScreenInfo};
 use crate::device_discovery::DiscoveredDevice;
 use crate::overlay_window::OverlayApp;
 use crate::settings::Settings;
@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 struct EframeHost<'a> {
     ctx: &'a egui::Context,
+    window: Option<&'a winit::window::Window>,
 }
 
 impl OverlayHost for EframeHost<'_> {
@@ -19,15 +20,77 @@ impl OverlayHost for EframeHost<'_> {
     fn request_close(&mut self) {
         self.ctx.send_viewport_cmd(egui::ViewportCommand::Close);
     }
+
+    fn available_screens(&self) -> Vec<ScreenInfo> {
+        let Some(window) = self.window else {
+            return Vec::new();
+        };
+        window
+            .available_monitors()
+            .enumerate()
+            .map(|(index, monitor)| {
+                let name = monitor
+                    .name()
+                    .unwrap_or_else(|| format!("Display {}", index + 1));
+                ScreenInfo {
+                    id: name.clone(),
+                    name,
+                }
+            })
+            .collect()
+    }
+
+    fn current_screen(&self) -> Option<String> {
+        let window = self.window?;
+        window.current_monitor()?.name()
+    }
+
+    fn move_to_screen(&mut self, screen_id: &str) {
+        let Some(window) = self.window else {
+            return;
+        };
+        let Some(monitor) = window
+            .available_monitors()
+            .find(|m| m.name().as_deref() == Some(screen_id))
+        else {
+            return;
+        };
+
+        // egui viewport commands work in logical points; winit reports physical pixels.
+        let scale = monitor.scale_factor() as f32;
+        let position = monitor.position();
+        let pos_points = egui::pos2(position.x as f32 / scale, position.y as f32 / scale);
+
+        self.ctx
+            .send_viewport_cmd(egui::ViewportCommand::Maximized(false));
+        self.ctx
+            .send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos_points));
+
+        // On Windows, maximize so the OS sizes the window to the work area and
+        // avoids covering the taskbar. On other platforms we size to the full
+        // monitor, matching the original explicit sizing behavior.
+        #[cfg(target_os = "windows")]
+        self.ctx
+            .send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            let size = monitor.size();
+            let size_points = egui::vec2(size.width as f32 / scale, size.height as f32 / scale);
+            self.ctx
+                .send_viewport_cmd(egui::ViewportCommand::InnerSize(size_points));
+        }
+
+        self.ctx
+            .send_viewport_cmd(egui::ViewportCommand::WindowLevel(
+                egui::WindowLevel::AlwaysOnTop,
+            ));
+        self.ctx.request_repaint();
+    }
 }
 
 struct EframeApp {
     app: OverlayApp,
-    // Undecorated transparent windows don't reliably honor `with_maximized`, so we
-    // size to the monitor explicitly once known. Linux never WM-maximizes at all,
-    // since Mutter drops always-on-top on a maximized window.
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    sized_to_monitor: bool,
     // winit's always-on-top request is sent before the window is mapped, which
     // EWMH WMs like Mutter ignore, so re-assert it for a few frames after mapping.
     #[cfg(target_os = "linux")]
@@ -39,7 +102,7 @@ impl eframe::App for EframeApp {
         self.app.clear_color().to_array()
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
 
         // Re-assert always-on-top now that the window is mapped (see field docs).
@@ -53,16 +116,10 @@ impl eframe::App for EframeApp {
             ctx.request_repaint();
         }
 
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
-        if !self.sized_to_monitor {
-            if let Some(monitor_size) = ctx.input(|i| i.viewport().monitor_size) {
-                ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(0.0, 0.0)));
-                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(monitor_size));
-                self.sized_to_monitor = true;
-            }
-        }
-
-        let mut host = EframeHost { ctx: &ctx };
+        let mut host = EframeHost {
+            ctx: &ctx,
+            window: frame.winit_window().map(|w| &**w),
+        };
         self.app.ui(&ctx, &mut host);
     }
 }
@@ -92,10 +149,10 @@ fn show_on_all_spaces(cc: &eframe::CreationContext<'_>) {
 pub fn run(
     settings: Settings,
     devices: Vec<DiscoveredDevice>,
-    force_x11: bool,
+    _force_x11: bool,
 ) -> Result<(), eframe::Error> {
     #[cfg(target_os = "linux")]
-    if force_x11 {
+    if _force_x11 {
         match run_inner(settings.clone(), devices.clone(), true) {
             Ok(()) => return Ok(()),
             Err(e) => {
@@ -112,7 +169,7 @@ pub fn run(
 fn run_inner(
     settings: Settings,
     devices: Vec<DiscoveredDevice>,
-    #[cfg_attr(not(target_os = "linux"), allow(unused_variables))] force_x11: bool,
+    _force_x11: bool,
 ) -> Result<(), eframe::Error> {
     #[allow(unused_mut)]
     let mut viewport = egui::ViewportBuilder::default()
@@ -146,7 +203,7 @@ fn run_inner(
 
     // Force XWayland so always-on-top is honored on GNOME (see `run`).
     #[cfg(target_os = "linux")]
-    if force_x11 {
+    if _force_x11 {
         options.event_loop_builder = Some(Box::new(|builder| {
             use winit::platform::x11::EventLoopBuilderExtX11;
             builder.with_x11();
@@ -180,8 +237,6 @@ fn run_inner(
             let app = OverlayApp::new(tray_icon, settings_requested, ui_wake, settings, devices);
             Ok(Box::new(EframeApp {
                 app,
-                #[cfg(any(target_os = "macos", target_os = "linux"))]
-                sized_to_monitor: false,
                 #[cfg(target_os = "linux")]
                 x11_above_ticks: 10,
             }))

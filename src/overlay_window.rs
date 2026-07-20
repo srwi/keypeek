@@ -44,6 +44,7 @@ impl OverlayApp {
                 settings_warning: None,
                 mouse_passthrough: None,
                 file_dialog: egui_file_dialog::FileDialog::new(),
+                screen_applied: false,
             },
             settings: SettingsState {
                 active: base_settings.clone(),
@@ -161,6 +162,8 @@ impl OverlayApp {
         if self.ui.settings_visible {
             self.draw_settings_window(ctx, host);
         }
+
+        self.apply_live_screen_setting(ctx, host);
 
         Self::message_window(ctx, "Error", &mut self.ui.settings_error);
         Self::message_window(ctx, "Notice", &mut self.ui.settings_warning);

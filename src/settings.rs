@@ -173,6 +173,7 @@ pub struct Settings {
     pub position: WindowPosition,
     pub timeout: i64,
     pub margin: u32,
+    pub screen: String,
     pub theme: ThemeSettings,
 }
 
@@ -185,6 +186,7 @@ impl Default for Settings {
             position: WindowPosition::BottomRight,
             timeout: 2000,
             margin: 10,
+            screen: String::new(),
             theme: ThemeSettings::default(),
         }
     }
@@ -233,6 +235,7 @@ impl Settings {
         section.set("position", self.position.to_string());
         section.set("timeout", self.timeout.to_string());
         section.set("margin", self.margin.to_string());
+        section.set("screen", self.screen.clone());
         for (index, color) in self.theme.layer_colors.iter().enumerate() {
             section.set(format!("layer_color_{index}"), color.to_string());
         }
@@ -269,6 +272,9 @@ impl Settings {
         }
         if let Some(val) = section.get("margin") {
             s.margin = val.parse().unwrap_or(s.margin);
+        }
+        if let Some(val) = section.get("screen") {
+            s.screen = val.to_string();
         }
         for index in 0..s.theme.layer_colors.len() {
             if let Some(val) = section.get(format!("layer_color_{index}")) {
