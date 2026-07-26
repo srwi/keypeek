@@ -5,7 +5,7 @@ use std::io::{Read, Write};
 use std::time::Duration;
 use zmk_studio_api::proto::zmk::{core, keymap};
 use zmk_studio_api::transport::{BleDiscoveryMode, PlatformBleTransport};
-use zmk_studio_api::StudioClient;
+use zmk_studio_api::{ClientError, StudioClient};
 
 pub struct ZmkSerialDevice {
     pub port_name: String,
@@ -115,19 +115,42 @@ pub struct ZmkData {
 pub fn fetch_zmk_data(transport: &ZmkTransport) -> Result<ZmkData, Box<dyn Error>> {
     match transport {
         ZmkTransport::SerialPort(port_name) => {
-            let client = StudioClient::open_serial(port_name)
-                .map_err(|e| format!("Failed to open serial port '{}': {}", port_name, e))?;
-            fetch_zmk_data_from_client(client)
+            let client = StudioClient::open_serial(port_name).map_err(|e| {
+                format!(
+                    "Failed to open serial port '{port_name}': {e}. \
+                     The port may be in use by another application such as ZMK Studio."
+                )
+            })?;
+            fetch_zmk_data_from_client(client).map_err(|e| add_timeout_hint(e, "USB"))
         }
-        ZmkTransport::BleDevice(device_id) => open_zmk_ble_and_fetch(device_id),
+        ZmkTransport::BleDevice(device_id) => {
+            let client =
+                StudioClient::<PlatformBleTransport>::open_ble(device_id).map_err(|e| {
+                    format!(
+                        "Failed to connect to BLE device '{device_id}': {e}. \
+                     Make sure the keyboard is paired in your OS Bluetooth settings."
+                    )
+                })?;
+            fetch_zmk_data_from_client(client).map_err(|e| add_timeout_hint(e, "Bluetooth"))
+        }
     }
 }
 
-fn open_zmk_ble_and_fetch(device_id: &str) -> Result<ZmkData, Box<dyn Error>> {
-    let client = StudioClient::<PlatformBleTransport>::open_ble(device_id)
-        .map_err(|e| format!("Failed to connect to BLE device '{device_id}': {e}"))?;
+fn add_timeout_hint(error: Box<dyn Error>, transport_name: &str) -> Box<dyn Error> {
+    if matches!(
+        error.downcast_ref::<ClientError>(),
+        Some(ClientError::Timeout { .. })
+    ) {
+        return format!(
+            "The keyboard did not respond over {transport_name}. \
+             ZMK disables this interface while the keyboard sends its keystrokes \
+             elsewhere — switch the keyboard's output to {transport_name} \
+             (the \u{2018}&out\u{2019} key) and try again."
+        )
+        .into();
+    }
 
-    fetch_zmk_data_from_client(client)
+    error
 }
 
 fn fetch_zmk_data_from_client<T: Read + Write>(

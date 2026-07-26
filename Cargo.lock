@@ -2547,7 +2547,7 @@ dependencies = [
 
 [[package]]
 name = "keypeek"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "directories",
  "eframe",
@@ -4627,9 +4627,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.150"
+version = "1.0.151"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8014e44b4736ed0538adeecded0fce2a272f22dc9578a7eb6b2d9993c74cfb9"
+checksum = "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14"
 dependencies = [
  "itoa",
  "memchr",
@@ -6848,8 +6848,8 @@ checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
 
 [[package]]
 name = "zmk-studio-api"
-version = "0.4.0"
-source = "git+https://github.com/srwi/zmk-studio-api#965c1c8d2395093c88c1835b78ff44babf8c2b5c"
+version = "0.5.0"
+source = "git+https://github.com/srwi/zmk-studio-api#95437fc138458d73c91d382096cbdc78f7931361"
 dependencies = [
  "bluest",
  "futures",
