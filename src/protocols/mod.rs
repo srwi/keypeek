@@ -1,5 +1,6 @@
 pub mod kle_parser;
 pub mod layout_geometry;
+pub mod mock;
 pub mod qmk_json_parser;
 pub mod via;
 pub mod vial;
@@ -11,6 +12,7 @@ use qmk_via_api::api::KeyboardApi;
 use std::error::Error;
 use std::sync::Arc;
 
+use self::mock::MockProtocol;
 use self::via::ViaProtocol;
 use self::vial::VialProtocol;
 use self::zmk::ZmkProtocol;
@@ -150,6 +152,7 @@ pub enum ConnectionSpec {
         pid: u16,
         transport: ZmkTransportConfig,
     },
+    Mock,
 }
 
 pub fn connect_protocol(
@@ -178,6 +181,10 @@ pub fn connect_protocol(
                 }
             };
             let protocol = ZmkProtocol::connect_live(*vid, *pid, &zmk_transport)?;
+            Ok(Box::new(protocol))
+        }
+        ConnectionSpec::Mock => {
+            let protocol = MockProtocol::connect()?;
             Ok(Box::new(protocol))
         }
     }

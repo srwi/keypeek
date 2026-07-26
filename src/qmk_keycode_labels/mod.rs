@@ -1,6 +1,6 @@
 mod advanced;
 mod basic;
-mod constants;
+pub(crate) mod constants;
 mod keycode_label;
 mod layer;
 

@@ -40,6 +40,7 @@ pub enum ConnectionDraft {
     Via { json_path: String },
     Vial,
     Zmk { transport: ZmkTransportDraft },
+    Mock,
 }
 
 impl ConnectionDraft {
@@ -48,6 +49,7 @@ impl ConnectionDraft {
             ConnectionDraft::Via { .. } => ProtocolType::Via,
             ConnectionDraft::Vial => ProtocolType::Vial,
             ConnectionDraft::Zmk { .. } => ProtocolType::Zmk,
+            ConnectionDraft::Mock => ProtocolType::Via,
         }
     }
 }

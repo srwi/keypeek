@@ -47,6 +47,9 @@ impl OverlayApp {
                         json_path: String::new(),
                     };
                 }
+                DeviceKind::Mock => {
+                    self.connect.draft = ConnectionDraft::Mock;
+                }
             }
             self.ui.settings_error = None;
         }
@@ -96,6 +99,7 @@ impl OverlayApp {
                     transport,
                 })
             }
+            ConnectionDraft::Mock => Ok(ConnectionSpec::Mock),
         }
     }
 

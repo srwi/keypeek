@@ -3,6 +3,11 @@ use std::collections::HashSet;
 
 const VIA_USAGE_PAGE: u16 = 0xff60;
 
+/// Identifiers for the virtual keyboard. They must match `resources/mock_keyboard.json`
+/// and are deliberately outside the ranges real boards use.
+const MOCK_VID: u16 = 0xF00D;
+const MOCK_PID: u16 = 0xF00D;
+
 struct HidInfo {
     vendor_id: u16,
     product_id: u16,
@@ -33,6 +38,7 @@ pub enum DeviceKind {
     Zmk,
     Vial,
     Qmk,
+    Mock,
 }
 
 impl DeviceKind {
@@ -41,6 +47,7 @@ impl DeviceKind {
             DeviceKind::Zmk => "ZMK",
             DeviceKind::Vial => "Vial",
             DeviceKind::Qmk => "QMK",
+            DeviceKind::Mock => "Mock",
         }
     }
 }
@@ -57,17 +64,17 @@ pub struct DiscoveredDevice {
 
 impl DiscoveredDevice {
     pub fn display_name(&self) -> String {
-        let kind_label = match self.kind {
+        let protocol = match self.kind {
+            DeviceKind::Qmk | DeviceKind::Vial | DeviceKind::Mock => self.kind.label(),
             DeviceKind::Zmk => match (&self.serial_port, &self.ble_device_id) {
-                (_, Some(_)) => "ZMK BLE",
                 (Some(_), None) => "ZMK Serial",
-                (None, None) => "ZMK BLE",
+                _ => "ZMK BLE",
             },
-            _ => self.kind.label(),
         };
+
         format!(
             "{} ({}, {:04X}:{:04X})",
-            self.base_name, kind_label, self.vid, self.pid
+            self.base_name, protocol, self.vid, self.pid
         )
     }
 }
@@ -191,7 +198,22 @@ pub fn discover_devices() -> Vec<DiscoveredDevice> {
             && a.ble_device_id == b.ble_device_id
     });
 
+    if cfg!(debug_assertions) {
+        devices.push(mock_device());
+    }
+
     devices
+}
+
+fn mock_device() -> DiscoveredDevice {
+    DiscoveredDevice {
+        base_name: "Virtual Keyboard".to_string(),
+        vid: MOCK_VID,
+        pid: MOCK_PID,
+        serial_port: None,
+        ble_device_id: None,
+        kind: DeviceKind::Mock,
+    }
 }
 
 fn is_possible_ble_match(hid: &HidInfo, ble_name: &str) -> bool {
@@ -252,8 +274,8 @@ fn is_probable_zmk_hid(dev: &HidInfo) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        find_matching_hid_for_ble, is_possible_ble_match, is_probable_zmk_hid, DeviceKind,
-        DiscoveredDevice, HidInfo, VIA_USAGE_PAGE,
+        find_matching_hid_for_ble, is_possible_ble_match, is_probable_zmk_hid, mock_device,
+        DeviceKind, DiscoveredDevice, HidInfo, VIA_USAGE_PAGE,
     };
 
     #[test]
@@ -274,6 +296,15 @@ mod tests {
         assert_eq!(DeviceKind::Zmk.label(), "ZMK");
         assert_eq!(DeviceKind::Vial.label(), "Vial");
         assert_eq!(DeviceKind::Qmk.label(), "QMK");
+        assert_eq!(DeviceKind::Mock.label(), "Mock");
+    }
+
+    #[test]
+    fn mock_device_name_follows_the_same_shape_as_real_devices() {
+        assert_eq!(
+            mock_device().display_name(),
+            "Virtual Keyboard (Mock, F00D:F00D)"
+        );
     }
 
     #[test]
