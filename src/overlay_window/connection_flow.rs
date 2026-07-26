@@ -3,16 +3,33 @@ use super::OverlayApp;
 use crate::connection::{ConnectedState, ConnectionRequest, ConnectionTask};
 use crate::device_discovery::DeviceKind;
 use crate::protocols::{ConnectionSpec, Reopener, ZmkTransportConfig};
+use crate::settings::LastConnection;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(3);
+pub(super) const STARTUP_CONNECT_ATTEMPTS: u32 = 5;
 
 fn layout_preference(name: &str) -> Option<String> {
     if name.is_empty() {
         None
     } else {
         Some(name.to_string())
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum RetryDecision {
+    Again(Option<u32>),
+    GiveUp,
+}
+
+/// The failed attempt is already spent, so a budget of one means nothing is left to try.
+fn next_retry(attempts_left: Option<u32>) -> RetryDecision {
+    match attempts_left {
+        None => RetryDecision::Again(None),
+        Some(remaining) if remaining <= 1 => RetryDecision::GiveUp,
+        Some(remaining) => RetryDecision::Again(Some(remaining - 1)),
     }
 }
 
@@ -116,7 +133,21 @@ impl OverlayApp {
         self.ui.settings_error = None;
         self.ui.settings_warning = None;
 
+        if let Some(spec) = self.session.last_spec.clone() {
+            self.remember_connection(LastConnection {
+                spec,
+                layout_name: layout_preference(&self.session.active_layout_name),
+            });
+        }
+
         self.persist_settings();
+    }
+
+    /// Written to both halves: `draft` is copied over `active` whenever they differ, so an
+    /// app-recorded value living only in `active` is lost on the next settings edit.
+    fn remember_connection(&mut self, last_connection: LastConnection) {
+        self.settings.active.last_connection = Some(last_connection.clone());
+        self.settings.draft.last_connection = Some(last_connection);
     }
 
     pub(super) fn persist_settings(&self) {
@@ -125,15 +156,28 @@ impl OverlayApp {
         }
     }
 
+    pub(super) fn disconnect_from_ui(&mut self) {
+        let previous = std::mem::replace(
+            &mut self.session.connection,
+            AppConnectionState::Disconnected,
+        );
+        if let AppConnectionState::Connected { mut keyboard } = previous {
+            keyboard.disconnect();
+        }
+        // Dropping the task drops the receiver, so an in-flight attempt discards its result
+        // instead of connecting anyway; its keyboard is released by `Drop`.
+        self.connect.pending_connect = None;
+        self.session.clear_connection();
+        self.ui.settings_warning = None;
+    }
+
     pub(super) fn connect_from_ui(&mut self) {
         if matches!(
             self.session.connection,
             AppConnectionState::Connected { .. }
         ) {
-            self.ui.settings_warning = Some(
-                "Switching device/protocol/layout requires app restart in this version."
-                    .to_string(),
-            );
+            self.ui.settings_warning =
+                Some("Disconnect before switching to another keyboard.".to_string());
             return;
         }
 
@@ -188,10 +232,37 @@ impl OverlayApp {
         self.connect.pending_connect = Some(ConnectionTask::start(request, self.ui_wake.clone()));
     }
 
-    fn schedule_reconnect(&mut self) {
+    fn schedule_reconnect(&mut self, delay: Duration, attempts_left: Option<u32>) {
         self.session.connection = AppConnectionState::Reconnecting {
-            next_attempt_at: Instant::now() + RECONNECT_INTERVAL,
+            next_attempt_at: Instant::now() + delay,
+            attempts_left,
         };
+    }
+
+    /// Hides the settings window while the attempt runs, so a success goes straight to the
+    /// overlay.
+    pub(super) fn begin_startup_auto_connect(&mut self) {
+        if !self.settings.active.auto_connect {
+            return;
+        }
+        let Some(last_connection) = self.settings.active.last_connection.clone() else {
+            return;
+        };
+
+        self.session.last_spec = Some(last_connection.spec);
+        let layout_name = last_connection.layout_name.unwrap_or_default();
+        self.session.active_layout_name = layout_name.clone();
+        self.session.draft_layout_name = layout_name;
+        self.schedule_reconnect(Duration::ZERO, Some(STARTUP_CONNECT_ATTEMPTS));
+        self.ui.settings_visible = false;
+    }
+
+    fn abandon_startup_auto_connect(&mut self) {
+        self.session.connection = AppConnectionState::Disconnected;
+        self.ui.settings_visible = true;
+        self.ui.settings_warning = Some(
+            "Could not reach the last connected keyboard. Select a device to connect.".to_string(),
+        );
     }
 
     /// Detects a dropped connection and drives background reconnect attempts, reusing
@@ -199,13 +270,14 @@ impl OverlayApp {
     pub(super) fn maintain_connection(&mut self, ctx: &egui::Context) {
         if let AppConnectionState::Connected { keyboard } = &self.session.connection {
             if !keyboard.is_alive() {
-                self.session.connection = AppConnectionState::Reconnecting {
-                    next_attempt_at: Instant::now(),
-                };
+                self.schedule_reconnect(Duration::ZERO, None);
             }
         }
 
-        let AppConnectionState::Reconnecting { next_attempt_at } = &self.session.connection else {
+        let AppConnectionState::Reconnecting {
+            next_attempt_at, ..
+        } = &self.session.connection
+        else {
             return;
         };
         let next_attempt_at = *next_attempt_at;
@@ -244,14 +316,19 @@ impl OverlayApp {
             Some(Err(e)) => {
                 self.connect.pending_connect = None;
                 // A failed reconnect retries silently; only surface errors for user-initiated connects.
-                if matches!(
-                    self.session.connection,
-                    AppConnectionState::Reconnecting { .. }
-                ) {
-                    eprintln!("Reconnect attempt failed: {e}");
-                    self.schedule_reconnect();
-                } else {
+                let AppConnectionState::Reconnecting { attempts_left, .. } =
+                    &self.session.connection
+                else {
                     self.ui.settings_error = Some(e);
+                    return;
+                };
+
+                eprintln!("Reconnect attempt failed: {e}");
+                match next_retry(*attempts_left) {
+                    RetryDecision::Again(attempts_left) => {
+                        self.schedule_reconnect(RECONNECT_INTERVAL, attempts_left)
+                    }
+                    RetryDecision::GiveUp => self.abandon_startup_auto_connect(),
                 }
             }
             None => {}

@@ -139,7 +139,7 @@ impl KeyboardProtocol for ZmkProtocol {
     fn hid_read(&self) -> Result<Vec<u8>, Box<dyn Error>> {
         let mut buffer = vec![0; 32];
         self.hid_device
-            .read_timeout(&mut buffer, 200)
+            .read_timeout(&mut buffer, super::HID_READ_TIMEOUT_MS)
             .map_err(|e| format!("HID read error: {e}").into())
             .map(|_| buffer)
     }

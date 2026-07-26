@@ -21,6 +21,7 @@ pub struct Keyboard {
     timeout_ms: Arc<Mutex<i64>>,
     alive: Arc<AtomicBool>,
     _keepalive: Option<mpsc::Sender<()>>,
+    reader: Option<thread::JoinHandle<()>>,
 }
 
 impl Keyboard {
@@ -65,7 +66,7 @@ impl Keyboard {
             tx
         });
 
-        let keyboard = Keyboard {
+        let mut keyboard = Keyboard {
             layout,
             matrix: Arc::clone(&matrix),
             time_to_hide_overlay: Arc::clone(&time_to_hide_overlay),
@@ -74,6 +75,7 @@ impl Keyboard {
             timeout_ms: Arc::clone(&timeout_ms),
             alive: Arc::clone(&alive),
             _keepalive: keepalive,
+            reader: None,
         };
 
         let layer_state_clone = Arc::clone(&keyboard.layer_state);
@@ -83,19 +85,26 @@ impl Keyboard {
         let matrix_clone = Arc::clone(&matrix);
         let alive_clone = Arc::clone(&alive);
 
-        thread::spawn(move || {
+        let reader = thread::spawn(move || {
             // A dropped link (sleep, BLE/USB disconnect) makes `hid_read` error repeatedly.
             // Mark the connection dead after a few consecutive errors to trigger reconnect.
             const MAX_CONSECUTIVE_ERRORS: u32 = 5;
             let mut consecutive_errors: u32 = 0;
 
+            // `alive` doubles as the stop signal: `disconnect` clears it to end this loop.
             loop {
+                if !alive_clone.load(Ordering::Relaxed) {
+                    break;
+                }
                 let response = match protocol.hid_read() {
                     Ok(response) => {
                         consecutive_errors = 0;
                         response
                     }
                     Err(_) => {
+                        if !alive_clone.load(Ordering::Relaxed) {
+                            break;
+                        }
                         consecutive_errors += 1;
                         if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
                             alive_clone.store(false, Ordering::Relaxed);
@@ -162,11 +171,21 @@ impl Keyboard {
             }
         });
 
+        keyboard.reader = Some(reader);
         Ok(keyboard)
     }
 
     pub fn is_alive(&self) -> bool {
         self.alive.load(Ordering::Relaxed)
+    }
+
+    /// Blocks until the reader thread returns from its current `hid_read`.
+    pub fn disconnect(&mut self) {
+        self.alive.store(false, Ordering::Relaxed);
+        self._keepalive.take();
+        if let Some(reader) = self.reader.take() {
+            let _ = reader.join();
+        }
     }
 
     pub fn get_effective_key_layer(&self, row: usize, col: usize) -> (u8, bool) {
@@ -212,5 +231,11 @@ impl Keyboard {
 
     pub fn set_layout(&mut self, layout: KeyboardLayout) {
         self.layout = layout;
+    }
+}
+
+impl Drop for Keyboard {
+    fn drop(&mut self) {
+        self.disconnect();
     }
 }

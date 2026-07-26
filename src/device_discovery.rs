@@ -1,5 +1,7 @@
 use crate::protocols::zmk_rpc;
+use crate::ui_wake::UiWake;
 use std::collections::HashSet;
+use std::sync::mpsc::{self, TryRecvError};
 
 const VIA_USAGE_PAGE: u16 = 0xff60;
 
@@ -213,6 +215,32 @@ fn mock_device() -> DiscoveredDevice {
         serial_port: None,
         ble_device_id: None,
         kind: DeviceKind::Mock,
+    }
+}
+
+/// Runs `discover_devices` off the UI thread: it waits on the Bluetooth adapter, which is
+/// far too slow to block startup.
+pub struct DiscoveryTask {
+    rx: mpsc::Receiver<Vec<DiscoveredDevice>>,
+}
+
+impl DiscoveryTask {
+    pub fn start(ui_wake: UiWake) -> Self {
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let devices = discover_devices();
+            let _ = tx.send(devices);
+            ui_wake.request_repaint();
+        });
+        Self { rx }
+    }
+
+    pub fn try_finish(&self) -> Option<Vec<DiscoveredDevice>> {
+        match self.rx.try_recv() {
+            Ok(devices) => Some(devices),
+            Err(TryRecvError::Empty) => None,
+            Err(TryRecvError::Disconnected) => Some(Vec::new()),
+        }
     }
 }
 

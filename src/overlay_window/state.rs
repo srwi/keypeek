@@ -1,5 +1,5 @@
 use crate::connection::ConnectionTask;
-use crate::device_discovery::DiscoveredDevice;
+use crate::device_discovery::{DiscoveredDevice, DiscoveryTask};
 use crate::keyboard::Keyboard;
 use crate::protocols::{ConnectionSpec, KeyboardDefinition, Reopener};
 use crate::settings::{ProtocolType, Settings};
@@ -25,8 +25,15 @@ pub struct KeyColors {
 
 pub enum AppConnectionState {
     Disconnected,
-    Connected { keyboard: Keyboard },
-    Reconnecting { next_attempt_at: Instant },
+    Connected {
+        keyboard: Keyboard,
+    },
+    Reconnecting {
+        next_attempt_at: Instant,
+        /// `None` retries forever, which is what a mid-session drop gets; startup
+        /// auto-connect is bounded so an absent keyboard stops being chased.
+        attempts_left: Option<u32>,
+    },
 }
 
 #[derive(Clone)]
@@ -78,9 +85,32 @@ pub struct SessionState {
     pub draft_layout_name: String,
 }
 
+impl SessionState {
+    pub fn disconnected() -> Self {
+        Self {
+            connection: AppConnectionState::Disconnected,
+            ever_connected: false,
+            last_spec: None,
+            reopen: None,
+            connected_definition: None,
+            layout_names: Vec::new(),
+            active_layout_name: String::new(),
+            draft_layout_name: String::new(),
+        }
+    }
+
+    /// `ever_connected` survives: it keeps closing the settings window from quitting the app.
+    pub fn clear_connection(&mut self) {
+        let ever_connected = self.ever_connected;
+        *self = Self::disconnected();
+        self.ever_connected = ever_connected;
+    }
+}
+
 pub struct ConnectDraftState {
     pub available_devices: Vec<DiscoveredDevice>,
     pub selected_device_index: Option<usize>,
     pub draft: ConnectionDraft,
     pub pending_connect: Option<ConnectionTask>,
+    pub discovery: Option<DiscoveryTask>,
 }

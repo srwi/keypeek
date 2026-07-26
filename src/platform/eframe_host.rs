@@ -1,5 +1,4 @@
 use super::OverlayHost;
-use crate::device_discovery::DiscoveredDevice;
 use crate::overlay_window::OverlayApp;
 use crate::settings::Settings;
 use crate::ui_wake::UiWake;
@@ -89,14 +88,10 @@ fn show_on_all_spaces(cc: &eframe::CreationContext<'_>) {
 
 // `force_x11` (Linux only) makes winit use XWayland instead of native Wayland,
 // since Mutter honors always-on-top for XWayland clients but not native ones.
-pub fn run(
-    settings: Settings,
-    devices: Vec<DiscoveredDevice>,
-    force_x11: bool,
-) -> Result<(), eframe::Error> {
+pub fn run(settings: Settings, force_x11: bool) -> Result<(), eframe::Error> {
     #[cfg(target_os = "linux")]
     if force_x11 {
-        match run_inner(settings.clone(), devices.clone(), true) {
+        match run_inner(settings.clone(), true) {
             Ok(()) => return Ok(()),
             Err(e) => {
                 eprintln!(
@@ -106,12 +101,11 @@ pub fn run(
             }
         }
     }
-    run_inner(settings, devices, false)
+    run_inner(settings, false)
 }
 
 fn run_inner(
     settings: Settings,
-    devices: Vec<DiscoveredDevice>,
     #[cfg_attr(not(target_os = "linux"), allow(unused_variables))] force_x11: bool,
 ) -> Result<(), eframe::Error> {
     #[allow(unused_mut)]
@@ -177,7 +171,7 @@ fn run_inner(
             egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
             cc.egui_ctx.set_fonts(fonts);
 
-            let app = OverlayApp::new(tray_icon, settings_requested, ui_wake, settings, devices);
+            let app = OverlayApp::new(tray_icon, settings_requested, ui_wake, settings);
             Ok(Box::new(EframeApp {
                 app,
                 #[cfg(any(target_os = "macos", target_os = "linux"))]

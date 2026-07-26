@@ -28,7 +28,7 @@ impl VialProtocol {
         Self::init_from_api(api, vid, pid)
     }
 
-    fn init_from_api(api: KeyboardApi, vid: u16, pid: u16) -> Result<Self, Box<dyn Error>> {
+    fn init_from_api(mut api: KeyboardApi, vid: u16, pid: u16) -> Result<Self, Box<dyn Error>> {
         let (protocol_version, _keyboard_uid) = Self::get_keyboard_id(&api)?;
 
         if protocol_version == 0 {
@@ -36,6 +36,9 @@ impl VialProtocol {
         }
 
         let definition = Self::fetch_definition(&api, vid, pid)?;
+
+        // Applied after the definition fetch so its many round trips stay unbounded.
+        api.set_timeout(super::HID_READ_TIMEOUT_MS);
 
         Ok(Self { api, definition })
     }

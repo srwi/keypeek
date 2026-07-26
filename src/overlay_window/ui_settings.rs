@@ -30,6 +30,10 @@ impl OverlayApp {
             self.session.connection,
             AppConnectionState::Reconnecting { .. }
         );
+        let connected = matches!(
+            self.session.connection,
+            AppConnectionState::Connected { .. }
+        );
         // Keep the device/protocol pickers locked while connected or reconnecting.
         let connection_locked =
             !matches!(self.session.connection, AppConnectionState::Disconnected);
@@ -65,12 +69,12 @@ impl OverlayApp {
                         .spacing([20.0, 10.0])
                         .show(ui, |ui| {
                             ui.label("Device");
-                            ui.add_enabled_ui(!connection_locked, |ui| {
-                                ui.horizontal(|ui| {
-                                    let combo_width = (ui.available_width()
-                                        - RIGHT_COLUMN_WIDTH
-                                        - control_spacing)
+                            ui.horizontal(|ui| {
+                                let combo_width =
+                                    (ui.available_width() - RIGHT_COLUMN_WIDTH - control_spacing)
                                         .max(120.0);
+                                // Only the picker is locked; the action button stays live.
+                                ui.add_enabled_ui(!connection_locked, |ui| {
                                     egui::ComboBox::from_id_salt("device_combo")
                                         .width(combo_width)
                                         .selected_text(selected_device_text.clone())
@@ -93,37 +97,46 @@ impl OverlayApp {
                                                 ui.weak("No devices found");
                                             }
                                         });
+                                });
 
-                                    ui.allocate_ui_with_layout(
-                                        egui::vec2(RIGHT_COLUMN_WIDTH, 20.0),
-                                        egui::Layout::left_to_right(egui::Align::Center),
-                                        |ui| {
-                                            let connect_in_progress =
-                                                self.connect.pending_connect.is_some();
-                                            let can_connect = !connection_locked
-                                                && !connect_in_progress
-                                                && self.connect.selected_device_index.is_some();
-                                            let button_label = if reconnecting {
-                                                "Reconnecting..."
-                                            } else if connect_in_progress {
-                                                "Connecting..."
-                                            } else {
-                                                "Connect"
-                                            };
-                                            ui.add_enabled_ui(can_connect, |ui| {
-                                                if ui
-                                                    .add_sized(
-                                                        [RIGHT_COLUMN_WIDTH, 20.0],
-                                                        egui::Button::new(button_label),
-                                                    )
-                                                    .clicked()
-                                                {
+                                ui.allocate_ui_with_layout(
+                                    egui::vec2(RIGHT_COLUMN_WIDTH, 20.0),
+                                    egui::Layout::left_to_right(egui::Align::Center),
+                                    |ui| {
+                                        let connect_in_progress =
+                                            self.connect.pending_connect.is_some();
+                                        // Decided together so they cannot drift. "Cancel"
+                                        // stays enabled so the retry loop can be stopped.
+                                        let (label, enabled, releases) = if connected {
+                                            ("Disconnect", true, true)
+                                        } else if reconnecting {
+                                            ("Cancel", true, true)
+                                        } else if connect_in_progress {
+                                            ("Connecting...", false, false)
+                                        } else {
+                                            (
+                                                "Connect",
+                                                self.connect.selected_device_index.is_some(),
+                                                false,
+                                            )
+                                        };
+                                        ui.add_enabled_ui(enabled, |ui| {
+                                            if ui
+                                                .add_sized(
+                                                    [RIGHT_COLUMN_WIDTH, 20.0],
+                                                    egui::Button::new(label),
+                                                )
+                                                .clicked()
+                                            {
+                                                if releases {
+                                                    self.disconnect_from_ui();
+                                                } else {
                                                     self.connect_from_ui();
                                                 }
-                                            });
-                                        },
-                                    );
-                                });
+                                            }
+                                        });
+                                    },
+                                );
                             });
                             ui.end_row();
 
@@ -156,6 +169,12 @@ impl OverlayApp {
                             });
                             ui.end_row();
                         });
+
+                    ui.add_space(8.0);
+                    ui.checkbox(
+                        &mut self.settings.draft.auto_connect,
+                        "Reconnect to the last keyboard on startup",
+                    );
                 });
 
                 ui.add_space(10.0);

@@ -14,7 +14,10 @@ pub struct ViaProtocol {
 impl ViaProtocol {
     pub fn connect(json_path: &str) -> Result<Self, Box<dyn Error>> {
         let definition = qmk_json_parser::parse_qmk_json(json_path)?;
-        let api = Self::get_api(definition.vid, definition.pid)?;
+        let mut api = Self::get_api(definition.vid, definition.pid)?;
+
+        // Applied after setup so those reads stay unbounded.
+        api.set_timeout(super::HID_READ_TIMEOUT_MS);
 
         Ok(Self { api, definition })
     }

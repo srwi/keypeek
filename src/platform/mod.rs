@@ -1,4 +1,3 @@
-use crate::device_discovery::DiscoveredDevice;
 use crate::settings::Settings;
 
 mod eframe_host;
@@ -13,15 +12,12 @@ pub trait OverlayHost {
     fn request_close(&mut self);
 }
 
-pub fn run(
-    settings: Settings,
-    devices: Vec<DiscoveredDevice>,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run(settings: Settings) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "linux")]
     {
         // `WAYLAND_DISPLAY` is unset under XWayland, so X11 falls through to eframe below.
         if std::env::var_os("WAYLAND_DISPLAY").is_some() {
-            match wayland::run(settings.clone(), devices.clone()) {
+            match wayland::run(settings.clone()) {
                 Ok(()) => return Ok(()),
                 Err(e) => {
                     // No wlr-layer-shell (e.g. GNOME/Mutter): fall back to eframe on
@@ -30,12 +26,12 @@ pub fn run(
                         "KeyPeek: Wayland layer-shell host unavailable ({e}); \
                          falling back to eframe on XWayland for always-on-top."
                     );
-                    return Ok(eframe_host::run(settings, devices, true)?);
+                    return Ok(eframe_host::run(settings, true)?);
                 }
             }
         }
     }
 
-    eframe_host::run(settings, devices, false)?;
+    eframe_host::run(settings, false)?;
     Ok(())
 }

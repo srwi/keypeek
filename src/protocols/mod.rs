@@ -132,13 +132,17 @@ impl SubscriptionSender for RawHidSubscription {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Bounds how long `Keyboard::disconnect` blocks joining the reader thread. A protocol
+/// with unbounded reads would hang the UI on disconnect.
+pub const HID_READ_TIMEOUT_MS: i32 = 200;
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ZmkTransportConfig {
     Serial(String),
     Ble(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ConnectionSpec {
     Via {
         json_path: String,

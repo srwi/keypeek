@@ -1,4 +1,4 @@
-use crate::device_discovery::DiscoveredDevice;
+use crate::device_discovery::DiscoveryTask;
 use crate::platform::OverlayHost;
 use crate::settings::Settings;
 use crate::ui_wake::UiWake;
@@ -32,9 +32,9 @@ impl OverlayApp {
         settings_requested: Arc<AtomicBool>,
         ui_wake: UiWake,
         base_settings: Settings,
-        available_devices: Vec<DiscoveredDevice>,
     ) -> Self {
-        Self {
+        let discovery = DiscoveryTask::start(ui_wake.clone());
+        let mut app = Self {
             _tray: tray,
             settings_requested,
             ui_wake,
@@ -49,25 +49,34 @@ impl OverlayApp {
                 active: base_settings.clone(),
                 draft: base_settings,
             },
-            session: SessionState {
-                connection: AppConnectionState::Disconnected,
-                ever_connected: false,
-                last_spec: None,
-                reopen: None,
-                connected_definition: None,
-                layout_names: Vec::new(),
-                active_layout_name: String::new(),
-                draft_layout_name: String::new(),
-            },
+            session: SessionState::disconnected(),
             connect: ConnectDraftState {
-                available_devices,
+                available_devices: Vec::new(),
                 selected_device_index: None,
                 draft: ConnectionDraft::Via {
                     json_path: String::new(),
                 },
                 pending_connect: None,
+                discovery: Some(discovery),
             },
-        }
+        };
+
+        app.begin_startup_auto_connect();
+        app
+    }
+
+    fn poll_device_discovery(&mut self) {
+        let Some(devices) = self
+            .connect
+            .discovery
+            .as_ref()
+            .and_then(DiscoveryTask::try_finish)
+        else {
+            return;
+        };
+
+        self.connect.available_devices = devices;
+        self.connect.discovery = None;
     }
 
     fn sync_mouse_passthrough(&mut self, host: &mut dyn OverlayHost) {
@@ -139,6 +148,7 @@ impl OverlayApp {
             self.ui.settings_visible = true;
         }
 
+        self.poll_device_discovery();
         self.poll_connect_result();
         self.maintain_connection(ctx);
         self.apply_live_visual_settings();

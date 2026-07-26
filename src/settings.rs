@@ -1,5 +1,7 @@
+use crate::protocols::ConnectionSpec;
 use directories::ProjectDirs;
 use ini::Ini;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fs;
 use std::io;
@@ -139,6 +141,13 @@ impl Default for ThemeSettings {
     }
 }
 
+/// The last keyboard that connected successfully, so it can be reached again on restart.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct LastConnection {
+    pub spec: ConnectionSpec,
+    pub layout_name: Option<String>,
+}
+
 #[derive(Clone, PartialEq)]
 pub struct Settings {
     pub size: i32,
@@ -148,6 +157,8 @@ pub struct Settings {
     pub timeout: i64,
     pub margin: u32,
     pub theme: ThemeSettings,
+    pub auto_connect: bool,
+    pub last_connection: Option<LastConnection>,
 }
 
 impl Default for Settings {
@@ -160,6 +171,8 @@ impl Default for Settings {
             timeout: 2000,
             margin: 10,
             theme: ThemeSettings::default(),
+            auto_connect: false,
+            last_connection: None,
         }
     }
 }
@@ -211,6 +224,15 @@ impl Settings {
             section.set(format!("layer_color_{index}"), color.to_string());
         }
         section.set("font_color", self.theme.font_color.to_string());
+
+        let mut section = conf.with_section(Some("connection"));
+        section.set("auto_connect", self.auto_connect.to_string());
+        if let Some(last_connection) = &self.last_connection {
+            // The spec is a nested enum, so it goes in as JSON rather than flat ini keys.
+            let encoded = serde_json::to_string(last_connection)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+            section.set("last", encoded);
+        }
         conf.write_to_file(path)
     }
 
@@ -254,6 +276,16 @@ impl Settings {
         if let Some(val) = section.get("font_color") {
             if let Ok(parsed) = val.parse() {
                 s.theme.font_color = parsed;
+            }
+        }
+        if let Some(section) = conf.section(Some("connection")) {
+            if let Some(val) = section.get("auto_connect") {
+                s.auto_connect = val.parse().unwrap_or(s.auto_connect);
+            }
+            if let Some(val) = section.get("last") {
+                // Dropping an unparsable entry costs one manual reconnect; failing the
+                // whole load would cost every other setting.
+                s.last_connection = serde_json::from_str(val).ok();
             }
         }
         Some(s)
