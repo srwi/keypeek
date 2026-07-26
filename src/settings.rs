@@ -6,43 +6,17 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+/// The protocol a connection speaks. Not persisted; it only distinguishes behavior that
+/// differs between protocols, such as whether layouts can be switched while connected.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ProtocolType {
-    #[default]
     Via,
     Vial,
     Zmk,
 }
 
-impl fmt::Display for ProtocolType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                ProtocolType::Via => "via",
-                ProtocolType::Vial => "vial",
-                ProtocolType::Zmk => "zmk",
-            }
-        )
-    }
-}
-
 #[derive(Debug)]
 pub struct ParseSettingsError;
-
-impl FromStr for ProtocolType {
-    type Err = ParseSettingsError;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value.to_lowercase().as_str() {
-            "via" => Ok(ProtocolType::Via),
-            "vial" => Ok(ProtocolType::Vial),
-            "zmk" => Ok(ProtocolType::Zmk),
-            _ => Err(ParseSettingsError),
-        }
-    }
-}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum WindowPosition {
