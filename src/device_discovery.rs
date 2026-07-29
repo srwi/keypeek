@@ -84,6 +84,7 @@ pub fn discover_devices() -> Vec<DiscoveredDevice> {
 
     let mut devices: Vec<DiscoveredDevice> = Vec::new();
     let mut zmk_vid_pid: HashSet<(u16, u16)> = HashSet::new();
+    let mut non_zmk_via_vid_pid: HashSet<(u16, u16)> = HashSet::new();
 
     {
         let mut seen_via: HashSet<(u16, u16)> = HashSet::new();
@@ -115,11 +116,17 @@ pub fn discover_devices() -> Vec<DiscoveredDevice> {
             });
             if kind == DeviceKind::Zmk {
                 zmk_vid_pid.insert((dev.vendor_id, dev.product_id));
+            } else {
+                non_zmk_via_vid_pid.insert((dev.vendor_id, dev.product_id));
             }
         }
     }
 
     for sp in zmk_rpc::scan_serial_ports() {
+        if non_zmk_via_vid_pid.contains(&(sp.vid, sp.pid)) {
+            continue;
+        }
+
         // Prefer the product name from HID if the keyboard is also visible there.
         let base_name = all_hid
             .iter()
@@ -141,6 +148,10 @@ pub fn discover_devices() -> Vec<DiscoveredDevice> {
     if let Ok(ble_devices) = zmk_rpc::scan_ble_devices() {
         for ble in ble_devices {
             if let Some(hid) = find_matching_hid_for_ble(&all_hid, &ble.display_name) {
+                if non_zmk_via_vid_pid.contains(&(hid.vendor_id, hid.product_id)) {
+                    continue;
+                }
+
                 // If a serial transport exists for the same board, prefer serial and hide BLE.
                 // This avoids platform-specific BLE RPC instability when USB and BLE are both active.
                 if zmk_vid_pid.contains(&(hid.vendor_id, hid.product_id)) {
