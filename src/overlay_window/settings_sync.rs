@@ -18,8 +18,6 @@ impl OverlayApp {
                 keyboard.set_timeout(self.settings.active.timeout);
             }
         }
-
-        self.persist_settings();
     }
 
     pub(super) fn apply_live_layout_settings(&mut self) {
