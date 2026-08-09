@@ -14,7 +14,8 @@ pub const QK_ONE_SHOT_MOD: Range<u16> = 0x52a0..0x52c0;
 pub const QK_LAYER_TAP_TOGGLE: Range<u16> = 0x52C0..0x52E0;
 pub const QK_TAP_DANCE: Range<u16> = 0x5700..0x5800;
 pub const QK_MACRO: Range<u16> = 0x7700..0x7780;
-pub const QK_KB: Range<u16> = 0x7E00..0x7F00;
+pub const QK_KB: Range<u16> = 0x7E00..0x7E40;
+pub const QK_USER: Range<u16> = 0x7E40..0x8000;
 
 pub const MOD_LCTL: u16 = 0x01;
 pub const MOD_LSFT: u16 = 0x02;
