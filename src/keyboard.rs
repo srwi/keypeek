@@ -95,6 +95,7 @@ impl Keyboard {
 
             loop {
                 let response = match protocol.hid_read() {
+                    Ok(response) if response.is_empty() => continue,
                     Ok(response) => {
                         consecutive_errors = 0;
                         response

@@ -137,11 +137,12 @@ impl KeyboardProtocol for ZmkProtocol {
     }
 
     fn hid_read(&self) -> Result<Vec<u8>, Box<dyn Error>> {
-        let mut buffer = vec![0; 32];
-        self.hid_device
+        let mut buffer = [0u8; 32];
+        let read = self
+            .hid_device
             .read_timeout(&mut buffer, 200)
-            .map_err(|e| format!("HID read error: {e}").into())
-            .map(|_| buffer)
+            .map_err(|e| format!("HID read error: {e}"))?;
+        Ok(buffer[..read].to_vec())
     }
 
     fn reopener(&self) -> Option<Arc<dyn Reopener>> {
