@@ -90,8 +90,8 @@ pub trait KeyboardProtocol: Send {
 
     fn hid_read(&self) -> Result<Vec<u8>, Box<dyn Error>>;
 
-    fn subscription_sender(&self) -> Option<Box<dyn SubscriptionSender>> {
-        None
+    fn subscription_sender(&self) -> Result<Option<Box<dyn SubscriptionSender>>, Box<dyn Error>> {
+        Ok(None)
     }
 
     fn reopener(&self) -> Option<Arc<dyn Reopener>> {
@@ -112,10 +112,14 @@ pub struct RawHidSubscription {
 }
 
 impl RawHidSubscription {
-    pub fn open(vid: u16, pid: u16) -> Option<Box<dyn SubscriptionSender>> {
-        KeyboardApi::new(vid, pid, 0xff60, None)
-            .ok()
-            .map(|api| Box::new(Self { api }) as Box<dyn SubscriptionSender>)
+    pub fn open(vid: u16, pid: u16) -> Result<Option<Box<dyn SubscriptionSender>>, Box<dyn Error>> {
+        let api = KeyboardApi::new(vid, pid, 0xff60, None).map_err(|e| {
+            format!(
+                "Could not open the RAW HID interface ({vid:04x}:{pid:04x}) to subscribe to \
+                 layer events: {e}. The overlay cannot follow layer changes without it."
+            )
+        })?;
+        Ok(Some(Box::new(Self { api })))
     }
 }
 

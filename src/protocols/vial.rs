@@ -176,7 +176,7 @@ impl KeyboardProtocol for VialProtocol {
             .map_err(|e| format!("HID read error: {e}").into())
     }
 
-    fn subscription_sender(&self) -> Option<Box<dyn SubscriptionSender>> {
+    fn subscription_sender(&self) -> Result<Option<Box<dyn SubscriptionSender>>, Box<dyn Error>> {
         RawHidSubscription::open(self.definition.vid, self.definition.pid)
     }
 }

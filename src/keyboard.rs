@@ -54,7 +54,7 @@ impl Keyboard {
         let matrix = Arc::new(Mutex::new(matrix));
         let alive = Arc::new(AtomicBool::new(true));
 
-        let keepalive = protocol.subscription_sender().map(|sender| {
+        let keepalive = protocol.subscription_sender().map_err(|e| e.to_string())?.map(|sender| {
             let (tx, rx) = mpsc::channel::<()>();
             thread::spawn(move || {
                 loop {
