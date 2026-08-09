@@ -56,11 +56,13 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             })
         }
         input_bytes if QK_LAYER_MOD.contains(&input_bytes) => {
-            let remainder = input_bytes & !(QK_LAYER_MOD.start);
+            let remainder = input_bytes - QK_LAYER_MOD.start;
             let layer = remainder >> 5;
+            let mod_mask = remainder & 0x1F;
 
             Some(LayoutKey {
                 tap: Label::new(format!("L{}", layer)),
+                argument: (mod_mask != 0).then(|| mod_value_to_label(mod_mask)),
                 kind: KeycodeKind::Modifier,
                 layer_ref: Some(layer as u8),
                 border: BorderStyle::None,
