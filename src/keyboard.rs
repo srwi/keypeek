@@ -11,6 +11,10 @@ use crate::ui_wake::UiWake;
 
 /// A layer packet's size field is `sizeof(layer_state_t)` and at most 4 bytes.
 const MAX_LAYER_STATE_BYTES: usize = 4;
+/// Leading byte of a layer-state packet, followed by a size and two bitmasks.
+const LAYER_STATE_PACKET: u8 = 0xff;
+/// Leading byte of a key event packet, followed by `row`, `col`, `pressed`.
+const KEY_EVENT_PACKET: u8 = 0xF1;
 
 pub struct Keyboard {
     pub layout: KeyboardLayout,
@@ -108,52 +112,59 @@ impl Keyboard {
                 };
 
                 let mut needs_repaint = false;
-                if response[0] == 0xff {
-                    let size = response[1] as usize;
+                match response.first().copied() {
+                    Some(LAYER_STATE_PACKET) if response.len() >= 2 => {
+                        let size = response[1] as usize;
 
-                    // Not every 0xff packet is a layer packet: firmware without this module
-                    // echoes our subscribe command back starting with 0xff. A real layer
-                    // packet's length is sizeof(layer_state_t) (<=4), so skip anything else.
-                    if size == 0 || size > MAX_LAYER_STATE_BYTES || 2 + 2 * size > response.len() {
-                        continue;
-                    }
+                        // Not every 0xff packet is a layer packet: firmware without this module
+                        // echoes our subscribe command back starting with 0xff. A real layer
+                        // packet's length is sizeof(layer_state_t) (<=4), so skip anything else.
+                        if size == 0
+                            || size > MAX_LAYER_STATE_BYTES
+                            || 2 + 2 * size > response.len()
+                        {
+                            continue;
+                        }
 
-                    let mut default_bytes = [0u8; 4];
-                    default_bytes[..size].copy_from_slice(&response[2..2 + size]);
-                    let default_layer_state = u32::from_le_bytes(default_bytes);
+                        let mut default_bytes = [0u8; 4];
+                        default_bytes[..size].copy_from_slice(&response[2..2 + size]);
+                        let default_layer_state = u32::from_le_bytes(default_bytes);
 
-                    let mut layer_bytes = [0u8; 4];
-                    layer_bytes[..size].copy_from_slice(&response[2 + size..2 + 2 * size]);
-                    let layer_state = u32::from_le_bytes(layer_bytes);
+                        let mut layer_bytes = [0u8; 4];
+                        layer_bytes[..size].copy_from_slice(&response[2 + size..2 + 2 * size]);
+                        let layer_state = u32::from_le_bytes(layer_bytes);
 
-                    if layer_state > 1 {
-                        *time_to_hide_clone.lock().unwrap() = None;
-                    } else {
-                        let timeout = *timeout_clone.lock().unwrap();
-                        if timeout < 0 {
+                        if layer_state > 1 {
                             *time_to_hide_clone.lock().unwrap() = None;
                         } else {
-                            let time_to_hide =
-                                Instant::now() + Duration::from_millis(timeout as u64);
-                            *time_to_hide_clone.lock().unwrap() = Some(time_to_hide);
+                            let timeout = *timeout_clone.lock().unwrap();
+                            if timeout < 0 {
+                                *time_to_hide_clone.lock().unwrap() = None;
+                            } else {
+                                let time_to_hide =
+                                    Instant::now() + Duration::from_millis(timeout as u64);
+                                *time_to_hide_clone.lock().unwrap() = Some(time_to_hide);
+                            }
                         }
-                    }
 
-                    *layer_state_clone.lock().unwrap() = layer_state;
-                    *default_layer_state_clone.lock().unwrap() = default_layer_state;
-                    needs_repaint = true;
-                } else if response[0] == 0xF1 {
-                    let row = response[1] as usize;
-                    let col = response[2] as usize;
-                    let pressed = response[3];
-                    if let Ok(mut mat) = matrix_clone.lock() {
-                        mat.set_pressed(row, col, pressed != 0);
+                        *layer_state_clone.lock().unwrap() = layer_state;
+                        *default_layer_state_clone.lock().unwrap() = default_layer_state;
+                        needs_repaint = true;
                     }
-                    needs_repaint = time_to_hide_clone
-                        .lock()
-                        .unwrap()
-                        .as_ref()
-                        .is_none_or(|time_to_hide| Instant::now() < *time_to_hide);
+                    Some(KEY_EVENT_PACKET) if response.len() >= 4 => {
+                        let row = response[1] as usize;
+                        let col = response[2] as usize;
+                        let pressed = response[3];
+                        if let Ok(mut mat) = matrix_clone.lock() {
+                            mat.set_pressed(row, col, pressed != 0);
+                        }
+                        needs_repaint = time_to_hide_clone
+                            .lock()
+                            .unwrap()
+                            .as_ref()
+                            .is_none_or(|time_to_hide| Instant::now() < *time_to_hide);
+                    }
+                    _ => {}
                 }
 
                 if needs_repaint {
