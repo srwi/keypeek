@@ -1,5 +1,5 @@
 use crate::layout_key::{behavior_names, BorderStyle, KeycodeKind, Label, LayoutKey};
-use zmk_studio_api::Behavior;
+use zmk_studio_api::{Behavior, BehaviorParam, HidUsage};
 
 use super::hid_usage::hid_usage_to_layout_key;
 
@@ -31,38 +31,12 @@ pub fn behavior_to_layout_key(behavior: &Behavior, layer_names: &[String]) -> Op
             *layer_id,
             layer_names,
         )),
-        Behavior::LayerTap { layer_id, tap } => {
-            let tap_key = hid_usage_to_layout_key(*tap);
-            Some(LayoutKey {
-                tap: tap_key.tap,
-                shifted: tap_key.shifted,
-                symbol: tap_key.symbol,
-                kind: KeycodeKind::Modifier,
-                layer_ref: Some(*layer_id as u8),
-                border: BorderStyle::None,
-                ..Default::default()
-            })
-        }
-        Behavior::ModTap { hold, tap } => {
-            let hold_key = hid_usage_to_layout_key(*hold);
-            let tap_key = hid_usage_to_layout_key(*tap);
-            // Glyph modifiers have no short form; text modifiers carry one in `tap` so
-            // the argument strip can shrink.
-            let mod_label = match hold_key.symbol {
-                Some(sym) => Label::new(sym),
-                None => hold_key.tap,
-            };
-            Some(LayoutKey {
-                tap: tap_key.tap,
-                behavior: Some(behavior_names::MOD_TAP.label()),
-                argument: Some(mod_label),
-                shifted: tap_key.shifted,
-                symbol: tap_key.symbol,
-                kind: KeycodeKind::Basic,
-                layer_ref: None,
-                border: BorderStyle::None,
-            })
-        }
+        Behavior::LayerTap { layer_id, tap } => Some(layer_tap_layout_key(*layer_id, *tap, None)),
+        Behavior::ModTap { hold, tap } => Some(hold_tap_layout_key(
+            *hold,
+            *tap,
+            Some(behavior_names::MOD_TAP.label()),
+        )),
         Behavior::StickyKey(keycode) => {
             let key = hid_usage_to_layout_key(*keycode);
             Some(LayoutKey {
@@ -224,6 +198,17 @@ pub fn behavior_to_layout_key(behavior: &Behavior, layer_names: &[String]) -> Op
                 ..Default::default()
             })
         }
+        Behavior::Custom {
+            display_name,
+            param1,
+            param2,
+            ..
+        } => Some(custom_layout_key(
+            display_name,
+            *param1,
+            *param2,
+            layer_names,
+        )),
         Behavior::Unknown {
             behavior_id,
             param1,
@@ -242,6 +227,129 @@ pub fn behavior_to_layout_key(behavior: &Behavior, layer_names: &[String]) -> Op
             })
         }
     }
+}
+
+fn layer_tap_layout_key(layer_id: u32, tap: HidUsage, behavior: Option<Label>) -> LayoutKey {
+    let tap_key = hid_usage_to_layout_key(tap);
+    LayoutKey {
+        tap: tap_key.tap,
+        behavior,
+        shifted: tap_key.shifted,
+        symbol: tap_key.symbol,
+        kind: KeycodeKind::Modifier,
+        layer_ref: Some(layer_id as u8),
+        border: BorderStyle::None,
+        ..Default::default()
+    }
+}
+
+fn hold_tap_layout_key(hold: HidUsage, tap: HidUsage, behavior: Option<Label>) -> LayoutKey {
+    let hold_key = hid_usage_to_layout_key(hold);
+    let tap_key = hid_usage_to_layout_key(tap);
+    let hold_label = match hold_key.symbol {
+        Some(sym) => Label::new(sym),
+        None => hold_key.tap,
+    };
+    LayoutKey {
+        tap: tap_key.tap,
+        behavior,
+        argument: Some(hold_label),
+        shifted: tap_key.shifted,
+        symbol: tap_key.symbol,
+        kind: KeycodeKind::Basic,
+        layer_ref: None,
+        border: BorderStyle::None,
+    }
+}
+
+fn custom_layout_key(
+    display_name: &str,
+    param1: BehaviorParam,
+    param2: BehaviorParam,
+    layer_names: &[String],
+) -> LayoutKey {
+    let name = behavior_label(display_name);
+    let named = |mut key: LayoutKey| {
+        key.behavior = Some(name.clone());
+        key
+    };
+
+    match (param1, param2) {
+        // A hold-tap passes its first parameter to the hold side and its second
+        // parameter to the tap side. Thus the tap legend shows the tapped key.
+        (BehaviorParam::Keycode(hold), BehaviorParam::Keycode(tap)) => {
+            hold_tap_layout_key(hold, tap, Some(name.clone()))
+        }
+        // Holding activates the layer. `layer_ref` shows this layer. The
+        // firmware does not report whether the hold side is momentary or a
+        // toggle. Assume momentary: it is the common case, and the border is
+        // only a hint.
+        (BehaviorParam::LayerId(layer_id), BehaviorParam::Keycode(tap)) => {
+            layer_tap_layout_key(layer_id, tap, Some(name.clone()))
+        }
+        // One parameter carries the behavior. The other side (for example a
+        // macro) is not reported. The name is shown in its place.
+        (BehaviorParam::Keycode(keycode), BehaviorParam::Unused)
+        | (BehaviorParam::Unused, BehaviorParam::Keycode(keycode)) => {
+            named(hid_usage_to_layout_key(keycode))
+        }
+        (BehaviorParam::LayerId(layer_id), BehaviorParam::Unused)
+        | (BehaviorParam::Unused, BehaviorParam::LayerId(layer_id)) => {
+            named(layer_layout_key(BorderStyle::None, layer_id, layer_names))
+        }
+        (BehaviorParam::Unused, BehaviorParam::Unused) => LayoutKey {
+            tap: name,
+            ..Default::default()
+        },
+        // For any other pair, show the name. Show a summary of the parameters
+        // below it.
+        (first, second) => LayoutKey {
+            tap: name,
+            argument: param_summary(first, second, layer_names),
+            ..Default::default()
+        },
+    }
+}
+
+/// A label for a behavior's reported name. The label can shrink.
+///
+/// The name is the keymap's `display-name`, or the devicetree node name when
+/// the keymap sets none. Node names can be long. A multi-word name uses its
+/// initials as the short form. For example, `home_row_mod_left` shows `HRML`
+/// on a key that is too narrow for the full name.
+fn behavior_label(display_name: &str) -> Label {
+    let initials: String = display_name
+        .split(|c: char| c == '_' || c == '-' || c.is_whitespace())
+        .filter_map(|word| word.chars().next())
+        .flat_map(char::to_uppercase)
+        .collect();
+
+    if initials.chars().count() > 1 {
+        Label::with_short(display_name, initials)
+    } else {
+        Label::new(display_name)
+    }
+}
+
+/// A summary of the parameters for the bottom strip. Used when the parameters
+/// have no shape of their own to render.
+fn param_summary(
+    param1: BehaviorParam,
+    param2: BehaviorParam,
+    layer_names: &[String],
+) -> Option<Label> {
+    let text = |param: BehaviorParam| match param {
+        BehaviorParam::Unused => None,
+        BehaviorParam::Keycode(keycode) => {
+            let key = hid_usage_to_layout_key(keycode);
+            key.symbol.or(Some(key.tap.full))
+        }
+        BehaviorParam::LayerId(layer_id) => Some(layer_arg_label(layer_names, layer_id).full),
+        BehaviorParam::Number(value) => Some(value.to_string()),
+    };
+
+    let parts: Vec<String> = [param1, param2].into_iter().filter_map(text).collect();
+    (!parts.is_empty()).then(|| Label::new(parts.join(" ")))
 }
 
 /// Decode a ZMK pointing value: `(x << 16) | (y & 0xFFFF)` (dt-bindings/zmk/pointing.h).

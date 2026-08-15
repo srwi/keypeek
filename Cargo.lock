@@ -3130,7 +3130,7 @@ version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "680998035259dcfcafe653688bf2aa6d3e2dc05e98be6ab46afb089dc84f1df8"
 dependencies = [
- "proc-macro-crate 3.4.0",
+ "proc-macro-crate 2.0.2",
  "proc-macro2",
  "quote",
  "syn 2.0.110",
@@ -6849,7 +6849,8 @@ checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
 [[package]]
 name = "zmk-studio-api"
 version = "0.5.0"
-source = "git+https://github.com/srwi/zmk-studio-api#95437fc138458d73c91d382096cbdc78f7931361"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c0f9acfdfb7afad7cd868bf902e135348cc752c42f6104be4edaae40fe3e2242"
 dependencies = [
  "bluest",
  "futures",
