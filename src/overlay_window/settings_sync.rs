@@ -10,12 +10,14 @@ impl OverlayApp {
             return;
         }
 
-        let old_timeout = self.settings.active.timeout;
-        self.settings.active = self.settings.draft.clone();
+        let previous = std::mem::replace(&mut self.settings.active, self.settings.draft.clone());
 
         if let AppConnectionState::Connected { keyboard } = &self.session.connection {
-            if old_timeout != self.settings.active.timeout {
+            if previous.timeout != self.settings.active.timeout {
                 keyboard.set_timeout(self.settings.active.timeout);
+            }
+            if previous.visible_layers != self.settings.active.visible_layers {
+                keyboard.set_visible_layers(self.settings.active.visible_layers.bits());
             }
         }
     }

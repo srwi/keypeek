@@ -415,19 +415,6 @@ impl OverlayApp {
         ThemeColor::new(color.r(), color.g(), color.b(), color.a())
     }
 
-    pub(super) fn theme_color_entry(ui: &mut egui::Ui, label: &str, color: &mut ThemeColor) {
-        ui.horizontal(|ui| {
-            ui.label(label);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let mut display_color = Self::to_egui_color(*color);
-                if ui.color_edit_button_srgba(&mut display_color).changed() {
-                    *color = Self::from_egui_color(display_color);
-                }
-            });
-        });
-        ui.add_space(4.0);
-    }
-
     pub(super) fn draw_overlay_window(
         &self,
         ctx: &egui::Context,

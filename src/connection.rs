@@ -12,6 +12,7 @@ const ZMK_LOCKED_ERROR: &str = "Device is locked. Please press the ZMK Studio un
 pub struct ConnectionRequest {
     pub spec: ConnectionSpec,
     pub timeout: i64,
+    pub visible_layers: u32,
     pub layout_name: Option<String>,
     pub reopen: Option<Arc<dyn Reopener>>,
 }
@@ -100,6 +101,7 @@ pub fn build_connected_state(
         protocol,
         selected_layout_name.clone(),
         request.timeout,
+        request.visible_layers,
         ui_wake,
     )
     .map_err(|e| format!("Failed to create keyboard: {e}"))?;

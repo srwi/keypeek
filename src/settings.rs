@@ -61,6 +61,48 @@ impl FromStr for WindowPosition {
     }
 }
 
+/// Bitmask of the layers the overlay is shown for; bit `i` corresponds to layer `i`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct LayerMask(u32);
+
+impl LayerMask {
+    pub const ALL: Self = Self(u32::MAX);
+
+    pub fn bits(self) -> u32 {
+        self.0
+    }
+
+    /// Whether any layer of the `layers` bitmask is shown.
+    pub fn contains_any(self, layers: u32) -> bool {
+        self.0 & layers != 0
+    }
+
+    pub fn set(&mut self, layers: u32, shown: bool) {
+        if shown {
+            self.0 |= layers;
+        } else {
+            self.0 &= !layers;
+        }
+    }
+}
+
+impl fmt::Display for LayerMask {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:#010x}", self.0)
+    }
+}
+
+impl FromStr for LayerMask {
+    type Err = ParseSettingsError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let value = value.trim();
+        u32::from_str_radix(value.strip_prefix("0x").unwrap_or(value), 16)
+            .map(Self)
+            .map_err(|_| ParseSettingsError)
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct ThemeColor {
     pub r: u8,
@@ -112,12 +154,14 @@ pub struct ThemeSettings {
 }
 
 impl ThemeSettings {
+    /// Layers from here up share `layer_colors`' last entry and a single visibility bit.
+    pub const OTHER_LAYERS: u8 = 6;
+
     pub fn layer_color(&self, layer: u8) -> ThemeColor {
-        if let Some(color) = self.layer_colors.get(layer as usize) {
-            *color
-        } else {
-            self.layer_colors[6]
-        }
+        *self
+            .layer_colors
+            .get(layer as usize)
+            .unwrap_or(&self.layer_colors[Self::OTHER_LAYERS as usize])
     }
 }
 
@@ -147,6 +191,7 @@ pub struct Settings {
     pub position: WindowPosition,
     pub timeout: i64,
     pub margin: u32,
+    pub visible_layers: LayerMask,
     pub theme: ThemeSettings,
 }
 
@@ -159,6 +204,7 @@ impl Default for Settings {
             position: WindowPosition::BottomRight,
             timeout: 2000,
             margin: 10,
+            visible_layers: LayerMask::ALL,
             theme: ThemeSettings::default(),
         }
     }
@@ -207,6 +253,7 @@ impl Settings {
         section.set("position", self.position.to_string());
         section.set("timeout", self.timeout.to_string());
         section.set("margin", self.margin.to_string());
+        section.set("visible_layers", self.visible_layers.to_string());
         for (index, color) in self.theme.layer_colors.iter().enumerate() {
             section.set(format!("layer_color_{index}"), color.to_string());
         }
@@ -243,6 +290,9 @@ impl Settings {
         }
         if let Some(val) = section.get("margin") {
             s.margin = val.parse().unwrap_or(s.margin);
+        }
+        if let Some(val) = section.get("visible_layers") {
+            s.visible_layers = val.parse().unwrap_or(s.visible_layers);
         }
         for index in 0..s.theme.layer_colors.len() {
             if let Some(val) = section.get(format!("layer_color_{index}")) {

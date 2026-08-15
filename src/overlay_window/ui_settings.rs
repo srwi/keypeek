@@ -1,9 +1,56 @@
 use super::state::AppConnectionState;
 use super::OverlayApp;
-use crate::settings::WindowPosition;
+use crate::settings::{LayerMask, ThemeColor, ThemeSettings, WindowPosition};
 use egui::Window;
 
 impl OverlayApp {
+    /// The color button that ends every theme row, right-aligned in the row.
+    fn theme_color_button(ui: &mut egui::Ui, color: &mut ThemeColor) {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let mut display_color = Self::to_egui_color(*color);
+            if ui.color_edit_button_srgba(&mut display_color).changed() {
+                *color = Self::from_egui_color(display_color);
+            }
+        });
+    }
+
+    /// A theme row: a label and the color it stands for.
+    fn theme_color_entry(ui: &mut egui::Ui, label: &str, color: &mut ThemeColor) {
+        ui.horizontal(|ui| {
+            ui.label(label);
+            Self::theme_color_button(ui, color);
+        });
+        ui.add_space(4.0);
+    }
+
+    /// A theme row for the layers in the `layers` bitmask: their visibility checkbox,
+    /// the label, and the color they are painted in.
+    fn theme_layer_entry(
+        ui: &mut egui::Ui,
+        label: &str,
+        color: &mut ThemeColor,
+        visible_layers: &mut LayerMask,
+        layers: u32,
+    ) {
+        ui.horizontal(|ui| {
+            let mut shown = visible_layers.contains_any(layers);
+            let toggle_size = ui.spacing().interact_size.y;
+            if ui
+                .add_sized(
+                    [toggle_size, toggle_size],
+                    egui::Checkbox::without_text(&mut shown),
+                )
+                .on_hover_text("Show the overlay while these layers are active")
+                .changed()
+            {
+                visible_layers.set(layers, shown);
+            }
+            ui.label(label);
+            Self::theme_color_button(ui, color);
+        });
+        ui.add_space(4.0);
+    }
+
     fn timeout_to_ui_value(timeout: i64) -> u32 {
         if timeout < 0 {
             15_000
@@ -254,53 +301,43 @@ impl OverlayApp {
                     ui.heading("Theme");
                     ui.add_space(8.0);
 
+                    const LAYER_LABELS: [&str; ThemeSettings::OTHER_LAYERS as usize] = [
+                        "Layer 0", "Layer 1", "Layer 2", "Layer 3", "Layer 4", "Layer 5",
+                    ];
+                    const HALF: usize = LAYER_LABELS.len() / 2;
+
+                    let draft = &mut self.settings.draft;
+                    Self::theme_color_entry(ui, "Font color", &mut draft.theme.font_color);
+
+                    let mut layer_row = |ui: &mut egui::Ui, layer: usize| {
+                        Self::theme_layer_entry(
+                            ui,
+                            LAYER_LABELS[layer],
+                            &mut draft.theme.layer_colors[layer],
+                            &mut draft.visible_layers,
+                            1 << layer,
+                        );
+                    };
                     ui.columns(2, |columns| {
                         columns[0].vertical(|ui| {
-                            Self::theme_color_entry(
-                                ui,
-                                "Font color",
-                                &mut self.settings.draft.theme.font_color,
-                            );
-                            Self::theme_color_entry(
-                                ui,
-                                "Layer 0 color",
-                                &mut self.settings.draft.theme.layer_colors[0],
-                            );
-                            Self::theme_color_entry(
-                                ui,
-                                "Layer 1 color",
-                                &mut self.settings.draft.theme.layer_colors[1],
-                            );
-                            Self::theme_color_entry(
-                                ui,
-                                "Layer 2 color",
-                                &mut self.settings.draft.theme.layer_colors[2],
-                            );
+                            for layer in 0..HALF {
+                                layer_row(ui, layer);
+                            }
                         });
-
                         columns[1].vertical(|ui| {
-                            Self::theme_color_entry(
-                                ui,
-                                "Layer 3 color",
-                                &mut self.settings.draft.theme.layer_colors[3],
-                            );
-                            Self::theme_color_entry(
-                                ui,
-                                "Layer 4 color",
-                                &mut self.settings.draft.theme.layer_colors[4],
-                            );
-                            Self::theme_color_entry(
-                                ui,
-                                "Layer 5 color",
-                                &mut self.settings.draft.theme.layer_colors[5],
-                            );
-                            Self::theme_color_entry(
-                                ui,
-                                "Other layers color",
-                                &mut self.settings.draft.theme.layer_colors[6],
-                            );
+                            for layer in HALF..LAYER_LABELS.len() {
+                                layer_row(ui, layer);
+                            }
                         });
                     });
+
+                    Self::theme_layer_entry(
+                        ui,
+                        "Other layers",
+                        &mut draft.theme.layer_colors[ThemeSettings::OTHER_LAYERS as usize],
+                        &mut draft.visible_layers,
+                        !0 << ThemeSettings::OTHER_LAYERS,
+                    );
                 });
 
                 ui.add_space(8.0);

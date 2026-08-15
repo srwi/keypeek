@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -16,13 +16,67 @@ const LAYER_STATE_PACKET: u8 = 0xff;
 /// Leading byte of a key event packet, followed by `row`, `col`, `pressed`.
 const KEY_EVENT_PACKET: u8 = 0xF1;
 
+/// The active layers as seen through the visible-layer bitmask (bit `i` selects layer
+/// `i`; see `Settings::visible_layers`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ActiveLayers {
+    /// A selected layer above the base layer is held.
+    Selected,
+    /// An active layer is masked out.
+    Excluded,
+    /// Nothing is masked out and no selected layer is held, so the timeout decides how
+    /// long the overlay lingers.
+    Base,
+}
+
+impl ActiveLayers {
+    fn classify(layer_state: u32, default_layer_state: u32, visible_layers: u32) -> Self {
+        // The base layer is always active underneath the momentary and default layers.
+        let active = layer_state | default_layer_state | 1;
+
+        // Holding the base layer is not a reason to keep the overlay up; the timeout
+        // governs that instead, so it never counts as a selected layer.
+        let held_visible = layer_state & visible_layers & !1 != 0;
+        let any_hidden = active & !visible_layers != 0;
+        match (held_visible, any_hidden) {
+            (true, _) => Self::Selected,
+            (_, true) => Self::Excluded,
+            _ => Self::Base,
+        }
+    }
+}
+
+/// How long the overlay stays visible; `None` keeps it visible until the layer state
+/// changes, `Duration::ZERO` hides it right away.
+fn overlay_visible_duration(
+    active: ActiveLayers,
+    previous: ActiveLayers,
+    timeout_ms: i64,
+) -> Option<Duration> {
+    match active {
+        ActiveLayers::Selected => None,
+        ActiveLayers::Excluded => Some(Duration::ZERO),
+        ActiveLayers::Base => {
+            if timeout_ms < 0 {
+                None
+            } else if previous == ActiveLayers::Excluded {
+                // Leaving an excluded layer must not surface the base layer.
+                Some(Duration::ZERO)
+            } else {
+                Some(Duration::from_millis(timeout_ms as u64))
+            }
+        }
+    }
+}
+
 pub struct Keyboard {
     pub layout: KeyboardLayout,
     pub time_to_hide_overlay: Arc<Mutex<Option<Instant>>>,
     matrix: Arc<Mutex<KeyMatrix>>,
     layer_state: Arc<Mutex<u32>>,
     default_layer_state: Arc<Mutex<u32>>,
-    timeout_ms: Arc<Mutex<i64>>,
+    timeout_ms: Arc<AtomicI64>,
+    visible_layers: Arc<AtomicU32>,
     alive: Arc<AtomicBool>,
     _keepalive: Option<mpsc::Sender<()>>,
 }
@@ -32,6 +86,7 @@ impl Keyboard {
         protocol: Box<dyn KeyboardProtocol>,
         layout_name: String,
         timeout: i64,
+        visible_layers: u32,
         ui_wake: UiWake,
     ) -> Result<Self, String> {
         let definition = protocol.get_layout_definition();
@@ -50,24 +105,28 @@ impl Keyboard {
         let layer_state = Arc::new(Mutex::new(0));
         let default_layer_state = Arc::new(Mutex::new(0));
         let time_to_hide_overlay = Arc::new(Mutex::new(Some(Instant::now())));
-        let timeout_ms = Arc::new(Mutex::new(timeout));
+        let timeout_ms = Arc::new(AtomicI64::new(timeout));
+        let visible_layers = Arc::new(AtomicU32::new(visible_layers));
         let matrix = Arc::new(Mutex::new(matrix));
         let alive = Arc::new(AtomicBool::new(true));
 
-        let keepalive = protocol.subscription_sender().map_err(|e| e.to_string())?.map(|sender| {
-            let (tx, rx) = mpsc::channel::<()>();
-            thread::spawn(move || {
-                loop {
-                    let _ = sender.set_active(true);
-                    match rx.recv_timeout(Duration::from_millis(1000)) {
-                        Err(RecvTimeoutError::Timeout) => continue,
-                        _ => break,
+        let keepalive = protocol
+            .subscription_sender()
+            .map_err(|e| e.to_string())?
+            .map(|sender| {
+                let (tx, rx) = mpsc::channel::<()>();
+                thread::spawn(move || {
+                    loop {
+                        let _ = sender.set_active(true);
+                        match rx.recv_timeout(Duration::from_millis(1000)) {
+                            Err(RecvTimeoutError::Timeout) => continue,
+                            _ => break,
+                        }
                     }
-                }
-                let _ = sender.set_active(false);
+                    let _ = sender.set_active(false);
+                });
+                tx
             });
-            tx
-        });
 
         let keyboard = Keyboard {
             layout,
@@ -76,6 +135,7 @@ impl Keyboard {
             layer_state: Arc::clone(&layer_state),
             default_layer_state: Arc::clone(&default_layer_state),
             timeout_ms: Arc::clone(&timeout_ms),
+            visible_layers: Arc::clone(&visible_layers),
             alive: Arc::clone(&alive),
             _keepalive: keepalive,
         };
@@ -84,6 +144,7 @@ impl Keyboard {
         let default_layer_state_clone = Arc::clone(&keyboard.default_layer_state);
         let time_to_hide_clone = Arc::clone(&keyboard.time_to_hide_overlay);
         let timeout_clone = Arc::clone(&keyboard.timeout_ms);
+        let visible_layers_clone = Arc::clone(&keyboard.visible_layers);
         let matrix_clone = Arc::clone(&matrix);
         let alive_clone = Arc::clone(&alive);
 
@@ -92,6 +153,7 @@ impl Keyboard {
             // Mark the connection dead after a few consecutive errors to trigger reconnect.
             const MAX_CONSECUTIVE_ERRORS: u32 = 5;
             let mut consecutive_errors: u32 = 0;
+            let mut previous_layers = ActiveLayers::Base;
 
             loop {
                 let response = match protocol.hid_read() {
@@ -135,18 +197,19 @@ impl Keyboard {
                         layer_bytes[..size].copy_from_slice(&response[2 + size..2 + 2 * size]);
                         let layer_state = u32::from_le_bytes(layer_bytes);
 
-                        if layer_state > 1 {
-                            *time_to_hide_clone.lock().unwrap() = None;
-                        } else {
-                            let timeout = *timeout_clone.lock().unwrap();
-                            if timeout < 0 {
-                                *time_to_hide_clone.lock().unwrap() = None;
-                            } else {
-                                let time_to_hide =
-                                    Instant::now() + Duration::from_millis(timeout as u64);
-                                *time_to_hide_clone.lock().unwrap() = Some(time_to_hide);
-                            }
-                        }
+                        let active_layers = ActiveLayers::classify(
+                            layer_state,
+                            default_layer_state,
+                            visible_layers_clone.load(Ordering::Relaxed),
+                        );
+                        let visible_for = overlay_visible_duration(
+                            active_layers,
+                            previous_layers,
+                            timeout_clone.load(Ordering::Relaxed),
+                        );
+                        previous_layers = active_layers;
+                        *time_to_hide_clone.lock().unwrap() =
+                            visible_for.map(|duration| Instant::now() + duration);
 
                         *layer_state_clone.lock().unwrap() = layer_state;
                         *default_layer_state_clone.lock().unwrap() = default_layer_state;
@@ -219,7 +282,11 @@ impl Keyboard {
     }
 
     pub fn set_timeout(&self, timeout: i64) {
-        *self.timeout_ms.lock().unwrap() = timeout;
+        self.timeout_ms.store(timeout, Ordering::Relaxed);
+    }
+
+    pub fn set_visible_layers(&self, visible_layers: u32) {
+        self.visible_layers.store(visible_layers, Ordering::Relaxed);
     }
 
     pub fn set_layout(&mut self, layout: KeyboardLayout) {
