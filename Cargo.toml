@@ -5,26 +5,26 @@ description = "Keyboard layer overlay for VIA, Vial, and ZMK"
 authors = ["Stephan Rumswinkel"]
 repository = "https://github.com/srwi/keypeek"
 readme = "README.md"
-version = "0.7.1"
+version = "0.8.0"
 edition = "2021"
 
 [dependencies]
 rust-ini = "0.21.3"
 directories = "6.0.0"
-tray-icon = "0.24.1"
+tray-icon = "0.24.2"
 egui = "0.34.3"
 eframe = { version = "0.34.3", features = ["glow"] }
 egui_extras = { version = "0.34.3", features = ["all_loaders"] }
 qmk-via-api = { version = "0.8.0" }
 hidapi = "2.6.5"
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 egui-phosphor = "0.12.0"
 egui-file-dialog = "0.13.0"
 image = "0.25.10"
 lzma-rs = "0.3"
 serialport = "4.9.0"
-zmk-studio-api = { version = "0.5.0", features = ["serial", "ble"] }
+zmk-studio-api = { version = "0.5.1", features = ["serial", "ble"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
@@ -42,10 +42,10 @@ raw-window-handle = "0.6"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.62.2", features = ["Devices_Bluetooth", "Devices_Radios", "Foundation"] }
-winreg = "0.55"
+winreg = "0.56.0"
 
 [target.'cfg(target_os = "windows")'.build-dependencies]
-winresource = "0.1"
+winresource = "0.1.31"
 
 [package.metadata.bundle]
 name = "KeyPeek"
