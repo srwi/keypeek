@@ -92,7 +92,7 @@ fn show_on_all_spaces(cc: &eframe::CreationContext<'_>) {
 pub fn run(
     settings: Settings,
     devices: Vec<DiscoveredDevice>,
-    force_x11: bool,
+    #[cfg_attr(not(target_os = "linux"), allow(unused_variables))] force_x11: bool,
 ) -> Result<(), eframe::Error> {
     #[cfg(target_os = "linux")]
     if force_x11 {

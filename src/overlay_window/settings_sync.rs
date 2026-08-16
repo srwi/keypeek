@@ -61,44 +61,17 @@ impl OverlayApp {
     }
 
     pub(super) fn get_anchor_params(&self) -> (Align2, egui::Vec2) {
-        match self.settings.active.position {
-            WindowPosition::TopLeft => (
-                Align2::LEFT_TOP,
-                egui::vec2(
-                    self.settings.active.margin as f32,
-                    self.settings.active.margin as f32,
-                ),
-            ),
-            WindowPosition::TopRight => (
-                Align2::RIGHT_TOP,
-                egui::vec2(
-                    -(self.settings.active.margin as f32),
-                    self.settings.active.margin as f32,
-                ),
-            ),
-            WindowPosition::BottomLeft => (
-                Align2::LEFT_BOTTOM,
-                egui::vec2(
-                    self.settings.active.margin as f32,
-                    -(self.settings.active.margin as f32),
-                ),
-            ),
-            WindowPosition::BottomRight => (
-                Align2::RIGHT_BOTTOM,
-                egui::vec2(
-                    -(self.settings.active.margin as f32),
-                    -(self.settings.active.margin as f32),
-                ),
-            ),
-            WindowPosition::Bottom => (
-                Align2::CENTER_BOTTOM,
-                egui::vec2(0.0, -(self.settings.active.margin as f32)),
-            ),
-            WindowPosition::Top => (
-                Align2::CENTER_TOP,
-                egui::vec2(0.0, self.settings.active.margin as f32),
-            ),
-        }
+        use WindowPosition::*;
+        let m = self.settings.active.margin as f32;
+        let (align, dx, dy) = match self.settings.active.position {
+            TopLeft => (Align2::LEFT_TOP, m, m),
+            TopRight => (Align2::RIGHT_TOP, -m, m),
+            BottomLeft => (Align2::LEFT_BOTTOM, m, -m),
+            BottomRight => (Align2::RIGHT_BOTTOM, -m, -m),
+            Bottom => (Align2::CENTER_BOTTOM, 0.0, -m),
+            Top => (Align2::CENTER_TOP, 0.0, m),
+        };
+        (align, egui::vec2(dx, dy))
     }
 
     pub(super) fn overlay_visible(&self) -> bool {

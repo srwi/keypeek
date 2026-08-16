@@ -13,7 +13,6 @@ const ZMK_USAGE_PAGE: u16 = 0xff60;
 struct ZmkLayout {
     definition: KeyboardDefinition,
     layout_keys: LayerKeys3d,
-    layer_count: usize,
 }
 
 pub struct ZmkProtocol {
@@ -38,12 +37,8 @@ impl ZmkProtocol {
         transport: &ZmkTransport,
     ) -> Result<Self, Box<dyn Error>> {
         let zmk_data = zmk_rpc::fetch_zmk_data(transport)?;
-        let (definition, layout_keys, layer_count) = build_from_zmk_data(vid, pid, zmk_data)?;
-        Self::open_hid(Arc::new(ZmkLayout {
-            definition,
-            layout_keys,
-            layer_count,
-        }))
+        let layout = build_from_zmk_data(vid, pid, zmk_data)?;
+        Self::open_hid(Arc::new(layout))
     }
 
     fn open_hid(layout: Arc<ZmkLayout>) -> Result<Self, Box<dyn Error>> {
@@ -109,9 +104,7 @@ fn wait_for_hid_reappearance(
     }
 
     if device_present_without_usage {
-        return Err(format!(
-            "Please re-pair the keyboard to refresh the HID descriptor."
-        ));
+        return Err("Please re-pair the keyboard to refresh the HID descriptor.".to_string());
     }
 
     Err(format!(
@@ -129,7 +122,7 @@ impl KeyboardProtocol for ZmkProtocol {
     }
 
     fn get_layer_count(&self) -> Result<usize, Box<dyn Error>> {
-        Ok(self.layout.layer_count)
+        Ok(self.layout.layout_keys.len())
     }
 
     fn read_all_keys(&self, _layers: usize, _rows: usize, _cols: usize) -> LayerKeys3d {
@@ -152,11 +145,7 @@ impl KeyboardProtocol for ZmkProtocol {
     }
 }
 
-fn build_from_zmk_data(
-    vid: u16,
-    pid: u16,
-    data: ZmkData,
-) -> Result<(KeyboardDefinition, LayerKeys3d, usize), Box<dyn Error>> {
+fn build_from_zmk_data(vid: u16, pid: u16, data: ZmkData) -> Result<ZmkLayout, Box<dyn Error>> {
     const ACTIVE_LAYOUT_NAME: &str = "active physical layout";
 
     let active_idx = data.physical_layouts.active_layout_index as usize;
@@ -212,24 +201,18 @@ fn build_from_zmk_data(
         }],
     };
 
-    let layer_count = data.layer_count;
-    let active_key_count = num_keys;
-    let mut layout_keys_3d = Vec::with_capacity(layer_count);
+    let layout_keys: LayerKeys3d = data
+        .layout_keys
+        .into_iter()
+        .map(|layer| {
+            let mut row: Vec<Option<LayoutKey>> = layer.into_iter().take(num_keys).collect();
+            row.resize(num_keys, None);
+            vec![row]
+        })
+        .collect();
 
-    for layer_keys in &data.layout_keys {
-        let mut row = vec![None; num_keys];
-
-        for (pos, key) in layer_keys.iter().enumerate() {
-            if pos >= active_key_count {
-                break;
-            }
-            if pos < num_keys {
-                row[pos] = key.clone();
-            }
-        }
-
-        layout_keys_3d.push(vec![row]);
-    }
-
-    Ok((definition, layout_keys_3d, layer_count))
+    Ok(ZmkLayout {
+        definition,
+        layout_keys,
+    })
 }

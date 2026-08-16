@@ -37,7 +37,7 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             })
         }
         input_bytes if QK_MOD_TAP.contains(&input_bytes) => {
-            let remainder = input_bytes & !(QK_MOD_TAP.start);
+            let remainder = input_bytes - QK_MOD_TAP.start;
 
             let mod_value = (remainder >> 8) & 0x1F;
             let mod_label = mod_value_to_label(mod_value);
@@ -70,7 +70,7 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             })
         }
         input_bytes if QK_ONE_SHOT_MOD.contains(&input_bytes) => {
-            let remainder = input_bytes & !(QK_ONE_SHOT_MOD.start);
+            let remainder = input_bytes - QK_ONE_SHOT_MOD.start;
 
             let mod_label = mod_value_to_label(remainder);
 
@@ -82,7 +82,7 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             })
         }
         input_bytes if QK_LAYER_TAP.contains(&input_bytes) => {
-            let remainder = input_bytes & !(QK_LAYER_TAP.start);
+            let remainder = input_bytes - QK_LAYER_TAP.start;
 
             let layer = remainder >> 8;
 

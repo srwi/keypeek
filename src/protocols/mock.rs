@@ -1,7 +1,8 @@
 //! A virtual keyboard backed by a checked-in fixture, for developing without hardware.
 //!
 //! It reports a fixed layout and keymap, and cycles its momentary layer state on a timer
-//! so layer-change rendering can be exercised. Compiled into debug builds only.
+//! so layer-change rendering can be exercised. The mock device is only registered
+//! during discovery in debug builds (`cfg!(debug_assertions)` in `device_discovery`).
 
 use super::{KeyboardDefinition, KeyboardProtocol};
 use crate::layout_key::LayoutKey;

@@ -109,7 +109,6 @@ fn windows_bluetooth_radio_is_on() -> windows::core::Result<bool> {
 pub struct ZmkData {
     pub physical_layouts: keymap::PhysicalLayouts,
     pub layout_keys: Vec<Vec<Option<LayoutKey>>>,
-    pub layer_count: usize,
 }
 
 pub fn fetch_zmk_data(transport: &ZmkTransport) -> Result<ZmkData, Box<dyn Error>> {
@@ -165,7 +164,6 @@ fn fetch_zmk_data_from_client<T: Read + Write>(
     let physical_layouts = client.get_physical_layouts()?;
 
     let resolved_layers = client.resolve_keymap()?;
-    let layer_count = resolved_layers.len();
 
     let layer_names: Vec<String> = resolved_layers
         .iter()
@@ -191,6 +189,5 @@ fn fetch_zmk_data_from_client<T: Read + Write>(
     Ok(ZmkData {
         physical_layouts,
         layout_keys,
-        layer_count,
     })
 }

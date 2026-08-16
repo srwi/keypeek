@@ -258,10 +258,10 @@ impl Keyboard {
             let layer_mask = 1u32 << (i as u32);
             let is_active_default_layer = (default_layer_state & layer_mask) != 0;
             let is_active_momentary_layer = (layer_state & layer_mask) != 0;
-            if is_active_momentary_layer || is_active_default_layer {
-                if !matrix.is_transparent(i, row, col) {
-                    return (i as u8, is_active_default_layer && active_layer_above);
-                }
+            if (is_active_momentary_layer || is_active_default_layer)
+                && !matrix.is_transparent(i, row, col)
+            {
+                return (i as u8, is_active_default_layer && active_layer_above);
             }
             active_layer_above |= is_active_momentary_layer;
         }
