@@ -24,9 +24,10 @@ impl OverlayHost for EframeHost<'_> {
 struct EframeApp {
     app: OverlayApp,
     // Undecorated transparent windows don't reliably honor `with_maximized`, so we
-    // size to the monitor explicitly once known. Linux never WM-maximizes at all,
-    // since Mutter drops always-on-top on a maximized window.
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    // size to the monitor explicitly once known. On Windows, maximizing also causes
+    // DWM to discard per-pixel alpha on some systems. Linux never WM-maximizes at
+    // all, since Mutter drops always-on-top on a maximized window.
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
     sized_to_monitor: bool,
     // winit's always-on-top request is sent before the window is mapped, which
     // EWMH WMs like Mutter ignore, so re-assert it for a few frames after mapping.
@@ -53,7 +54,7 @@ impl eframe::App for EframeApp {
             ctx.request_repaint();
         }
 
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
         if !self.sized_to_monitor {
             if let Some(monitor_size) = ctx.input(|i| i.viewport().monitor_size) {
                 ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(0.0, 0.0)));
@@ -118,19 +119,34 @@ fn run_inner(
     let mut viewport = egui::ViewportBuilder::default()
         .with_decorations(false)
         .with_taskbar(false)
-        .with_maximized(true)
         .with_transparent(true)
         .with_has_shadow(false)
         .with_always_on_top();
+
+    // A maximized borderless window can lose per-pixel alpha under DWM, while an
+    // explicitly monitor-sized window retains it. `EframeApp::ui` applies that
+    // equivalent geometry on Windows once the monitor size is available.
+    #[cfg(not(target_os = "windows"))]
+    {
+        viewport = viewport.with_maximized(true);
+    }
 
     #[cfg(target_os = "linux")]
     {
         viewport = viewport.with_window_type(egui::X11WindowType::Utility);
     }
 
+    // Glow-backed transparent windows can be composited as opaque by DWM on some
+    // Windows 11 and GPU-driver combinations. Wgpu retains per-pixel alpha in the
+    // affected setups; keep Glow on the other platforms where it is required.
+    #[cfg(target_os = "windows")]
+    let renderer = eframe::Renderer::Wgpu;
+    #[cfg(not(target_os = "windows"))]
+    let renderer = eframe::Renderer::Glow;
+
     #[allow(unused_mut)]
     let mut options = eframe::NativeOptions {
-        renderer: eframe::Renderer::Glow, // Glow is required for a transparent background (https://github.com/emilk/egui/issues/4451)
+        renderer,
         viewport,
         ..Default::default()
     };
@@ -180,7 +196,7 @@ fn run_inner(
             let app = OverlayApp::new(tray_icon, settings_requested, ui_wake, settings, devices);
             Ok(Box::new(EframeApp {
                 app,
-                #[cfg(any(target_os = "macos", target_os = "linux"))]
+                #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
                 sized_to_monitor: false,
                 #[cfg(target_os = "linux")]
                 x11_above_ticks: 10,
