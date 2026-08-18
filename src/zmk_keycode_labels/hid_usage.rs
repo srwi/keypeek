@@ -57,6 +57,7 @@ pub fn hid_usage_to_layout_key(usage: HidUsage) -> LayoutKey {
             mods & (MOD_LCTL | MOD_RCTL) != 0,
             mods & (MOD_LSFT | MOD_RSFT) != 0,
             mods & (MOD_LALT | MOD_RALT) != 0,
+            mods & MOD_RALT != 0,
             mods & (MOD_LGUI | MOD_RGUI) != 0,
         )),
         symbol,

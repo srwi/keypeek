@@ -2,7 +2,9 @@ use super::state::{KeyColors, LabelGalleys};
 use super::OverlayApp;
 use crate::keyboard::Keyboard;
 use crate::layout_key::{BorderStyle, KeycodeKind, LayoutKey};
-use crate::settings::ThemeColor;
+use crate::qmk_keycode_labels::get_basic_layout_key;
+use crate::qmk_keycode_labels::layouts::{altgr_char, base_char, shifted_char};
+use crate::settings::{DisplayLayout, LegendMode, ThemeColor};
 use egui::Window;
 
 /// Rotate `point` clockwise around `origin` by `angle_rad` (screen space, y-down).
@@ -17,6 +19,44 @@ fn rotate_point(point: egui::Pos2, origin: egui::Pos2, angle_rad: f32) -> egui::
         origin.x + dx * cos_a - dy * sin_a,
         origin.y + dx * sin_a + dy * cos_a,
     )
+}
+
+fn resolve_combo(key: &LayoutKey, layout: DisplayLayout) -> Option<String> {
+    let altgr_resolved = (layout != DisplayLayout::Us)
+        .then(|| key.altgr_base.and_then(|kc| altgr_char(layout, kc)))
+        .flatten()
+        .map(str::to_string);
+    let shift_resolved = key.shift_base.and_then(|kc| {
+        (layout != DisplayLayout::Us)
+            .then(|| shifted_char(layout, kc))
+            .flatten()
+            .map(str::to_string)
+            .or_else(|| get_basic_layout_key(kc).and_then(|k| k.shifted))
+    });
+    altgr_resolved.or(shift_resolved)
+}
+
+fn stack_galley(
+    ui: &egui::Ui,
+    font: egui::FontId,
+    color: egui::Color32,
+    secondary: &str,
+    primary: &str,
+) -> (
+    Option<std::sync::Arc<egui::Galley>>,
+    Option<std::sync::Arc<egui::Galley>>,
+) {
+    let text = if primary.is_empty() {
+        secondary.to_string()
+    } else {
+        format!("{secondary}\n{primary}")
+    };
+    let mut job = egui::text::LayoutJob {
+        halign: egui::Align::Center,
+        ..Default::default()
+    };
+    job.append(&text, 0.0, egui::TextFormat::simple(font, color));
+    (None, Some(ui.painter().layout_job(job)))
 }
 
 /// Sample a rounded-rect outline into a closed polyline, rotated about `center`
@@ -94,10 +134,25 @@ impl OverlayApp {
         rect: egui::Rect,
         font: egui::FontId,
         color: egui::Color32,
+        shift_held: bool,
+        altgr_held: bool,
     ) -> LabelGalleys {
-        let (symbol, text) = self.generate_tap_galleys(ui, key, rect, font, color);
-        let behavior = self.generate_strip_galley(ui, key.behavior.as_ref(), rect, color);
-        let argument = self.generate_strip_galley(ui, key.argument.as_ref(), rect, color);
+        let (symbol, text) =
+            self.generate_tap_galleys(ui, key, rect, font, color, shift_held, altgr_held);
+
+        let layout = self.settings.active.display_layout;
+        let legend_mode = self.settings.active.legend_mode;
+        let suppress_badge =
+            legend_mode == LegendMode::Single && resolve_combo(key, layout).is_some();
+
+        let (behavior, argument) = if suppress_badge {
+            (None, None)
+        } else {
+            (
+                self.generate_strip_galley(ui, key.behavior.as_ref(), rect, color),
+                self.generate_strip_galley(ui, key.argument.as_ref(), rect, color),
+            )
+        };
         LabelGalleys {
             symbol,
             text,
@@ -113,6 +168,8 @@ impl OverlayApp {
         rect: egui::Rect,
         font: egui::FontId,
         color: egui::Color32,
+        shift_held: bool,
+        altgr_held: bool,
     ) -> (
         Option<std::sync::Arc<egui::Galley>>,
         Option<std::sync::Arc<egui::Galley>>,
@@ -123,19 +180,82 @@ impl OverlayApp {
             |text: String, fid: egui::FontId| ui.painter().layout_no_wrap(text, fid, color);
         let max_width = rect.width() * 0.85;
 
-        // Stack the shifted character above the base character.
-        if let Some(shifted) = &key.shifted {
-            let text = if key.tap.is_empty() {
-                shifted.clone()
-            } else {
-                format!("{}\n{}", shifted, key.tap.full)
+        let layout = self.settings.active.display_layout;
+        let legend_mode = self.settings.active.legend_mode;
+
+        let combo_keycode = key.shift_base.or(key.altgr_base);
+        let raw_base_label = || {
+            combo_keycode
+                .and_then(get_basic_layout_key)
+                .map(|k| k.tap.full)
+                .unwrap_or_else(|| key.tap.full.clone())
+        };
+
+        let tap_full = (layout != DisplayLayout::Us)
+            .then(|| key.base_keycode.and_then(|kc| base_char(layout, kc)))
+            .flatten()
+            .map(str::to_string)
+            .unwrap_or_else(|| {
+                if combo_keycode.is_some() {
+                    raw_base_label()
+                } else {
+                    key.tap.full.clone()
+                }
+            });
+
+        let combo_resolved = resolve_combo(key, layout);
+
+        let has_layout_base = layout != DisplayLayout::Us
+            && key
+                .base_keycode
+                .and_then(|kc| base_char(layout, kc))
+                .is_some();
+        let layout_shifted = (layout != DisplayLayout::Us
+            && (has_layout_base || key.shifted.is_some()))
+        .then(|| key.base_keycode.and_then(|kc| shifted_char(layout, kc)))
+        .flatten();
+        let plain_shifted = if has_layout_base {
+            layout_shifted.map(str::to_string)
+        } else {
+            layout_shifted
+                .map(str::to_string)
+                .or_else(|| key.shifted.clone())
+                .or_else(|| {
+                    key.base_keycode
+                        .and_then(get_basic_layout_key)
+                        .and_then(|k| k.shifted)
+                })
+        };
+
+        let plain_altgr = (layout != DisplayLayout::Us)
+            .then(|| key.base_keycode.and_then(|kc| altgr_char(layout, kc)))
+            .flatten()
+            .map(str::to_string);
+
+        if legend_mode == LegendMode::Single && combo_resolved.is_none() {
+            if shift_held {
+                if let Some(shifted) = &plain_shifted {
+                    return (None, Some(create_galley(shifted.clone(), font)));
+                }
+            }
+            if altgr_held {
+                if let Some(altgr) = &plain_altgr {
+                    return (None, Some(create_galley(altgr.clone(), font)));
+                }
+            }
+        }
+
+        if let Some(ch) = &combo_resolved {
+            return match legend_mode {
+                LegendMode::Single => (None, Some(create_galley(ch.clone(), font))),
+                LegendMode::Dual => stack_galley(ui, font, color, ch, &tap_full),
             };
-            let mut job = egui::text::LayoutJob {
-                halign: egui::Align::Center,
-                ..Default::default()
-            };
-            job.append(&text, 0.0, egui::TextFormat::simple(font, color));
-            return (None, Some(ui.painter().layout_job(job)));
+        }
+
+        if legend_mode == LegendMode::Dual {
+            if let Some(shifted) = &plain_shifted {
+                return stack_galley(ui, font, color, shifted, &tap_full);
+            }
         }
 
         if let Some(symbol) = &key.symbol {
@@ -144,7 +264,7 @@ impl OverlayApp {
             let gap = 0.06 * size;
 
             let candidates = [
-                (!key.tap.is_empty()).then(|| key.tap.full.clone()),
+                (!tap_full.is_empty()).then(|| tap_full.clone()),
                 key.tap.short.clone(),
             ];
             for text in candidates.into_iter().flatten() {
@@ -162,7 +282,7 @@ impl OverlayApp {
             None,
             self.fit_text_galley(
                 ui,
-                &key.tap.full,
+                &tap_full,
                 key.tap.short.as_deref(),
                 font,
                 color,
@@ -439,6 +559,11 @@ impl OverlayApp {
                 ui.allocate_space(egui::vec2(layout_size.0 * size, layout_size.1 * size));
                 let window_pos = ui.min_rect().min;
 
+                let live_preview_active = self.settings.active.legend_mode == LegendMode::Single
+                    && self.settings.active.live_shift_preview;
+                let shift_held = live_preview_active && keyboard.is_shift_held();
+                let altgr_held = live_preview_active && keyboard.is_altgr_held();
+
                 for key in &keyboard.layout.keys {
                     let (effective_layer, is_background_key) =
                         keyboard.get_effective_key_layer(key.row, key.col);
@@ -470,119 +595,142 @@ impl OverlayApp {
                         egui::vec2(key.w * size, key.h * size),
                     )
                     .shrink(0.06 * size);
-
                     let angle = key.r.to_radians();
-                    let center = rect.center();
-                    let corner_radius = 0.1 * size;
 
-                    // Fill first; the border is drawn separately so layer keys can carry
-                    // a styled outline. The pressed outline always wins; otherwise a layer
-                    // key uses a heavier styled border hinting how its layer activates.
-                    ui.painter().add(
-                        egui::epaint::RectShape::filled(rect, corner_radius, fill_color)
-                            .with_angle(angle),
-                    );
-
-                    let (border_style, border_width, border_color) =
-                        if pressed || layout_key.border == BorderStyle::None {
-                            (BorderStyle::Solid, border_thickness, stroke_color)
-                        } else {
-                            // Brighten the key's fill color for the outline so it stands out on-theme.
-                            (
-                                layout_key.border,
-                                0.02 * size,
-                                fill_color.lerp_to_gamma(egui::Color32::WHITE, 0.45),
-                            )
-                        };
-                    self.paint_key_border(
+                    self.draw_key_tile(
                         ui,
                         rect,
-                        corner_radius,
-                        egui::Stroke::new(border_width, border_color),
-                        border_style,
-                        size,
-                        center,
                         angle,
+                        &layout_key,
+                        fill_color,
+                        stroke_color,
+                        border_thickness,
+                        font_color,
+                        pressed,
+                        size,
+                        font_scale,
+                        shift_held,
+                        altgr_held,
                     );
-
-                    let font = egui::FontId::proportional(0.25 * size * font_scale);
-                    let galleys =
-                        self.generate_key_label_galleys(ui, &layout_key, rect, font, font_color);
-
-                    // Draw the legend strips: behavior on top, argument on bottom. They
-                    // overlay the key's edges (the primary label stays centered) and are
-                    // tied to the legend existing, not to whether the text fits, so an
-                    // over-long legend never blanks out.
-                    let strip_height = self.strip_metrics().1;
-                    let has_behavior = layout_key.behavior.is_some();
-                    let has_argument = layout_key.argument.is_some();
-
-                    if has_behavior {
-                        let strip = egui::Rect::from_min_max(
-                            rect.left_top(),
-                            egui::pos2(rect.right(), rect.top() + strip_height),
-                        );
-                        self.paint_strip(
-                            ui,
-                            strip,
-                            galleys.behavior,
-                            true,
-                            size,
-                            center,
-                            angle,
-                            stroke_color,
-                            font_color,
-                        );
-                    }
-
-                    if has_argument {
-                        let strip = egui::Rect::from_min_max(
-                            egui::pos2(rect.left(), rect.bottom() - strip_height),
-                            rect.max,
-                        );
-                        self.paint_strip(
-                            ui,
-                            strip,
-                            galleys.argument,
-                            false,
-                            size,
-                            center,
-                            angle,
-                            stroke_color,
-                            font_color,
-                        );
-                    }
-
-                    let draw_text = |pos, galley| {
-                        ui.painter()
-                            .add(rotated_text_shape(pos, galley, font_color, center, angle));
-                    };
-                    match (galleys.symbol, galleys.text) {
-                        (Some(symbol_galley), Some(text_galley)) => {
-                            let gap = 0.06 * size;
-                            let total_width =
-                                symbol_galley.rect.width() + gap + text_galley.rect.width();
-                            let start_x = center.x - total_width * 0.5;
-
-                            let text_pos_x = start_x + gap + symbol_galley.rect.width();
-                            let text_pos =
-                                egui::pos2(text_pos_x, center.y - text_galley.rect.center().y);
-                            let sym_pos =
-                                egui::pos2(start_x, center.y - symbol_galley.rect.center().y);
-                            draw_text(sym_pos, symbol_galley);
-                            draw_text(text_pos, text_galley);
-                        }
-                        (Some(symbol_galley), None) => {
-                            let sym_pos = center - symbol_galley.rect.center().to_vec2();
-                            draw_text(sym_pos, symbol_galley);
-                        }
-                        (None, Some(text_galley)) => {
-                            let label_pos = center - text_galley.rect.center().to_vec2();
-                            draw_text(label_pos, text_galley);
-                        }
-                        _ => {}
-                    }
                 }
             });
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn draw_key_tile(
+        &self,
+        ui: &egui::Ui,
+        rect: egui::Rect,
+        angle: f32,
+        layout_key: &LayoutKey,
+        fill_color: egui::Color32,
+        stroke_color: egui::Color32,
+        border_thickness: f32,
+        font_color: egui::Color32,
+        pressed: bool,
+        size: f32,
+        font_scale: f32,
+        shift_held: bool,
+        altgr_held: bool,
+    ) {
+        let center = rect.center();
+        let corner_radius = 0.1 * size;
+
+        ui.painter().add(
+            egui::epaint::RectShape::filled(rect, corner_radius, fill_color).with_angle(angle),
+        );
+
+        let (border_style, border_width, border_color) =
+            if pressed || layout_key.border == BorderStyle::None {
+                (BorderStyle::Solid, border_thickness, stroke_color)
+            } else {
+                (
+                    layout_key.border,
+                    0.02 * size,
+                    fill_color.lerp_to_gamma(egui::Color32::WHITE, 0.45),
+                )
+            };
+        self.paint_key_border(
+            ui,
+            rect,
+            corner_radius,
+            egui::Stroke::new(border_width, border_color),
+            border_style,
+            size,
+            center,
+            angle,
+        );
+
+        let font = egui::FontId::proportional(0.25 * size * font_scale);
+        let galleys = self.generate_key_label_galleys(
+            ui, layout_key, rect, font, font_color, shift_held, altgr_held,
+        );
+
+        let strip_height = self.strip_metrics().1;
+        let has_behavior = layout_key.behavior.is_some();
+        let has_argument = layout_key.argument.is_some();
+
+        if has_behavior {
+            let strip = egui::Rect::from_min_max(
+                rect.left_top(),
+                egui::pos2(rect.right(), rect.top() + strip_height),
+            );
+            self.paint_strip(
+                ui,
+                strip,
+                galleys.behavior,
+                true,
+                size,
+                center,
+                angle,
+                stroke_color,
+                font_color,
+            );
+        }
+
+        if has_argument {
+            let strip = egui::Rect::from_min_max(
+                egui::pos2(rect.left(), rect.bottom() - strip_height),
+                rect.max,
+            );
+            self.paint_strip(
+                ui,
+                strip,
+                galleys.argument,
+                false,
+                size,
+                center,
+                angle,
+                stroke_color,
+                font_color,
+            );
+        }
+
+        let draw_text = |pos, galley| {
+            ui.painter()
+                .add(rotated_text_shape(pos, galley, font_color, center, angle));
+        };
+        match (galleys.symbol, galleys.text) {
+            (Some(symbol_galley), Some(text_galley)) => {
+                let gap = 0.06 * size;
+                let total_width = symbol_galley.rect.width() + gap + text_galley.rect.width();
+                let start_x = center.x - total_width * 0.5;
+
+                let text_pos_x = start_x + gap + symbol_galley.rect.width();
+                let text_pos = egui::pos2(text_pos_x, center.y - text_galley.rect.center().y);
+                let sym_pos = egui::pos2(start_x, center.y - symbol_galley.rect.center().y);
+                draw_text(sym_pos, symbol_galley);
+                draw_text(text_pos, text_galley);
+            }
+            (Some(symbol_galley), None) => {
+                let sym_pos = center - symbol_galley.rect.center().to_vec2();
+                draw_text(sym_pos, symbol_galley);
+            }
+            (None, Some(text_galley)) => {
+                let label_pos = center - text_galley.rect.center().to_vec2();
+                draw_text(label_pos, text_galley);
+            }
+            _ => {}
+        }
     }
 }

@@ -11,28 +11,39 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
 
             let input_modifiers = input_bytes & 0x1f00;
 
-            // A lone shift over a key with a shifted legend just yields that character
-            // (S(KC_1) == "!"), so render it as a plain key. Compare only the low nibble.
-            if (input_modifiers >> 8) & 0x0f == MOD_LSFT {
-                if let Some(shifted) = inner_key.as_ref().and_then(|k| k.shifted.clone()) {
-                    return Some(LayoutKey {
-                        tap: Label::new(shifted),
-                        ..Default::default()
-                    });
-                }
-            }
-
-            // Otherwise show the key in `tap` and the modifiers as glyphs in the argument
-            // strip (e.g. "C" + "⎈" for LCTL(KC_C)).
-            let (tap, symbol) = match inner_key {
+            let (tap, symbol) = match inner_key.clone() {
                 Some(k) => (k.tap, k.symbol),
                 None => (Label::new(format!("0x{:02X}", keycode)), None),
             };
+
+            // A lone shift over a key with a shifted legend just yields that character
+            // (S(KC_1) == "!"), so render it as a plain key. Compare only the low nibble.
+            if (input_modifiers >> 8) & 0x0f == MOD_LSFT {
+                let native_shifted = inner_key.as_ref().and_then(|k| k.shifted.clone());
+                return Some(LayoutKey {
+                    tap: native_shifted
+                        .clone()
+                        .map(Label::new)
+                        .unwrap_or_else(|| tap.clone()),
+                    argument: Some(mod_value_to_label(input_modifiers >> 8)),
+                    symbol: symbol.clone(),
+                    shift_base: Some(keycode),
+                    mod_mask: Some(input_modifiers >> 8),
+                    kind: KeycodeKind::Modifier,
+                    ..Default::default()
+                });
+            }
+
+            let altgr_base =
+                ((input_modifiers >> 8) == (MOD_LALT | MOD_RIGHT_FLAG)).then_some(keycode);
+
             Some(LayoutKey {
                 tap,
                 argument: Some(mod_value_to_label(input_modifiers >> 8)),
                 symbol,
                 kind: KeycodeKind::Modifier,
+                altgr_base,
+                mod_mask: Some(input_modifiers >> 8),
                 ..Default::default()
             })
         }
@@ -52,6 +63,7 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
                 shifted: tap_key.shifted,
                 symbol: tap_key.symbol,
                 kind: KeycodeKind::Basic,
+                mod_mask: Some(mod_value),
                 ..Default::default()
             })
         }
@@ -78,6 +90,7 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
                 tap: mod_label,
                 behavior: Some(behavior_names::ONE_SHOT_MOD.label()),
                 kind: KeycodeKind::Modifier,
+                mod_mask: Some(remainder),
                 ..Default::default()
             })
         }
@@ -109,6 +122,7 @@ fn mod_value_to_label(mod_mask: u16) -> Label {
         mod_mask & MOD_LCTL != 0,
         mod_mask & MOD_LSFT != 0,
         mod_mask & MOD_LALT != 0,
+        mod_mask & MOD_LALT != 0 && mod_mask & MOD_RIGHT_FLAG != 0,
         mod_mask & MOD_LGUI != 0,
     )
 }

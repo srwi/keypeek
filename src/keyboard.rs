@@ -281,6 +281,31 @@ impl Keyboard {
         self.matrix.lock().unwrap().is_pressed(row, col)
     }
 
+    fn held_mod_mask(&self) -> u16 {
+        self.layout.keys.iter().fold(0u16, |acc, key| {
+            if !self.is_key_pressed(key.row, key.col) {
+                return acc;
+            }
+            let (effective_layer, _) = self.get_effective_key_layer(key.row, key.col);
+            let mask = self
+                .get_key(effective_layer as usize, key.row, key.col)
+                .and_then(|k| k.mod_mask)
+                .unwrap_or(0);
+            acc | mask
+        })
+    }
+
+    pub fn is_shift_held(&self) -> bool {
+        use crate::qmk_keycode_labels::constants::MOD_LSFT;
+        self.held_mod_mask() & MOD_LSFT != 0
+    }
+
+    pub fn is_altgr_held(&self) -> bool {
+        use crate::qmk_keycode_labels::constants::{MOD_LALT, MOD_RIGHT_FLAG};
+        let mask = self.held_mod_mask();
+        mask & MOD_LALT != 0 && mask & MOD_RIGHT_FLAG != 0
+    }
+
     pub fn set_timeout(&self, timeout: i64) {
         self.timeout_ms.store(timeout, Ordering::Relaxed);
     }

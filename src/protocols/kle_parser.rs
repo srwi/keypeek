@@ -102,21 +102,20 @@ fn parse_kle_keymap(keymap: &[Value]) -> Result<Vec<Key>, Box<dyn Error>> {
                     current_y += y as f32;
                 }
             } else if let Some(label) = item.as_str() {
-                // This is a key with a label
-                if let Some((row, col)) = parse_matrix_label(label) {
-                    // Normalize KLE-relative coordinates to absolute space, then flatten rotation.
-                    let absolute_x = rotation_x + current_x;
-                    let absolute_y = rotation_y + current_y;
-                    let (final_x, final_y) = flattened_top_left_after_center_rotation(
-                        absolute_x,
-                        absolute_y,
-                        current_w,
-                        current_h,
-                        rotation_angle,
-                        rotation_x,
-                        rotation_y,
-                    );
+                // Normalize KLE-relative coordinates to absolute space, then flatten rotation.
+                let absolute_x = rotation_x + current_x;
+                let absolute_y = rotation_y + current_y;
+                let (final_x, final_y) = flattened_top_left_after_center_rotation(
+                    absolute_x,
+                    absolute_y,
+                    current_w,
+                    current_h,
+                    rotation_angle,
+                    rotation_x,
+                    rotation_y,
+                );
 
+                if let Some((row, col)) = parse_matrix_label(label) {
                     keys.push(Key {
                         row,
                         col,

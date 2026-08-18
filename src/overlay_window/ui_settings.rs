@@ -1,6 +1,6 @@
 use super::state::AppConnectionState;
 use super::OverlayApp;
-use crate::settings::{LayerMask, ThemeColor, ThemeSettings, WindowPosition};
+use crate::settings::{DisplayLayout, LayerMask, LegendMode, ThemeColor, ThemeSettings, WindowPosition};
 use egui::Window;
 
 impl OverlayApp {
@@ -237,6 +237,51 @@ impl OverlayApp {
                                     }
                                 });
                             ui.end_row();
+
+                            ui.label("Keyboard layout");
+                            egui::ComboBox::from_id_salt("display_layout_combo")
+                                .width(ui.available_width())
+                                .selected_text(self.settings.draft.display_layout.to_string())
+                                .show_ui(ui, |ui| {
+                                    for layout in [
+                                        DisplayLayout::Us,
+                                        DisplayLayout::German,
+                                        DisplayLayout::French,
+                                        DisplayLayout::Italian,
+                                        DisplayLayout::Spanish,
+                                    ] {
+                                        ui.selectable_value(
+                                            &mut self.settings.draft.display_layout,
+                                            layout,
+                                            layout.to_string(),
+                                        );
+                                    }
+                                });
+                            ui.end_row();
+
+                            ui.label("Legend display");
+                            egui::ComboBox::from_id_salt("legend_mode_combo")
+                                .width(ui.available_width())
+                                .selected_text(self.settings.draft.legend_mode.to_string())
+                                .show_ui(ui, |ui| {
+                                    for mode in [LegendMode::Dual, LegendMode::Single] {
+                                        ui.selectable_value(
+                                            &mut self.settings.draft.legend_mode,
+                                            mode,
+                                            mode.to_string(),
+                                        );
+                                    }
+                                });
+                            ui.end_row();
+
+                            if self.settings.draft.legend_mode == LegendMode::Single {
+                                ui.label("Live shift preview");
+                                ui.checkbox(
+                                    &mut self.settings.draft.live_shift_preview,
+                                    "Swap to the Shift legend while Shift is held",
+                                );
+                                ui.end_row();
+                            }
 
                             ui.label("Display duration");
                             let mut timeout_ui =

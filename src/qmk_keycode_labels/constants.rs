@@ -21,3 +21,4 @@ pub const MOD_LCTL: u16 = 0x01;
 pub const MOD_LSFT: u16 = 0x02;
 pub const MOD_LALT: u16 = 0x04;
 pub const MOD_LGUI: u16 = 0x08;
+pub const MOD_RIGHT_FLAG: u16 = 0x10;

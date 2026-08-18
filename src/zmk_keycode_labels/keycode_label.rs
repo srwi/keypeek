@@ -1,5 +1,8 @@
 use crate::layout_key::modifier_symbols::*;
 use crate::layout_key::{KeycodeKind, Label, LayoutKey};
+use crate::qmk_keycode_labels::constants::{
+    MOD_LALT, MOD_LCTL, MOD_LGUI, MOD_LSFT, MOD_RIGHT_FLAG,
+};
 use zmk_studio_api::Keycode;
 
 pub fn keycode_to_layout_key(keycode: &Keycode) -> LayoutKey {
@@ -721,14 +724,14 @@ fn keycode_label(keycode: &Keycode) -> Option<LayoutKey> {
             tap: Label::new("ExSel"),
             ..Default::default()
         }),
-        Keycode::LEFT_CONTROL => Some(modifier_key(&MOD_CTRL)),
-        Keycode::LEFT_SHIFT => Some(modifier_key(&MOD_SHIFT)),
-        Keycode::LEFT_ALT => Some(modifier_key(&MOD_ALT)),
-        Keycode::LEFT_COMMAND => Some(modifier_key(&MOD_GUI)),
-        Keycode::RIGHT_CONTROL => Some(modifier_key(&MOD_CTRL)),
-        Keycode::RIGHT_SHIFT => Some(modifier_key(&MOD_SHIFT)),
-        Keycode::RIGHT_ALT => Some(modifier_key(&MOD_ALT)),
-        Keycode::RIGHT_COMMAND => Some(modifier_key(&MOD_GUI)),
+        Keycode::LEFT_CONTROL => Some(modifier_key(&MOD_CTRL, MOD_LCTL)),
+        Keycode::LEFT_SHIFT => Some(modifier_key(&MOD_SHIFT, MOD_LSFT)),
+        Keycode::LEFT_ALT => Some(modifier_key(&MOD_ALT, MOD_LALT)),
+        Keycode::LEFT_COMMAND => Some(modifier_key(&MOD_GUI, MOD_LGUI)),
+        Keycode::RIGHT_CONTROL => Some(modifier_key(&MOD_CTRL, MOD_LCTL | MOD_RIGHT_FLAG)),
+        Keycode::RIGHT_SHIFT => Some(modifier_key(&MOD_SHIFT, MOD_LSFT | MOD_RIGHT_FLAG)),
+        Keycode::RIGHT_ALT => Some(modifier_key(&MOD_ALTGR, MOD_LALT | MOD_RIGHT_FLAG)),
+        Keycode::RIGHT_COMMAND => Some(modifier_key(&MOD_GUI, MOD_LGUI | MOD_RIGHT_FLAG)),
         Keycode::K_PLAY_PAUSE => Some(LayoutKey {
             symbol: Some(egui_phosphor::regular::PLAY_PAUSE.to_string()),
             ..Default::default()

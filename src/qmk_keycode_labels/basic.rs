@@ -1,5 +1,8 @@
 use crate::layout_key::modifier_symbols::*;
 use crate::layout_key::{KeycodeKind, Label, LayoutKey};
+use crate::qmk_keycode_labels::constants::{
+    MOD_LALT, MOD_LCTL, MOD_LGUI, MOD_LSFT, MOD_RIGHT_FLAG,
+};
 
 use qmk_via_api::keycodes::Keycode;
 
@@ -907,14 +910,14 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             tap: Label::new("Mouse Acc2"),
             ..Default::default()
         }),
-        Keycode::KC_LEFT_CTRL => Some(modifier_key(&MOD_CTRL)),
-        Keycode::KC_LEFT_SHIFT => Some(modifier_key(&MOD_SHIFT)),
-        Keycode::KC_LEFT_ALT => Some(modifier_key(&MOD_ALT)),
-        Keycode::KC_LEFT_GUI => Some(modifier_key(&MOD_GUI)),
-        Keycode::KC_RIGHT_CTRL => Some(modifier_key(&MOD_CTRL)),
-        Keycode::KC_RIGHT_SHIFT => Some(modifier_key(&MOD_SHIFT)),
-        Keycode::KC_RIGHT_ALT => Some(modifier_key(&MOD_ALT)),
-        Keycode::KC_RIGHT_GUI => Some(modifier_key(&MOD_GUI)),
+        Keycode::KC_LEFT_CTRL => Some(modifier_key(&MOD_CTRL, MOD_LCTL)),
+        Keycode::KC_LEFT_SHIFT => Some(modifier_key(&MOD_SHIFT, MOD_LSFT)),
+        Keycode::KC_LEFT_ALT => Some(modifier_key(&MOD_ALT, MOD_LALT)),
+        Keycode::KC_LEFT_GUI => Some(modifier_key(&MOD_GUI, MOD_LGUI)),
+        Keycode::KC_RIGHT_CTRL => Some(modifier_key(&MOD_CTRL, MOD_LCTL | MOD_RIGHT_FLAG)),
+        Keycode::KC_RIGHT_SHIFT => Some(modifier_key(&MOD_SHIFT, MOD_LSFT | MOD_RIGHT_FLAG)),
+        Keycode::KC_RIGHT_ALT => Some(modifier_key(&MOD_ALTGR, MOD_LALT | MOD_RIGHT_FLAG)),
+        Keycode::KC_RIGHT_GUI => Some(modifier_key(&MOD_GUI, MOD_LGUI | MOD_RIGHT_FLAG)),
         Keycode::QK_SWAP_HANDS_TOGGLE => Some(LayoutKey {
             tap: Label::with_short("Swap Hands Toggle", "SwpHT"),
             ..Default::default()

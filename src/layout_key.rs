@@ -34,6 +34,11 @@ pub mod modifier_symbols {
         short: "Alt",
     };
 
+    pub const MOD_ALTGR: ModName = ModName {
+        full: "AltGr",
+        short: "AGr",
+    };
+
     #[cfg(target_os = "macos")]
     pub const MOD_GUI: ModName = ModName {
         full: egui_phosphor::regular::COMMAND,
@@ -64,24 +69,26 @@ pub mod modifier_symbols {
     }
 
     /// Build a standalone modifier key: glyph modifiers go in `symbol`, text names in `tap`.
-    pub fn modifier_key(m: &ModName) -> super::LayoutKey {
+    pub fn modifier_key(m: &ModName, mod_mask: u16) -> super::LayoutKey {
         if is_glyph(m.full) {
             super::LayoutKey {
                 symbol: Some(m.full.to_string()),
                 kind: super::KeycodeKind::Modifier,
+                mod_mask: Some(mod_mask),
                 ..Default::default()
             }
         } else {
             super::LayoutKey {
                 tap: super::Label::with_short(m.full, m.short),
                 kind: super::KeycodeKind::Modifier,
+                mod_mask: Some(mod_mask),
                 ..Default::default()
             }
         }
     }
 
     /// Combined label for a set of held modifiers (e.g. "Ctrl+⇧"), with a short form to shrink.
-    pub fn glyphs(ctrl: bool, shift: bool, alt: bool, gui: bool) -> super::Label {
+    pub fn glyphs(ctrl: bool, shift: bool, alt: bool, right_alt: bool, gui: bool) -> super::Label {
         let mut full: Vec<&str> = Vec::new();
         let mut short: Vec<&str> = Vec::new();
         let mut push = |m: &ModName| {
@@ -95,7 +102,7 @@ pub mod modifier_symbols {
             push(&MOD_SHIFT);
         }
         if alt {
-            push(&MOD_ALT);
+            push(if right_alt { &MOD_ALTGR } else { &MOD_ALT });
         }
         if gui {
             push(&MOD_GUI);
@@ -186,10 +193,6 @@ impl Label {
             short: Some(short.into()),
         }
     }
-
-    pub fn is_empty(&self) -> bool {
-        self.full.is_empty()
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -206,6 +209,18 @@ pub struct LayoutKey {
 
     /// Shifted character shown above `tap` (e.g. "!" for KC_1).
     pub shifted: Option<String>,
+
+    #[serde(default)]
+    pub altgr_base: Option<u16>,
+
+    #[serde(default)]
+    pub shift_base: Option<u16>,
+
+    #[serde(default)]
+    pub base_keycode: Option<u16>,
+
+    #[serde(default)]
+    pub mod_mask: Option<u16>,
 
     /// Symbol/icon for the key (using Phosphor icon font)
     pub symbol: Option<String>,
@@ -227,6 +242,10 @@ impl Default for LayoutKey {
             behavior: None,
             argument: None,
             shifted: None,
+            altgr_base: None,
+            shift_base: None,
+            base_keycode: None,
+            mod_mask: None,
             symbol: None,
             kind: KeycodeKind::Basic,
             layer_ref: None,

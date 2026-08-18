@@ -61,6 +61,77 @@ impl FromStr for WindowPosition {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DisplayLayout {
+    Us,
+    German,
+    French,
+    Italian,
+    Spanish,
+}
+
+impl fmt::Display for DisplayLayout {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                DisplayLayout::Us => "US",
+                DisplayLayout::German => "German",
+                DisplayLayout::French => "French",
+                DisplayLayout::Italian => "Italian",
+                DisplayLayout::Spanish => "Spanish",
+            }
+        )
+    }
+}
+
+impl FromStr for DisplayLayout {
+    type Err = ParseSettingsError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "US" => Ok(DisplayLayout::Us),
+            "German" => Ok(DisplayLayout::German),
+            "French" => Ok(DisplayLayout::French),
+            "Italian" => Ok(DisplayLayout::Italian),
+            "Spanish" => Ok(DisplayLayout::Spanish),
+            _ => Err(ParseSettingsError),
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum LegendMode {
+    Dual,
+    Single,
+}
+
+impl fmt::Display for LegendMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                LegendMode::Dual => "Dual",
+                LegendMode::Single => "Single",
+            }
+        )
+    }
+}
+
+impl FromStr for LegendMode {
+    type Err = ParseSettingsError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "Dual" => Ok(LegendMode::Dual),
+            "Single" => Ok(LegendMode::Single),
+            _ => Err(ParseSettingsError),
+        }
+    }
+}
+
 /// Bitmask of the layers the overlay is shown for; bit `i` corresponds to layer `i`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct LayerMask(u32);
@@ -102,7 +173,6 @@ impl FromStr for LayerMask {
             .map_err(|_| ParseSettingsError)
     }
 }
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct ThemeColor {
     pub r: u8,
@@ -193,6 +263,9 @@ pub struct Settings {
     pub margin: u32,
     pub visible_layers: LayerMask,
     pub theme: ThemeSettings,
+    pub display_layout: DisplayLayout,
+    pub legend_mode: LegendMode,
+    pub live_shift_preview: bool,
 }
 
 impl Default for Settings {
@@ -206,6 +279,9 @@ impl Default for Settings {
             margin: 10,
             visible_layers: LayerMask::ALL,
             theme: ThemeSettings::default(),
+            display_layout: DisplayLayout::Us,
+            legend_mode: LegendMode::Dual,
+            live_shift_preview: false,
         }
     }
 }
@@ -251,6 +327,9 @@ impl Settings {
             self.auto_fit_before_ellipsis.to_string(),
         );
         section.set("position", self.position.to_string());
+        section.set("display_layout", self.display_layout.to_string());
+        section.set("legend_mode", self.legend_mode.to_string());
+        section.set("live_shift_preview", self.live_shift_preview.to_string());
         section.set("timeout", self.timeout.to_string());
         section.set("margin", self.margin.to_string());
         section.set("visible_layers", self.visible_layers.to_string());
@@ -279,6 +358,19 @@ impl Settings {
             if let Ok(parsed) = val.parse() {
                 s.position = parsed;
             }
+        }
+        if let Some(val) = section.get("display_layout") {
+            if let Ok(parsed) = val.parse() {
+                s.display_layout = parsed;
+            }
+        }
+        if let Some(val) = section.get("legend_mode") {
+            if let Ok(parsed) = val.parse() {
+                s.legend_mode = parsed;
+            }
+        }
+        if let Some(val) = section.get("live_shift_preview") {
+            s.live_shift_preview = val.parse().unwrap_or(s.live_shift_preview);
         }
         if let Some(val) = section.get("timeout") {
             let parsed = val.parse::<i64>().unwrap_or(s.timeout);

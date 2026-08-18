@@ -255,10 +255,12 @@ fn hold_tap_layout_key(hold: HidUsage, tap: HidUsage, behavior: Option<Label>) -
         behavior,
         argument: Some(hold_label),
         shifted: tap_key.shifted,
+        mod_mask: hold_key.mod_mask,
         symbol: tap_key.symbol,
         kind: KeycodeKind::Basic,
         layer_ref: None,
         border: BorderStyle::None,
+        ..Default::default()
     }
 }
 
