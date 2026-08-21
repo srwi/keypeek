@@ -292,6 +292,19 @@ impl OverlayApp {
                                 "Fit long labels to available space",
                             );
                             ui.end_row();
+
+                            ui.label("Single-legend display mode");
+                            ui.checkbox(&mut self.settings.draft.single_legend_mode, "");
+                            ui.end_row();
+
+                            ui.label("Live Shift/AltGr preview");
+                            ui.checkbox(&mut self.settings.draft.live_shift_altgr_preview, "")
+                                .on_hover_text(
+                                    "Single-legend mode only: while Shift/AltGr is physically \
+                                     held, show what that key would produce instead of its \
+                                     plain tap",
+                                );
+                            ui.end_row();
                         });
                 });
 

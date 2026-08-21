@@ -64,17 +64,20 @@ pub mod modifier_symbols {
     }
 
     /// Build a standalone modifier key: glyph modifiers go in `symbol`, text names in `tap`.
-    pub fn modifier_key(m: &ModName) -> super::LayoutKey {
+    /// `mod_mask` is `HELD_MOD_SHIFT`/`HELD_MOD_ALTGR` (or 0) — see their doc comments.
+    pub fn modifier_key(m: &ModName, mod_mask: u16) -> super::LayoutKey {
         if is_glyph(m.full) {
             super::LayoutKey {
                 symbol: Some(m.full.to_string()),
                 kind: super::KeycodeKind::Modifier,
+                mod_mask: (mod_mask != 0).then_some(mod_mask),
                 ..Default::default()
             }
         } else {
             super::LayoutKey {
                 tap: super::Label::with_short(m.full, m.short),
                 kind: super::KeycodeKind::Modifier,
+                mod_mask: (mod_mask != 0).then_some(mod_mask),
                 ..Default::default()
             }
         }
@@ -192,6 +195,16 @@ impl Label {
     }
 }
 
+/// `mod_mask` bit for a key that acts as a live Shift source while held
+/// (a standalone Shift key, or the hold side of a Mod-Tap/One-Shot-Mod/
+/// Layer-Mod carrying Shift) — used by the Single-legend live preview to
+/// detect "Shift is currently held" independent of which protocol the
+/// keyboard speaks.
+pub const HELD_MOD_SHIFT: u16 = 0x01;
+/// Same as `HELD_MOD_SHIFT`, but for AltGr (right-Alt bound as the layout's
+/// Level-3 shift).
+pub const HELD_MOD_ALTGR: u16 = 0x02;
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LayoutKey {
     /// Primary key action label (e.g., "A", "Enter", "L1")
@@ -204,8 +217,19 @@ pub struct LayoutKey {
     /// for Layer-Tap). `None` when there is no argument.
     pub argument: Option<Label>,
 
-    /// Shifted character shown above `tap` (e.g. "!" for KC_1).
+    /// Shifted character shown above `tap` (e.g. "!" for KC_1), and in
+    /// Single-legend mode, what's shown instead of `tap` while Shift is held.
     pub shifted: Option<String>,
+
+    /// AltGr-shifted character (e.g. "[" for a German AltGr+8) — same role as
+    /// `shifted` but for AltGr. Only ever set alongside `shifted` (both come
+    /// from the same OS-layout resolution pass over a symbol/digit key).
+    pub altgr: Option<String>,
+
+    /// `HELD_MOD_SHIFT`/`HELD_MOD_ALTGR` bits (OR'd) this key contributes
+    /// while physically held — `None` for keys that aren't a modifier
+    /// source. Read by the Single-legend live preview, ignored otherwise.
+    pub mod_mask: Option<u16>,
 
     /// Symbol/icon for the key (using Phosphor icon font)
     pub symbol: Option<String>,
@@ -227,6 +251,8 @@ impl Default for LayoutKey {
             behavior: None,
             argument: None,
             shifted: None,
+            altgr: None,
+            mod_mask: None,
             symbol: None,
             kind: KeycodeKind::Basic,
             layer_ref: None,

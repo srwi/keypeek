@@ -193,6 +193,12 @@ pub struct Settings {
     pub margin: u32,
     pub visible_layers: LayerMask,
     pub theme: ThemeSettings,
+    /// Show only what a plain tap produces instead of stacking Base+Shifted.
+    pub single_legend_mode: bool,
+    /// Only meaningful with `single_legend_mode` on: swap a key's shown
+    /// character to its Shift/AltGr result for as long as that modifier is
+    /// physically held.
+    pub live_shift_altgr_preview: bool,
 }
 
 impl Default for Settings {
@@ -206,6 +212,8 @@ impl Default for Settings {
             margin: 10,
             visible_layers: LayerMask::ALL,
             theme: ThemeSettings::default(),
+            single_legend_mode: false,
+            live_shift_altgr_preview: false,
         }
     }
 }
@@ -258,6 +266,11 @@ impl Settings {
             section.set(format!("layer_color_{index}"), color.to_string());
         }
         section.set("font_color", self.theme.font_color.to_string());
+        section.set("single_legend_mode", self.single_legend_mode.to_string());
+        section.set(
+            "live_shift_altgr_preview",
+            self.live_shift_altgr_preview.to_string(),
+        );
         conf.write_to_file(path)
     }
 
@@ -305,6 +318,12 @@ impl Settings {
             if let Ok(parsed) = val.parse() {
                 s.theme.font_color = parsed;
             }
+        }
+        if let Some(val) = section.get("single_legend_mode") {
+            s.single_legend_mode = val.parse().unwrap_or(s.single_legend_mode);
+        }
+        if let Some(val) = section.get("live_shift_altgr_preview") {
+            s.live_shift_altgr_preview = val.parse().unwrap_or(s.live_shift_altgr_preview);
         }
         Some(s)
     }

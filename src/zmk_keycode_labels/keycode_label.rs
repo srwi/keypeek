@@ -25,6 +25,11 @@ pub fn keycode_to_layout_key(keycode: &Keycode) -> LayoutKey {
             if let Some(os_base) = crate::os_layout::base_char(usage) {
                 key.tap = Label::new(os_base.to_uppercase());
             }
+            // Some letters carry an AltGr legend too (German AltGr+Q -> "@",
+            // AltGr+E -> "€") — needed for the Single-legend live preview,
+            // even though Dual mode never shows it (letters get no stacked
+            // legend).
+            key.altgr = crate::os_layout::resolve(usage, crate::os_layout::Modifier::AltGr);
             return key;
         }
 
@@ -57,6 +62,9 @@ pub fn keycode_to_layout_key(keycode: &Keycode) -> LayoutKey {
             if let Some(shifted) = os_shifted {
                 key.shifted = Some(shifted);
             }
+            // AltGr's result, for the Single-legend live preview — same
+            // resolution pass, just a different modifier.
+            key.altgr = crate::os_layout::resolve(usage, crate::os_layout::Modifier::AltGr);
         }
     }
     key
@@ -773,14 +781,15 @@ fn keycode_label(keycode: &Keycode) -> Option<LayoutKey> {
             tap: Label::new("ExSel"),
             ..Default::default()
         }),
-        Keycode::LEFT_CONTROL => Some(modifier_key(&MOD_CTRL)),
-        Keycode::LEFT_SHIFT => Some(modifier_key(&MOD_SHIFT)),
-        Keycode::LEFT_ALT => Some(modifier_key(&MOD_ALT)),
-        Keycode::LEFT_COMMAND => Some(modifier_key(&MOD_GUI)),
-        Keycode::RIGHT_CONTROL => Some(modifier_key(&MOD_CTRL)),
-        Keycode::RIGHT_SHIFT => Some(modifier_key(&MOD_SHIFT)),
-        Keycode::RIGHT_ALT => Some(modifier_key(&MOD_ALT)),
-        Keycode::RIGHT_COMMAND => Some(modifier_key(&MOD_GUI)),
+        Keycode::LEFT_CONTROL => Some(modifier_key(&MOD_CTRL, 0)),
+        Keycode::LEFT_SHIFT => Some(modifier_key(&MOD_SHIFT, crate::layout_key::HELD_MOD_SHIFT)),
+        Keycode::LEFT_ALT => Some(modifier_key(&MOD_ALT, 0)),
+        Keycode::LEFT_COMMAND => Some(modifier_key(&MOD_GUI, 0)),
+        Keycode::RIGHT_CONTROL => Some(modifier_key(&MOD_CTRL, 0)),
+        Keycode::RIGHT_SHIFT => Some(modifier_key(&MOD_SHIFT, crate::layout_key::HELD_MOD_SHIFT)),
+        // RAlt is the layout's AltGr on layouts that define one.
+        Keycode::RIGHT_ALT => Some(modifier_key(&MOD_ALT, crate::layout_key::HELD_MOD_ALTGR)),
+        Keycode::RIGHT_COMMAND => Some(modifier_key(&MOD_GUI, 0)),
         Keycode::K_PLAY_PAUSE => Some(LayoutKey {
             symbol: Some(egui_phosphor::regular::PLAY_PAUSE.to_string()),
             ..Default::default()

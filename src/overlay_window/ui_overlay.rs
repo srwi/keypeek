@@ -94,8 +94,11 @@ impl OverlayApp {
         rect: egui::Rect,
         font: egui::FontId,
         color: egui::Color32,
+        shift_held: bool,
+        altgr_held: bool,
     ) -> LabelGalleys {
-        let (symbol, text) = self.generate_tap_galleys(ui, key, rect, font, color);
+        let (symbol, text) =
+            self.generate_tap_galleys(ui, key, rect, font, color, shift_held, altgr_held);
         let behavior = self.generate_strip_galley(ui, key.behavior.as_ref(), rect, color);
         let argument = self.generate_strip_galley(ui, key.argument.as_ref(), rect, color);
         LabelGalleys {
@@ -106,6 +109,7 @@ impl OverlayApp {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn generate_tap_galleys(
         &self,
         ui: &egui::Ui,
@@ -113,6 +117,8 @@ impl OverlayApp {
         rect: egui::Rect,
         font: egui::FontId,
         color: egui::Color32,
+        shift_held: bool,
+        altgr_held: bool,
     ) -> (
         Option<std::sync::Arc<egui::Galley>>,
         Option<std::sync::Arc<egui::Galley>>,
@@ -122,20 +128,40 @@ impl OverlayApp {
         let create_galley =
             |text: String, fid: egui::FontId| ui.painter().layout_no_wrap(text, fid, color);
         let max_width = rect.width() * 0.85;
+        let single_legend = self.settings.active.single_legend_mode;
 
-        // Stack the shifted character above the base character.
-        if let Some(shifted) = &key.shifted {
-            let text = if key.tap.is_empty() {
-                shifted.clone()
+        // Single-legend + live preview: while Shift/AltGr is physically held
+        // somewhere on the keyboard, show what THIS key would produce under
+        // that modifier instead of its plain tap — flat, no stacking
+        // (single-legend mode never stacks).
+        if single_legend && self.settings.active.live_shift_altgr_preview {
+            let live = if shift_held {
+                key.shifted.as_ref()
+            } else if altgr_held {
+                key.altgr.as_ref()
             } else {
-                format!("{}\n{}", shifted, key.tap.full)
+                None
             };
-            let mut job = egui::text::LayoutJob {
-                halign: egui::Align::Center,
-                ..Default::default()
-            };
-            job.append(&text, 0.0, egui::TextFormat::simple(font, color));
-            return (None, Some(ui.painter().layout_job(job)));
+            if let Some(text) = live {
+                return (None, Some(create_galley(text.clone(), font)));
+            }
+        }
+
+        // Default (dual-legend): stack the shifted character above the base character.
+        if !single_legend {
+            if let Some(shifted) = &key.shifted {
+                let text = if key.tap.is_empty() {
+                    shifted.clone()
+                } else {
+                    format!("{}\n{}", shifted, key.tap.full)
+                };
+                let mut job = egui::text::LayoutJob {
+                    halign: egui::Align::Center,
+                    ..Default::default()
+                };
+                job.append(&text, 0.0, egui::TextFormat::simple(font, color));
+                return (None, Some(ui.painter().layout_job(job)));
+            }
         }
 
         if let Some(symbol) = &key.symbol {
@@ -439,6 +465,13 @@ impl OverlayApp {
                 ui.allocate_space(egui::vec2(layout_size.0 * size, layout_size.1 * size));
                 let window_pos = ui.min_rect().min;
 
+                // Only walk the matrix for live modifier state when the preview can
+                // actually use it — same reasoning as `is_key_pressed` elsewhere.
+                let live_preview_active = self.settings.active.single_legend_mode
+                    && self.settings.active.live_shift_altgr_preview;
+                let shift_held = live_preview_active && keyboard.is_shift_held();
+                let altgr_held = live_preview_active && keyboard.is_altgr_held();
+
                 for key in &keyboard.layout.keys {
                     let (effective_layer, is_background_key) =
                         keyboard.get_effective_key_layer(key.row, key.col);
@@ -506,8 +539,15 @@ impl OverlayApp {
                     );
 
                     let font = egui::FontId::proportional(0.25 * size * font_scale);
-                    let galleys =
-                        self.generate_key_label_galleys(ui, &layout_key, rect, font, font_color);
+                    let galleys = self.generate_key_label_galleys(
+                        ui,
+                        &layout_key,
+                        rect,
+                        font,
+                        font_color,
+                        shift_held,
+                        altgr_held,
+                    );
 
                     // Draw the legend strips: behavior on top, argument on bottom. They
                     // overlay the key's edges (the primary label stays centered) and are
