@@ -3,15 +3,63 @@ use crate::layout_key::{KeycodeKind, Label, LayoutKey};
 use zmk_studio_api::Keycode;
 
 pub fn keycode_to_layout_key(keycode: &Keycode) -> LayoutKey {
-    if let Some(key) = keycode_label(keycode) {
-        return key;
-    }
+    let mut key = match keycode_label(keycode) {
+        Some(key) => key,
+        None => LayoutKey {
+            tap: Label::new(keycode.to_name()),
+            ..Default::default()
+        },
+    };
 
-    let name = keycode.to_name();
-    LayoutKey {
-        tap: Label::new(name),
-        ..Default::default()
+    // ZMK's Keycode packs (usage page << 16 | usage id); only the Keyboard
+    // page (0x0007) is meaningful to os_layout (same numeric space QMK's
+    // Keycode already uses there).
+    let raw = *keycode as u32;
+    if raw >> 16 == 0x0007 {
+        let usage = (raw & 0xFFFF) as u16;
+
+        // A-Z move between layouts too (QWERTZ swaps Y/Z, AZERTY reshuffles
+        // most of the row) — uppercase `tap` override, `shifted` untouched
+        // (letters intentionally show no separate legend).
+        if (0x04..=0x1D).contains(&usage) {
+            if let Some(os_base) = crate::os_layout::base_char(usage) {
+                key.tap = Label::new(os_base.to_uppercase());
+            }
+            return key;
+        }
+
+        // Only *replace* a symbol/digit key's legend (the static table set
+        // both `tap` and `shifted` there) — space, Enter/etc. would
+        // otherwise pick up a real but useless character from the OS,
+        // including literal control chars, so they were deliberately left
+        // `None` and should stay that way.
+        if key.shifted.is_some() {
+            let os_base = crate::os_layout::base_char(usage);
+            let os_shifted = crate::os_layout::shifted_char(usage);
+
+            if let Some(base) = &os_base {
+                // A layout can put a genuine letter on a US-symbol slot
+                // (German semicolon-slot -> "ö") — render it like a letter
+                // (uppercase, no stacked legend) ONLY if Shift does nothing
+                // but capitalize it. AZERTY puts accented letters on the
+                // *digit row* instead ("2" key -> base "é", shifted "2") —
+                // there Shift produces a genuinely different, useful
+                // character, so keep the normal Base+Shifted stack there.
+                let is_mere_capitalization = base.chars().next().is_some_and(char::is_alphabetic)
+                    && os_shifted.as_deref().is_none_or(|s| s == base.to_uppercase());
+                if is_mere_capitalization {
+                    key.tap = Label::new(base.to_uppercase());
+                    key.shifted = None;
+                    return key;
+                }
+                key.tap = Label::new(base.clone());
+            }
+            if let Some(shifted) = os_shifted {
+                key.shifted = Some(shifted);
+            }
+        }
     }
+    key
 }
 
 fn keycode_label(keycode: &Keycode) -> Option<LayoutKey> {
@@ -235,7 +283,11 @@ fn keycode_label(keycode: &Keycode) -> Option<LayoutKey> {
             ..Default::default()
         }),
         Keycode::NON_US_HASH => Some(LayoutKey {
-            tap: Label::new("NUHS"),
+            tap: Label::new(
+                crate::os_layout::base_char((Keycode::NON_US_HASH as u32 & 0xFFFF) as u16)
+                    .unwrap_or_else(|| "NUHS".to_string()),
+            ),
+            shifted: crate::os_layout::shifted_char((Keycode::NON_US_HASH as u32 & 0xFFFF) as u16),
             ..Default::default()
         }),
         Keycode::SEMICOLON => Some(LayoutKey {
@@ -906,7 +958,13 @@ fn keycode_label(keycode: &Keycode) -> Option<LayoutKey> {
             ..Default::default()
         }),
         Keycode::NON_US_BACKSLASH => Some(LayoutKey {
-            tap: Label::new("NUBS"),
+            tap: Label::new(
+                crate::os_layout::base_char((Keycode::NON_US_BACKSLASH as u32 & 0xFFFF) as u16)
+                    .unwrap_or_else(|| "NUBS".to_string()),
+            ),
+            shifted: crate::os_layout::shifted_char(
+                (Keycode::NON_US_BACKSLASH as u32 & 0xFFFF) as u16,
+            ),
             ..Default::default()
         }),
         Keycode::C_POWER => Some(LayoutKey {

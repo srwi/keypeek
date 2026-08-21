@@ -6,6 +6,59 @@ use qmk_via_api::keycodes::Keycode;
 pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
     let keycode = Keycode::try_from(keycode_bytes).ok()?;
 
+    let mut key = get_basic_layout_key_static(keycode)?;
+
+    // A-Z (HID usage 0x04..=0x1D) move between layouts too — QWERTZ swaps
+    // Y and Z with QWERTY, AZERTY reshuffles nearly the whole row — so their
+    // `tap` needs the same OS override, just uppercased and without ever
+    // touching `shifted` (letters intentionally show no separate legend).
+    if (0x04..=0x1D).contains(&keycode_bytes) {
+        if let Some(os_base) = crate::os_layout::base_char(keycode_bytes) {
+            key.tap = Label::new(os_base.to_uppercase());
+        }
+        return Some(key);
+    }
+
+    // Only *replace* a symbol/digit key's legend (the static table set both
+    // `tap` and `shifted` there) — space, Enter, etc. return a real (if
+    // useless) character from the OS query too (control chars for
+    // Enter/Backspace/Delete included), but were deliberately `None` here,
+    // and should stay that way. Without this gate every plain key's `tap`
+    // — e.g. KC_SLASH's US "/" — would otherwise never localize (German's
+    // base char there is "-"), even though `shifted` already did.
+    if key.shifted.is_some() {
+        // QMK's basic keycodes are numerically USB HID usage IDs, so this is
+        // the same call ZMK's HidUsage-based lookup would make. Prefer the
+        // OS's actual active layout over the static (US-only) table above
+        // when it's available (Linux/Wayland only for now — see `os_layout`).
+        let os_base = crate::os_layout::base_char(keycode_bytes);
+        let os_shifted = crate::os_layout::shifted_char(keycode_bytes);
+
+        if let Some(base) = &os_base {
+            // A layout can put a genuine letter on a US-symbol slot (German
+            // semicolon-slot -> "ö") — render it like a letter (uppercase,
+            // no stacked legend) ONLY if Shift does nothing but capitalize
+            // it. AZERTY puts accented letters on the *digit row* instead
+            // ("2" key -> base "é", shifted "2") — there Shift produces a
+            // genuinely different, useful character, so that case must keep
+            // the normal Base+Shifted stack instead of swallowing the digit.
+            let is_mere_capitalization = base.chars().next().is_some_and(char::is_alphabetic)
+                && os_shifted.as_deref().is_none_or(|s| s == base.to_uppercase());
+            if is_mere_capitalization {
+                key.tap = Label::new(base.to_uppercase());
+                key.shifted = None;
+                return Some(key);
+            }
+            key.tap = Label::new(base.clone());
+        }
+        if let Some(shifted) = os_shifted {
+            key.shifted = Some(shifted);
+        }
+    }
+    Some(key)
+}
+
+fn get_basic_layout_key_static(keycode: Keycode) -> Option<LayoutKey> {
     match keycode {
         Keycode::KC_NO => Some(LayoutKey {
             tap: Label::new(""),
@@ -223,6 +276,7 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
         }),
         Keycode::KC_NONUS_HASH => Some(LayoutKey {
             tap: Label::new("NUHS"),
+            shifted: Some("NUHS".to_string()),
             ..Default::default()
         }),
         Keycode::KC_SEMICOLON => Some(LayoutKey {
@@ -440,6 +494,7 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
         }),
         Keycode::KC_NONUS_BACKSLASH => Some(LayoutKey {
             tap: Label::new("NUBS"),
+            shifted: Some("NUBS".to_string()),
             ..Default::default()
         }),
         Keycode::KC_APPLICATION => Some(LayoutKey {
@@ -2911,5 +2966,60 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             tap: Label::with_short("User 31", "Usr31"),
             ..Default::default()
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::get_basic_layout_key;
+    use qmk_via_api::keycodes::Keycode;
+
+    // Regression guard: a plain digit key must always carry its shifted
+    // legend (at minimum the static US-layout fallback), never collapse to
+    // just `tap` with no `shifted` at all.
+    #[test]
+    fn plain_digit_keeps_a_shifted_legend() {
+        let key = get_basic_layout_key(Keycode::KC_8 as u16).unwrap();
+        eprintln!("KC_8 -> tap={:?} shifted={:?}", key.tap.full, key.shifted);
+        assert!(key.shifted.is_some());
+    }
+
+    // Regression guard: `tap` must localize too, not just `shifted` — on a
+    // German layout KC_SLASH's base char is "-", not the US "/". Layout-
+    // dependent (needs a live German Wayland session), like the os_layout
+    // live tests — not part of the normal `cargo test` run.
+    #[test]
+    #[ignore]
+    fn symbol_key_tap_localizes_too() {
+        let key = get_basic_layout_key(Keycode::KC_SLASH as u16).unwrap();
+        eprintln!("KC_SLASH -> tap={:?} shifted={:?}", key.tap.full, key.shifted);
+        assert_eq!(key.tap.full, "-");
+        assert_eq!(key.shifted.as_deref(), Some("_"));
+    }
+
+    // Regression guard: AZERTY puts accented letters on the digit row
+    // ("2" key -> base "é", shifted "2") — Shift there is a genuinely
+    // different, useful character, so it must NOT collapse into a flat
+    // letter display like German ö/Ö does. Needs a live French session.
+    #[test]
+    #[ignore]
+    fn azerty_digit_row_keeps_the_shifted_digit() {
+        let key = get_basic_layout_key(Keycode::KC_2 as u16).unwrap();
+        eprintln!("KC_2 -> tap={:?} shifted={:?}", key.tap.full, key.shifted);
+        assert_eq!(key.tap.full, "é");
+        assert_eq!(key.shifted.as_deref(), Some("2"));
+    }
+
+    // Regression guard: letters must localize too (QWERTZ swaps Y/Z,
+    // AZERTY swaps A/Q) — uppercased, `shifted` stays untouched (None).
+    // Expects a US/German-family layout (AZERTY legitimately gives "Q"
+    // here), so needs a matching live session.
+    #[test]
+    #[ignore]
+    fn letter_key_tap_localizes_and_uppercases() {
+        let key = get_basic_layout_key(Keycode::KC_A as u16).unwrap();
+        eprintln!("KC_A -> tap={:?} shifted={:?}", key.tap.full, key.shifted);
+        assert_eq!(key.tap.full, "A");
+        assert!(key.shifted.is_none());
     }
 }

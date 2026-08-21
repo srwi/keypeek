@@ -30,6 +30,7 @@ zmk-studio-api = { version = "0.5.1", features = ["serial", "ble"] }
 gtk = "0.18"
 winit = { version = "0.30.13", features = ["x11"] }
 egui_glow = "0.34.3"
+xkbcommon = "0.9"
 smithay-client-toolkit = "0.20.0"
 wayland-client = "0.31.14"
 wayland-egl = "0.32.11"
