@@ -7,30 +7,38 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
     match keycode_bytes {
         input_bytes if QK_MODS.contains(&input_bytes) => {
             let keycode = input_bytes & 0xff;
-            let inner_key = get_basic_layout_key(keycode);
+            let mods = (input_bytes & 0x1f00) >> 8;
 
-            let input_modifiers = input_bytes & 0x1f00;
-
-            // A lone shift over a key with a shifted legend just yields that character
-            // (S(KC_1) == "!"), so render it as a plain key. Compare only the low nibble.
-            if (input_modifiers >> 8) & 0x0f == MOD_LSFT {
-                if let Some(shifted) = inner_key.as_ref().and_then(|k| k.shifted.clone()) {
+            // Shift and AltGr (right-Alt bound as the layout's Level-3 shift)
+            // are the only mods that actually change the output character —
+            // resolve that directly and show it flat, no badge, same as a
+            // plain key's shifted legend needs no badge either. Everything
+            // else (Ctrl/Gui/plain Alt, or AltGr on a layout with no Level 3)
+            // never produces text, so fall through to base key + mod badge.
+            const RIGHT: u16 = 0x10; // QMK's "right-hand variant" bit.
+            let text_modifier = if mods & !RIGHT == MOD_LSFT {
+                Some(crate::os_layout::Modifier::Shift)
+            } else if mods == (MOD_LALT | RIGHT) {
+                Some(crate::os_layout::Modifier::AltGr)
+            } else {
+                None
+            };
+            if let Some(m) = text_modifier {
+                if let Some(text) = crate::os_layout::resolve(keycode, m) {
                     return Some(LayoutKey {
-                        tap: Label::new(shifted),
+                        tap: Label::new(text),
                         ..Default::default()
                     });
                 }
             }
 
-            // Otherwise show the key in `tap` and the modifiers as glyphs in the argument
-            // strip (e.g. "C" + "⎈" for LCTL(KC_C)).
-            let (tap, symbol) = match inner_key {
+            let (tap, symbol) = match get_basic_layout_key(keycode) {
                 Some(k) => (k.tap, k.symbol),
                 None => (Label::new(format!("0x{:02X}", keycode)), None),
             };
             Some(LayoutKey {
                 tap,
-                argument: Some(mod_value_to_label(input_modifiers >> 8)),
+                argument: Some(mod_value_to_label(mods)),
                 symbol,
                 kind: KeycodeKind::Modifier,
                 ..Default::default()
@@ -111,4 +119,23 @@ fn mod_value_to_label(mod_mask: u16) -> Label {
         mod_mask & MOD_LALT != 0,
         mod_mask & MOD_LGUI != 0,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::get_advanced_layout_key;
+
+    // A Shift-wrapped key (LSFT(KC_0) == (MOD_LSFT << 8) | KC_0) shows the
+    // flat resulting character, not a Base+Shifted stack, and no badge —
+    // the modifier's effect IS the output, so there's nothing left to badge.
+    // The expected char is German-specific (AZERTY's digit row shifts
+    // symbols<->digits entirely differently) — needs a live German session.
+    #[test]
+    #[ignore]
+    fn shift_wrapped_key_shows_flat_result_no_badge() {
+        let key = get_advanced_layout_key(0x0227).unwrap();
+        assert_eq!(key.tap.full, "=");
+        assert!(key.shifted.is_none());
+        assert!(key.argument.is_none());
+    }
 }
