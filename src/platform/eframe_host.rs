@@ -87,6 +87,38 @@ fn show_on_all_spaces(cc: &eframe::CreationContext<'_>) {
     }
 }
 
+// DWM only composites a window's per-pixel alpha when asked to via
+// `DwmEnableBlurBehindWindow`; otherwise the overlay can render opaque (black)
+// on some systems. See https://github.com/srwi/keypeek/issues/16
+#[cfg(target_os = "windows")]
+fn enable_dwm_per_pixel_alpha(cc: &eframe::CreationContext<'_>) {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use windows::core::BOOL;
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Graphics::Dwm::{
+        DwmEnableBlurBehindWindow, DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND,
+    };
+    use windows::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject, HGDIOBJ};
+
+    let Ok(RawWindowHandle::Win32(handle)) = cc.window_handle().map(|h| h.as_raw()) else {
+        return;
+    };
+    let hwnd = HWND(handle.hwnd.get() as *mut core::ffi::c_void);
+
+    // A region covering the whole window makes DWM honor the window's alpha.
+    let region = unsafe { CreateRectRgn(0, 0, -1, -1) };
+    let blur_behind = DWM_BLURBEHIND {
+        dwFlags: DWM_BB_ENABLE | DWM_BB_BLURREGION,
+        fEnable: BOOL(1),
+        hRgnBlur: region,
+        ..Default::default()
+    };
+    unsafe {
+        let _ = DwmEnableBlurBehindWindow(hwnd, &blur_behind);
+        let _ = DeleteObject(HGDIOBJ(region.0));
+    }
+}
+
 // `force_x11` (Linux only) makes winit use XWayland instead of native Wayland,
 // since Mutter honors always-on-top for XWayland clients but not native ones.
 pub fn run(
@@ -159,6 +191,8 @@ fn run_inner(
         Box::new(move |cc| {
             #[cfg(target_os = "macos")]
             show_on_all_spaces(cc);
+            #[cfg(target_os = "windows")]
+            enable_dwm_per_pixel_alpha(cc);
 
             egui_extras::install_image_loaders(&cc.egui_ctx);
 
