@@ -61,6 +61,47 @@ impl FromStr for WindowPosition {
     }
 }
 
+/// How a key with more than one legend (a native Shift pair, or an OS-resolved
+/// RAlt result) is displayed. Only three of the four combinations a
+/// bool-pair would allow are meaningful, hence an enum rather than two bools.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum LegendMode {
+    /// Base+Shifted stacked, as always (default).
+    Stacked,
+    /// Only what a plain tap produces.
+    Single,
+    /// Single, plus live-swap to the Shift/RAlt result while that modifier
+    /// is physically held anywhere on the keyboard.
+    SingleLive,
+}
+
+impl fmt::Display for LegendMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                LegendMode::Stacked => "Stacked",
+                LegendMode::Single => "Single",
+                LegendMode::SingleLive => "Single + live preview",
+            }
+        )
+    }
+}
+
+impl FromStr for LegendMode {
+    type Err = ParseSettingsError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "Stacked" => Ok(LegendMode::Stacked),
+            "Single" => Ok(LegendMode::Single),
+            "Single + live preview" => Ok(LegendMode::SingleLive),
+            _ => Err(ParseSettingsError),
+        }
+    }
+}
+
 /// Bitmask of the layers the overlay is shown for; bit `i` corresponds to layer `i`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct LayerMask(u32);
@@ -193,12 +234,7 @@ pub struct Settings {
     pub margin: u32,
     pub visible_layers: LayerMask,
     pub theme: ThemeSettings,
-    /// Show only what a plain tap produces instead of stacking Base+Shifted.
-    pub single_legend_mode: bool,
-    /// Only meaningful with `single_legend_mode` on: swap a key's shown
-    /// character to its Shift/AltGr result for as long as that modifier is
-    /// physically held.
-    pub live_shift_altgr_preview: bool,
+    pub legend_mode: LegendMode,
 }
 
 impl Default for Settings {
@@ -212,8 +248,7 @@ impl Default for Settings {
             margin: 10,
             visible_layers: LayerMask::ALL,
             theme: ThemeSettings::default(),
-            single_legend_mode: false,
-            live_shift_altgr_preview: false,
+            legend_mode: LegendMode::Stacked,
         }
     }
 }
@@ -266,11 +301,7 @@ impl Settings {
             section.set(format!("layer_color_{index}"), color.to_string());
         }
         section.set("font_color", self.theme.font_color.to_string());
-        section.set("single_legend_mode", self.single_legend_mode.to_string());
-        section.set(
-            "live_shift_altgr_preview",
-            self.live_shift_altgr_preview.to_string(),
-        );
+        section.set("legend_mode", self.legend_mode.to_string());
         conf.write_to_file(path)
     }
 
@@ -319,11 +350,10 @@ impl Settings {
                 s.theme.font_color = parsed;
             }
         }
-        if let Some(val) = section.get("single_legend_mode") {
-            s.single_legend_mode = val.parse().unwrap_or(s.single_legend_mode);
-        }
-        if let Some(val) = section.get("live_shift_altgr_preview") {
-            s.live_shift_altgr_preview = val.parse().unwrap_or(s.live_shift_altgr_preview);
+        if let Some(val) = section.get("legend_mode") {
+            if let Ok(parsed) = val.parse() {
+                s.legend_mode = parsed;
+            }
         }
         Some(s)
     }

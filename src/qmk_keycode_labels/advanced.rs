@@ -9,16 +9,16 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             let keycode = input_bytes & 0xff;
             let mods = (input_bytes & 0x1f00) >> 8;
 
-            // Shift and AltGr (right-Alt bound as the layout's Level-3 shift)
+            // Shift and RAlt (bound as AltGr on the layout's Level-3 shift)
             // are the only mods that actually change the output character —
             // resolve that directly and show it flat, no badge, same as a
             // plain key's shifted legend needs no badge either. Everything
-            // else (Ctrl/Gui/plain Alt, or AltGr on a layout with no Level 3)
+            // else (Ctrl/Gui/plain Alt, or RAlt on a layout with no Level 3)
             // never produces text, so fall through to base key + mod badge.
             let text_modifier = if mods & !MOD_RIGHT_FLAG == MOD_LSFT {
                 Some(crate::os_layout::Modifier::Shift)
             } else if mods == (MOD_LALT | MOD_RIGHT_FLAG) {
-                Some(crate::os_layout::Modifier::AltGr)
+                Some(crate::os_layout::Modifier::RAlt)
             } else {
                 None
             };
@@ -57,7 +57,7 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
                 behavior: Some(behavior_names::MOD_TAP.label()),
                 argument: Some(mod_label),
                 shifted: tap_key.shifted,
-                altgr: tap_key.altgr,
+                ralt: tap_key.ralt,
                 mod_mask: Some(to_held_mod_mask(mod_value)),
                 symbol: tap_key.symbol,
                 kind: KeycodeKind::Basic,
@@ -103,7 +103,7 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             Some(LayoutKey {
                 tap: tap_key.tap,
                 shifted: tap_key.shifted,
-                altgr: tap_key.altgr,
+                ralt: tap_key.ralt,
                 symbol: tap_key.symbol,
                 kind: KeycodeKind::Modifier,
                 layer_ref: Some(layer as u8),

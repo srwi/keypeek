@@ -281,9 +281,9 @@ impl Keyboard {
         self.matrix.lock().unwrap().is_pressed(row, col)
     }
 
-    /// `HELD_MOD_SHIFT`/`HELD_MOD_ALTGR` bits OR'd over every currently-pressed
+    /// `HELD_MOD_SHIFT`/`HELD_MOD_RALT` bits OR'd over every currently-pressed
     /// key's `mod_mask` — used by the Single-legend live preview to detect
-    /// "Shift/AltGr is held right now", regardless of which specific key
+    /// "Shift/RAlt is held right now", regardless of which specific key
     /// (dedicated Shift key, home-row mod, One-Shot-Mod, ...) is holding it.
     fn held_mod_mask(&self) -> u16 {
         self.layout.keys.iter().fold(0u16, |acc, key| {
@@ -303,8 +303,8 @@ impl Keyboard {
         self.held_mod_mask() & crate::layout_key::HELD_MOD_SHIFT != 0
     }
 
-    pub fn is_altgr_held(&self) -> bool {
-        self.held_mod_mask() & crate::layout_key::HELD_MOD_ALTGR != 0
+    pub fn is_ralt_held(&self) -> bool {
+        self.held_mod_mask() & crate::layout_key::HELD_MOD_RALT != 0
     }
 
     pub fn set_timeout(&self, timeout: i64) {

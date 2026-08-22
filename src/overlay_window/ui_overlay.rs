@@ -2,7 +2,7 @@ use super::state::{KeyColors, LabelGalleys};
 use super::OverlayApp;
 use crate::keyboard::Keyboard;
 use crate::layout_key::{BorderStyle, KeycodeKind, LayoutKey};
-use crate::settings::ThemeColor;
+use crate::settings::{LegendMode, ThemeColor};
 use egui::Window;
 
 /// Rotate `point` clockwise around `origin` by `angle_rad` (screen space, y-down).
@@ -95,10 +95,10 @@ impl OverlayApp {
         font: egui::FontId,
         color: egui::Color32,
         shift_held: bool,
-        altgr_held: bool,
+        ralt_held: bool,
     ) -> LabelGalleys {
         let (symbol, text) =
-            self.generate_tap_galleys(ui, key, rect, font, color, shift_held, altgr_held);
+            self.generate_tap_galleys(ui, key, rect, font, color, shift_held, ralt_held);
         let behavior = self.generate_strip_galley(ui, key.behavior.as_ref(), rect, color);
         let argument = self.generate_strip_galley(ui, key.argument.as_ref(), rect, color);
         LabelGalleys {
@@ -118,7 +118,7 @@ impl OverlayApp {
         font: egui::FontId,
         color: egui::Color32,
         shift_held: bool,
-        altgr_held: bool,
+        ralt_held: bool,
     ) -> (
         Option<std::sync::Arc<egui::Galley>>,
         Option<std::sync::Arc<egui::Galley>>,
@@ -128,17 +128,18 @@ impl OverlayApp {
         let create_galley =
             |text: String, fid: egui::FontId| ui.painter().layout_no_wrap(text, fid, color);
         let max_width = rect.width() * 0.85;
-        let single_legend = self.settings.active.single_legend_mode;
+        let legend_mode = self.settings.active.legend_mode;
+        let single_legend = legend_mode != LegendMode::Stacked;
 
-        // Single-legend + live preview: while Shift/AltGr is physically held
+        // Single + live preview: while Shift/RAlt is physically held
         // somewhere on the keyboard, show what THIS key would produce under
         // that modifier instead of its plain tap — flat, no stacking
         // (single-legend mode never stacks).
-        if single_legend && self.settings.active.live_shift_altgr_preview {
+        if legend_mode == LegendMode::SingleLive {
             let live = if shift_held {
                 key.shifted.as_ref()
-            } else if altgr_held {
-                key.altgr.as_ref()
+            } else if ralt_held {
+                key.ralt.as_ref()
             } else {
                 None
             };
@@ -467,10 +468,10 @@ impl OverlayApp {
 
                 // Only walk the matrix for live modifier state when the preview can
                 // actually use it — same reasoning as `is_key_pressed` elsewhere.
-                let live_preview_active = self.settings.active.single_legend_mode
-                    && self.settings.active.live_shift_altgr_preview;
+                let live_preview_active =
+                    self.settings.active.legend_mode == LegendMode::SingleLive;
                 let shift_held = live_preview_active && keyboard.is_shift_held();
-                let altgr_held = live_preview_active && keyboard.is_altgr_held();
+                let ralt_held = live_preview_active && keyboard.is_ralt_held();
 
                 for key in &keyboard.layout.keys {
                     let (effective_layer, is_background_key) =
@@ -546,7 +547,7 @@ impl OverlayApp {
                         font,
                         font_color,
                         shift_held,
-                        altgr_held,
+                        ralt_held,
                     );
 
                     // Draw the legend strips: behavior on top, argument on bottom. They

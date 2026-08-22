@@ -169,14 +169,14 @@ pub fn resolve(hid_usage: u16, modifier: Modifier) -> Option<String> {
     )?;
 
     let mut probe = xkb::State::new(&keymap);
-    if let Modifier::Shift | Modifier::AltGr = modifier {
+    if let Modifier::Shift | Modifier::RAlt = modifier {
         let mod_name = match modifier {
             Modifier::Shift => xkb::MOD_NAME_SHIFT,
-            // "Mod5" is what AltGr is bound to on virtually every layout
+            // "Mod5" is what RAlt/AltGr is bound to on virtually every layout
             // that has one; ISO_Level3_Shift/"AltGr" are the same virtual
             // modifier under different names depending on the keymap's
             // rules.
-            Modifier::AltGr => "Mod5",
+            Modifier::RAlt => "Mod5",
             Modifier::Base => unreachable!(),
         };
         let idx = keymap.mod_get_index(mod_name);

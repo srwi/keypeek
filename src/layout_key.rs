@@ -64,7 +64,7 @@ pub mod modifier_symbols {
     }
 
     /// Build a standalone modifier key: glyph modifiers go in `symbol`, text names in `tap`.
-    /// `mod_mask` is `HELD_MOD_SHIFT`/`HELD_MOD_ALTGR` (or 0) — see their doc comments.
+    /// `mod_mask` is `HELD_MOD_SHIFT`/`HELD_MOD_RALT` (or 0) — see their doc comments.
     pub fn modifier_key(m: &ModName, mod_mask: u16) -> super::LayoutKey {
         if is_glyph(m.full) {
             super::LayoutKey {
@@ -201,9 +201,9 @@ impl Label {
 /// detect "Shift is currently held" independent of which protocol the
 /// keyboard speaks.
 pub const HELD_MOD_SHIFT: u16 = 0x01;
-/// Same as `HELD_MOD_SHIFT`, but for AltGr (right-Alt bound as the layout's
-/// Level-3 shift).
-pub const HELD_MOD_ALTGR: u16 = 0x02;
+/// Same as `HELD_MOD_SHIFT`, but for RAlt (bound as AltGr — the layout's
+/// Level-3 shift — on layouts that define one).
+pub const HELD_MOD_RALT: u16 = 0x02;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LayoutKey {
@@ -221,12 +221,12 @@ pub struct LayoutKey {
     /// Single-legend mode, what's shown instead of `tap` while Shift is held.
     pub shifted: Option<String>,
 
-    /// AltGr-shifted character (e.g. "[" for a German AltGr+8) — same role as
-    /// `shifted` but for AltGr. Only ever set alongside `shifted` (both come
+    /// RAlt-shifted character (e.g. "[" for a German RAlt/AltGr+8) — same role
+    /// as `shifted` but for RAlt. Only ever set alongside `shifted` (both come
     /// from the same OS-layout resolution pass over a symbol/digit key).
-    pub altgr: Option<String>,
+    pub ralt: Option<String>,
 
-    /// `HELD_MOD_SHIFT`/`HELD_MOD_ALTGR` bits (OR'd) this key contributes
+    /// `HELD_MOD_SHIFT`/`HELD_MOD_RALT` bits (OR'd) this key contributes
     /// while physically held — `None` for keys that aren't a modifier
     /// source. Read by the Single-legend live preview, ignored otherwise.
     pub mod_mask: Option<u16>,
@@ -251,7 +251,7 @@ impl Default for LayoutKey {
             behavior: None,
             argument: None,
             shifted: None,
-            altgr: None,
+            ralt: None,
             mod_mask: None,
             symbol: None,
             kind: KeycodeKind::Basic,
