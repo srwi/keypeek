@@ -201,8 +201,8 @@ impl Label {
 /// detect "Shift is currently held" independent of which protocol the
 /// keyboard speaks.
 pub const HELD_MOD_SHIFT: u16 = 0x01;
-/// Same as `HELD_MOD_SHIFT`, but for RAlt (bound as AltGr — the layout's
-/// Level-3 shift — on layouts that define one).
+/// Same as `HELD_MOD_SHIFT`, but for RAlt (the layout's Level-3 shift, on
+/// layouts that define one).
 pub const HELD_MOD_RALT: u16 = 0x02;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

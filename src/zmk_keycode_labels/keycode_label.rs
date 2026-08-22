@@ -787,7 +787,7 @@ fn keycode_label(keycode: &Keycode) -> Option<LayoutKey> {
         Keycode::LEFT_COMMAND => Some(modifier_key(&MOD_GUI, 0)),
         Keycode::RIGHT_CONTROL => Some(modifier_key(&MOD_CTRL, 0)),
         Keycode::RIGHT_SHIFT => Some(modifier_key(&MOD_SHIFT, crate::layout_key::HELD_MOD_SHIFT)),
-        // RAlt is bound as AltGr on layouts that define one.
+        // RAlt is the layout's Level-3 shift, on layouts that define one.
         Keycode::RIGHT_ALT => Some(modifier_key(&MOD_ALT, crate::layout_key::HELD_MOD_RALT)),
         Keycode::RIGHT_COMMAND => Some(modifier_key(&MOD_GUI, 0)),
         Keycode::K_PLAY_PAUSE => Some(LayoutKey {

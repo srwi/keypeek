@@ -975,7 +975,7 @@ fn get_basic_layout_key_static(keycode: Keycode) -> Option<LayoutKey> {
         Keycode::KC_LEFT_GUI => Some(modifier_key(&MOD_GUI, 0)),
         Keycode::KC_RIGHT_CTRL => Some(modifier_key(&MOD_CTRL, 0)),
         Keycode::KC_RIGHT_SHIFT => Some(modifier_key(&MOD_SHIFT, crate::layout_key::HELD_MOD_SHIFT)),
-        // RAlt is bound as AltGr on layouts that define one.
+        // RAlt is the layout's Level-3 shift, on layouts that define one.
         Keycode::KC_RIGHT_ALT => Some(modifier_key(&MOD_ALT, crate::layout_key::HELD_MOD_RALT)),
         Keycode::KC_RIGHT_GUI => Some(modifier_key(&MOD_GUI, 0)),
         Keycode::QK_SWAP_HANDS_TOGGLE => Some(LayoutKey {

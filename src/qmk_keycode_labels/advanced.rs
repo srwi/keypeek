@@ -9,12 +9,13 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             let keycode = input_bytes & 0xff;
             let mods = (input_bytes & 0x1f00) >> 8;
 
-            // Shift and RAlt (bound as AltGr on the layout's Level-3 shift)
-            // are the only mods that actually change the output character —
-            // resolve that directly and show it flat, no badge, same as a
-            // plain key's shifted legend needs no badge either. Everything
-            // else (Ctrl/Gui/plain Alt, or RAlt on a layout with no Level 3)
-            // never produces text, so fall through to base key + mod badge.
+            // Shift and RAlt (the layout's Level-3 shift, on layouts that
+            // define one) are the only mods that actually change the output
+            // character — resolve that directly and show it flat, no badge,
+            // same as a plain key's shifted legend needs no badge either.
+            // Everything else (Ctrl/Gui/plain Alt, or RAlt on a layout with
+            // no Level 3) never produces text, so fall through to base key +
+            // mod badge.
             let text_modifier = if mods & !MOD_RIGHT_FLAG == MOD_LSFT {
                 Some(crate::os_layout::Modifier::Shift)
             } else if mods == (MOD_LALT | MOD_RIGHT_FLAG) {

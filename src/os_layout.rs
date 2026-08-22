@@ -15,7 +15,7 @@ pub enum Modifier {
     /// No modifier held — the plain/base character.
     Base,
     Shift,
-    /// Right-Alt, bound as AltGr (ISO Level 3 Shift) on layouts that define one.
+    /// Right-Alt (ISO Level 3 Shift on layouts that define one).
     RAlt,
 }
 
