@@ -12,11 +12,16 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             // Shift and RAlt (the layout's Level-3 shift, where defined) are
             // the only mods that change the output character. Resolve that
             // directly and show it flat, with no badge. Everything else
-            // (Ctrl/Gui/plain Alt, or RAlt without a Level 3) produces no
-            // text; fall through to base key + mod badge.
+            // (Ctrl/Gui, or RAlt without a Level 3) produces no text; fall
+            // through to base key + mod badge. On macOS plain Alt is Option,
+            // a Level-3 shift in its own right, so it counts as one too.
             let text_modifier = if mods & !MOD_RIGHT_FLAG == MOD_LSFT {
                 Some(crate::os_layout::Modifier::Shift)
-            } else if mods == (MOD_LALT | MOD_RIGHT_FLAG) {
+            } else if mods == (MOD_LALT | MOD_RIGHT_FLAG)
+                // On macOS plain (left) Alt is Option, which produces
+                // characters on its own, so resolve it flat as well.
+                || (cfg!(target_os = "macos") && mods & !MOD_RIGHT_FLAG == MOD_LALT)
+            {
                 Some(crate::os_layout::Modifier::RAlt)
             } else {
                 None

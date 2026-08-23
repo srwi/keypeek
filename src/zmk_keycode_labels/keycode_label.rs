@@ -790,7 +790,10 @@ fn keycode_label(keycode: &Keycode) -> Option<LayoutKey> {
         }),
         Keycode::LEFT_CONTROL => Some(modifier_key(&MOD_CTRL, 0)),
         Keycode::LEFT_SHIFT => Some(modifier_key(&MOD_SHIFT, crate::layout_key::HELD_MOD_SHIFT)),
-        Keycode::LEFT_ALT => Some(modifier_key(&MOD_ALT, 0)),
+        Keycode::LEFT_ALT => Some(modifier_key(
+            &MOD_ALT,
+            crate::layout_key::PLAIN_ALT_MOD_MASK,
+        )),
         Keycode::LEFT_COMMAND => Some(modifier_key(&MOD_GUI, 0)),
         Keycode::RIGHT_CONTROL => Some(modifier_key(&MOD_CTRL, 0)),
         Keycode::RIGHT_SHIFT => Some(modifier_key(&MOD_SHIFT, crate::layout_key::HELD_MOD_SHIFT)),

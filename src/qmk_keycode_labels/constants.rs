@@ -31,7 +31,9 @@ pub fn to_held_mod_mask(mods: u16) -> u16 {
     if mods & MOD_LSFT != 0 {
         mask |= crate::layout_key::HELD_MOD_SHIFT;
     }
-    if mods & MOD_LALT != 0 && mods & MOD_RIGHT_FLAG != 0 {
+    // On macOS left Alt is Option, the same Level-3 shift as RAlt, so it
+    // triggers the live preview too. Elsewhere only the right-hand flag does.
+    if mods & MOD_LALT != 0 && (cfg!(target_os = "macos") || mods & MOD_RIGHT_FLAG != 0) {
         mask |= crate::layout_key::HELD_MOD_RALT;
     }
     mask
@@ -46,8 +48,16 @@ mod tests {
     fn to_held_mod_mask_distinguishes_shift_and_ralt() {
         assert_eq!(to_held_mod_mask(MOD_LSFT), HELD_MOD_SHIFT);
         assert_eq!(to_held_mod_mask(MOD_LALT | MOD_RIGHT_FLAG), HELD_MOD_RALT);
-        // Plain (left) Alt is not RAlt; the right-hand flag makes it so.
-        assert_eq!(to_held_mod_mask(MOD_LALT), 0);
+        // Plain (left) Alt is not RAlt on Windows/Linux; the right-hand flag
+        // makes it so. On macOS it is Option, the same Level-3 shift.
+        #[cfg(not(target_os = "macos"))]
+        {
+            assert_eq!(to_held_mod_mask(MOD_LALT), 0);
+        }
+        #[cfg(target_os = "macos")]
+        {
+            assert_eq!(to_held_mod_mask(MOD_LALT), HELD_MOD_RALT);
+        }
         assert_eq!(to_held_mod_mask(MOD_LCTL), 0);
         assert_eq!(to_held_mod_mask(MOD_LGUI), 0);
     }

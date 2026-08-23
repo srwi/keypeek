@@ -971,7 +971,10 @@ fn get_basic_layout_key_static(keycode: Keycode) -> Option<LayoutKey> {
         }),
         Keycode::KC_LEFT_CTRL => Some(modifier_key(&MOD_CTRL, 0)),
         Keycode::KC_LEFT_SHIFT => Some(modifier_key(&MOD_SHIFT, crate::layout_key::HELD_MOD_SHIFT)),
-        Keycode::KC_LEFT_ALT => Some(modifier_key(&MOD_ALT, 0)),
+        Keycode::KC_LEFT_ALT => Some(modifier_key(
+            &MOD_ALT,
+            crate::layout_key::PLAIN_ALT_MOD_MASK,
+        )),
         Keycode::KC_LEFT_GUI => Some(modifier_key(&MOD_GUI, 0)),
         Keycode::KC_RIGHT_CTRL => Some(modifier_key(&MOD_CTRL, 0)),
         Keycode::KC_RIGHT_SHIFT => {
@@ -2996,7 +2999,8 @@ mod tests {
 
     // Regression guard: the Single-legend live preview keys off `mod_mask`.
     // Shift keys must carry HELD_MOD_SHIFT, RAlt HELD_MOD_RALT, and
-    // everything else (plain Ctrl/Gui/LAlt) must carry neither.
+    // everything else (plain Ctrl/Gui) must carry neither. Plain LAlt only
+    // carries it on macOS, where it is Option (a Level-3 shift).
     #[test]
     fn standalone_modifier_keys_carry_the_right_mod_mask() {
         use crate::layout_key::{HELD_MOD_RALT, HELD_MOD_SHIFT};
@@ -3008,7 +3012,14 @@ mod tests {
         assert_eq!(ralt.mod_mask, Some(HELD_MOD_RALT));
 
         let lalt = get_basic_layout_key(Keycode::KC_LEFT_ALT as u16).unwrap();
-        assert_eq!(lalt.mod_mask, None);
+        #[cfg(not(target_os = "macos"))]
+        {
+            assert_eq!(lalt.mod_mask, None);
+        }
+        #[cfg(target_os = "macos")]
+        {
+            assert_eq!(lalt.mod_mask, Some(HELD_MOD_RALT));
+        }
 
         let ctrl = get_basic_layout_key(Keycode::KC_LEFT_CTRL as u16).unwrap();
         assert_eq!(ctrl.mod_mask, None);

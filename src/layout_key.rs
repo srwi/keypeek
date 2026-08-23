@@ -204,6 +204,16 @@ pub const HELD_MOD_SHIFT: u16 = 0x01;
 /// layouts that define one).
 pub const HELD_MOD_RALT: u16 = 0x02;
 
+/// `mod_mask` contribution of a *plain* Alt key (`KC_LALT` / ZMK `LEFT_ALT`).
+/// On macOS both left and right Alt are Option, a genuine text-producing
+/// Level-3 shift (⌥G → ©), so plain Alt triggers the live RAlt preview too.
+/// On Windows/Linux plain Alt is purely a shortcut modifier and contributes
+/// nothing.
+#[cfg(target_os = "macos")]
+pub const PLAIN_ALT_MOD_MASK: u16 = HELD_MOD_RALT;
+#[cfg(not(target_os = "macos"))]
+pub const PLAIN_ALT_MOD_MASK: u16 = 0;
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LayoutKey {
     /// Primary key action label (e.g., "A", "Enter", "L1")
