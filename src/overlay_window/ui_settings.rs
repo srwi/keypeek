@@ -333,19 +333,24 @@ impl OverlayApp {
                     const HALF: usize = LAYER_LABELS.len() / 2;
 
                     let draft = &mut self.settings.draft;
-                    Self::theme_color_entry(ui, "Font color", &mut draft.theme.font_color);
 
                     let mut layer_row = |ui: &mut egui::Ui, layer: usize| {
+                        let (label, mask) = if layer == ThemeSettings::OTHER_LAYERS as usize {
+                            ("Other layers", !0 << layer)
+                        } else {
+                            (LAYER_LABELS[layer], 1 << layer)
+                        };
                         Self::theme_layer_entry(
                             ui,
-                            LAYER_LABELS[layer],
+                            label,
                             &mut draft.theme.layer_colors[layer],
                             &mut draft.visible_layers,
-                            1 << layer,
+                            mask,
                         );
                     };
                     ui.columns(2, |columns| {
                         columns[0].vertical(|ui| {
+                            Self::theme_color_entry(ui, "Font color", &mut draft.theme.font_color);
                             for layer in 0..HALF {
                                 layer_row(ui, layer);
                             }
@@ -354,16 +359,9 @@ impl OverlayApp {
                             for layer in HALF..LAYER_LABELS.len() {
                                 layer_row(ui, layer);
                             }
+                            layer_row(ui, ThemeSettings::OTHER_LAYERS as usize);
                         });
                     });
-
-                    Self::theme_layer_entry(
-                        ui,
-                        "Other layers",
-                        &mut draft.theme.layer_colors[ThemeSettings::OTHER_LAYERS as usize],
-                        &mut draft.visible_layers,
-                        !0 << ThemeSettings::OTHER_LAYERS,
-                    );
                 });
 
                 ui.add_space(8.0);
