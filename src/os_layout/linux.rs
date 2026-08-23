@@ -109,11 +109,11 @@ impl Xkb {
         let mask = match modifier {
             Modifier::Base => 0,
             Modifier::Shift => 1 << self.mod_index(xkb::MOD_NAME_SHIFT)?,
-            // RAlt binds to "Mod5" on almost every layout that has one.
-            Modifier::RAlt => 1 << self.mod_index("Mod5")?,
-            // RAlt plus Shift.
+            // Level-3 shift: virtual modifier name, "Mod5" as fallback.
+            Modifier::RAlt => 1 << self.level3_index()?,
+            // Level-3 shift plus Shift.
             Modifier::ShiftRAlt => {
-                (1 << self.mod_index(xkb::MOD_NAME_SHIFT)?) | (1 << self.mod_index("Mod5")?)
+                (1 << self.mod_index(xkb::MOD_NAME_SHIFT)?) | (1 << self.level3_index()?)
             }
         };
         // Always write the whole mask so a previous probe's Shift/RAlt does
@@ -126,6 +126,14 @@ impl Xkb {
     fn mod_index(&self, name: &str) -> Option<u32> {
         let idx = self._keymap.mod_get_index(name);
         (idx != xkb::MOD_INVALID).then_some(idx)
+    }
+
+    /// Index of the Level-3 shift modifier (RAlt). Layouts define it as the
+    /// virtual "LevelThree"; a keymap lacking that falls back to the real
+    /// "Mod5" alias it is conventionally mapped to.
+    fn level3_index(&self) -> Option<u32> {
+        self.mod_index("LevelThree")
+            .or_else(|| self.mod_index("Mod5"))
     }
 }
 
