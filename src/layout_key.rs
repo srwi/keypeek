@@ -64,7 +64,7 @@ pub mod modifier_symbols {
     }
 
     /// Build a standalone modifier key: glyph modifiers go in `symbol`, text names in `tap`.
-    /// `mod_mask` is `HELD_MOD_SHIFT`/`HELD_MOD_RALT` (or 0) — see their doc comments.
+    /// `mod_mask` is `HELD_MOD_SHIFT`/`HELD_MOD_RALT`, or 0. See their doc comments.
     pub fn modifier_key(m: &ModName, mod_mask: u16) -> super::LayoutKey {
         if is_glyph(m.full) {
             super::LayoutKey {
@@ -151,17 +151,17 @@ pub enum KeycodeKind {
 
 /// Outline style hinting *how* a layer activates: persistent changes get a solid
 /// outline, sticky/one-shot get a striped one, momentary keeps the default border.
-/// Behaviors that activate a layer the same way share a style — intentionally.
+/// Behaviors that activate a layer the same way deliberately share a style.
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub enum BorderStyle {
     /// Default thin border: plain keys, non-layer behaviors, and momentary/while-held
     /// layer keys (momentary / layer-tap / layer-mod / layer-tap-toggle).
     #[default]
     None,
-    /// Solid, medium-width outline — layer change persists after release
+    /// Solid, medium-width outline: the layer change persists after release
     /// (toggle / to-layer / default-layer).
     Solid,
-    /// Striped outline — layer active for one keypress, then reverts
+    /// Striped outline: the layer stays active for one keypress, then reverts
     /// (one-shot / sticky layer).
     Dashed,
 }
@@ -195,11 +195,10 @@ impl Label {
     }
 }
 
-/// `mod_mask` bit for a key that acts as a live Shift source while held
-/// (a standalone Shift key, or the hold side of a Mod-Tap/One-Shot-Mod/
-/// Layer-Mod carrying Shift) — used by the Single-legend live preview to
-/// detect "Shift is currently held" independent of which protocol the
-/// keyboard speaks.
+/// `mod_mask` bit for a key that acts as a live Shift source while held (a
+/// standalone Shift key, or the hold side of a Shift-carrying Mod-Tap/
+/// One-Shot-Mod/Layer-Mod). The Single-legend live preview uses it to detect
+/// "Shift is currently held", independent of the keyboard's protocol.
 pub const HELD_MOD_SHIFT: u16 = 0x01;
 /// Same as `HELD_MOD_SHIFT`, but for RAlt (the layout's Level-3 shift, on
 /// layouts that define one).
@@ -221,13 +220,13 @@ pub struct LayoutKey {
     /// Single-legend mode, what's shown instead of `tap` while Shift is held.
     pub shifted: Option<String>,
 
-    /// RAlt-shifted character (e.g. "[" for a German RAlt+8) — same role
+    /// RAlt-shifted character (e.g. "[" for a German RAlt+8), same role
     /// as `shifted` but for RAlt. Only ever set alongside `shifted` (both come
     /// from the same OS-layout resolution pass over a symbol/digit key).
     pub ralt: Option<String>,
 
     /// `HELD_MOD_SHIFT`/`HELD_MOD_RALT` bits (OR'd) this key contributes
-    /// while physically held — `None` for keys that aren't a modifier
+    /// while physically held. `None` for keys that are not a modifier
     /// source. Read by the Single-legend live preview, ignored otherwise.
     pub mod_mask: Option<u16>,
 

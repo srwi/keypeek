@@ -132,9 +132,9 @@ impl OverlayApp {
         let legend_mode = self.settings.active.legend_mode;
         let single_legend = legend_mode != LegendMode::Stacked;
 
-        // Single + live preview: while Shift/RAlt is physically held
-        // somewhere on the keyboard, show what THIS key would produce under
-        // that modifier instead of its plain tap — flat, no stacking
+        // Live preview: while Shift/RAlt is physically held somewhere on the
+        // keyboard, show what THIS key would produce under that modifier
+        // instead of its plain tap. It shows flat, with no stacking
         // (single-legend mode never stacks).
         if legend_mode == LegendMode::SingleLive {
             let live = if shift_held {
@@ -468,7 +468,7 @@ impl OverlayApp {
                 let window_pos = ui.min_rect().min;
 
                 // Only walk the matrix for live modifier state when the preview can
-                // actually use it — same reasoning as `is_key_pressed` elsewhere.
+                // actually use it; same reasoning as `is_key_pressed` elsewhere.
                 let live_preview_active =
                     self.settings.active.legend_mode == LegendMode::SingleLive;
                 let shift_held = live_preview_active && keyboard.is_shift_held();

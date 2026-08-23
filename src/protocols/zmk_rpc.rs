@@ -143,7 +143,7 @@ fn add_timeout_hint(error: Box<dyn Error>, transport_name: &str) -> Box<dyn Erro
         return format!(
             "The keyboard did not respond over {transport_name}. \
              ZMK disables this interface while the keyboard sends its keystrokes \
-             elsewhere — switch the keyboard's output to {transport_name} \
+             elsewhere. Switch the keyboard's output to {transport_name} \
              (the \u{2018}&out\u{2019} key) and try again."
         )
         .into();

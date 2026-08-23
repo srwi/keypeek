@@ -46,7 +46,7 @@ mod tests {
     fn to_held_mod_mask_distinguishes_shift_and_ralt() {
         assert_eq!(to_held_mod_mask(MOD_LSFT), HELD_MOD_SHIFT);
         assert_eq!(to_held_mod_mask(MOD_LALT | MOD_RIGHT_FLAG), HELD_MOD_RALT);
-        // Plain (left) Alt is not RAlt — the right-hand flag is what makes it so.
+        // Plain (left) Alt is not RAlt; the right-hand flag makes it so.
         assert_eq!(to_held_mod_mask(MOD_LALT), 0);
         assert_eq!(to_held_mod_mask(MOD_LCTL), 0);
         assert_eq!(to_held_mod_mask(MOD_LGUI), 0);

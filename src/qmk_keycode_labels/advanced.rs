@@ -9,13 +9,11 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             let keycode = input_bytes & 0xff;
             let mods = (input_bytes & 0x1f00) >> 8;
 
-            // Shift and RAlt (the layout's Level-3 shift, on layouts that
-            // define one) are the only mods that actually change the output
-            // character — resolve that directly and show it flat, no badge,
-            // same as a plain key's shifted legend needs no badge either.
-            // Everything else (Ctrl/Gui/plain Alt, or RAlt on a layout with
-            // no Level 3) never produces text, so fall through to base key +
-            // mod badge.
+            // Shift and RAlt (the layout's Level-3 shift, where defined) are
+            // the only mods that change the output character. Resolve that
+            // directly and show it flat, with no badge. Everything else
+            // (Ctrl/Gui/plain Alt, or RAlt without a Level 3) produces no
+            // text; fall through to base key + mod badge.
             let text_modifier = if mods & !MOD_RIGHT_FLAG == MOD_LSFT {
                 Some(crate::os_layout::Modifier::Shift)
             } else if mods == (MOD_LALT | MOD_RIGHT_FLAG) {
@@ -130,11 +128,11 @@ fn mod_value_to_label(mod_mask: u16) -> Label {
 mod tests {
     use super::get_advanced_layout_key;
 
-    // A Shift-wrapped key (LSFT(KC_0) == (MOD_LSFT << 8) | KC_0) shows the
-    // flat resulting character, not a Base+Shifted stack, and no badge —
-    // the modifier's effect IS the output, so there's nothing left to badge.
-    // The expected char is German-specific (AZERTY's digit row shifts
-    // symbols<->digits entirely differently) — needs a live German session.
+    // A Shift-wrapped key (LSFT(KC_0)) shows the flat result character, not
+    // a Base+Shifted stack and no badge: the modifier's effect IS the output,
+    // so there is nothing left to badge. The expected char is German-specific
+    // (AZERTY shifts its digit row differently), so it needs a live German
+    // session.
     #[test]
     #[ignore]
     fn shift_wrapped_key_shows_flat_result_no_badge() {

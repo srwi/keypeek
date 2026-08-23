@@ -365,7 +365,7 @@ fn decode_mouse_xy(value: u32) -> (i16, i16) {
 }
 
 /// Build a pure layer-switch key: the target layer is the centered label and
-/// `border` is the sole indicator — no legend strips.
+/// `border` is the sole indicator; there are no legend strips.
 fn layer_layout_key(border: BorderStyle, layer_id: u32, layer_names: &[String]) -> LayoutKey {
     LayoutKey {
         tap: layer_arg_label(layer_names, layer_id),

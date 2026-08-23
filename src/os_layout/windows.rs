@@ -24,20 +24,17 @@ use super::Modifier;
 const UNMAPPED: u8 = 0xFF;
 
 /// USB HID Keyboard/Keypad usage ID -> Windows PS/2 (set 1) scan code.
-/// Scan codes are layout-independent physical positions. The alphanumeric
-/// block matches the kernel's evdev table, but the codes are different, thus
-/// this is its own table. 0xFF marks unmapped entries.
+/// Scan codes are layout-independent physical positions. The codes differ
+/// from evdev, thus this is its own table. 0xFF marks unmapped entries.
 ///
-/// NUHS (0x32) has the same scan code as BACKSLASH (0x31). The kernel's table
-/// also puts both at `KEY_BACKSLASH`. This is one physical key. ISO boards put
-/// it left of Return. ANSI boards put it above Return. NUBS (0x64) is an extra
-/// key on ISO boards. It gets its own scan code, the 102nd-key code.
+/// NUHS (0x32) shares a scan code with BACKSLASH (0x31): one physical key,
+/// left of Return on ISO boards, above Return on ANSI boards. NUBS (0x64) is
+/// the extra ISO key and gets the 102nd-key scan code.
 ///
-/// Extended keys are arrows, the navigation cluster, KP/, KP-Enter, and the
-/// right-hand modifiers. They need a two-byte scan code with the prefix `0xE0`.
-/// A `u8` cannot hold such a code. These keys produce no characters, thus the
-/// table does not map them. `resolve` returns `None`, and the caller keeps its
-/// static label.
+/// Extended keys (arrows, navigation cluster, KP/, KP-Enter, right-hand
+/// modifiers) need two-byte `0xE0`-prefixed scan codes that do not fit a
+/// `u8`, and they produce no characters. This table does not map them;
+/// `resolve` returns `None`, and the caller keeps its static label.
 #[rustfmt::skip]
 const HID_TO_SCAN: [u8; 256] = [
     // 0x00-0x0F  (0x00-0x03 unmapped) A B C D E F G H I J K L
@@ -69,10 +66,10 @@ const HID_TO_SCAN: [u8; 256] = [
     0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
 ];
 
-/// The foreground thread that actually receives input. `GetForegroundWindow`
-/// can return a host frame (UWP/Edge) whose thread has a stale layout.
-/// `GetGUIThreadInfo` with thread ID 0 returns the thread that receives the
-/// user input, which is the correct answer to "what would this key type now".
+/// The layout of the foreground input thread. `GetForegroundWindow` can
+/// return a host frame (UWP/Edge) whose thread holds a stale layout.
+/// `GetGUIThreadInfo` with thread ID 0 returns the thread that receives user
+/// input, which is what "what would this key type now" needs.
 fn foreground_hkl() -> HKL {
     unsafe {
         let mut gti = GUITHREADINFO {

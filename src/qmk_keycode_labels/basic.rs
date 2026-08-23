@@ -8,8 +8,8 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
 
     let mut key = get_basic_layout_key_static(keycode)?;
 
-    // A-Z (HID usage 0x04..=0x1D) move between layouts too — QWERTZ swaps
-    // Y and Z with QWERTY, AZERTY reshuffles nearly the whole row — so their
+    // A-Z (HID usage 0x04..=0x1D) move between layouts too: QWERTZ swaps
+    // Y and Z with QWERTY, and AZERTY reshuffles nearly the whole row. So
     // `tap` needs the same OS override, just uppercased and without ever
     // touching `shifted` (letters intentionally show no separate legend).
     if (0x04..=0x1D).contains(&keycode_bytes) {
@@ -17,35 +17,33 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             key.tap = Label::new(os_base.to_uppercase());
         }
         // Some letters carry an RAlt legend too (German RAlt+Q -> "@",
-        // +E -> "€") — needed for the Single-legend live preview, even
+        // +E -> "€"); needed for the Single-legend live preview, even
         // though Dual mode never shows it (letters get no stacked legend).
         key.ralt = crate::os_layout::ralt_char(keycode_bytes);
         return Some(key);
     }
 
-    // Only *replace* a symbol/digit key's legend (the static table set both
-    // `tap` and `shifted` there) — space, Enter, etc. return a real (if
-    // useless) character from the OS query too (control chars for
-    // Enter/Backspace/Delete included), but were deliberately `None` here,
-    // and should stay that way. Without this gate every plain key's `tap`
-    // — e.g. KC_SLASH's US "/" — would otherwise never localize (German's
-    // base char there is "-"), even though `shifted` already did.
+    // Only *replace* a symbol/digit key's legend; the static table set both
+    // `tap` and `shifted` there. Space, Enter, etc. also return a real but
+    // useless character from the OS query (control chars included), so they
+    // were deliberately left `None` and must stay that way. Without this
+    // gate a plain key's `tap` (for example KC_SLASH's US "/") would never
+    // localize, even though `shifted` already did.
     if key.shifted.is_some() {
         // QMK's basic keycodes are numerically USB HID usage IDs, so this is
         // the same call ZMK's HidUsage-based lookup would make. Prefer the
         // OS's actual active layout over the static (US-only) table above
-        // when it's available (Linux/Wayland only for now — see `os_layout`).
+        // when it is available (not on every platform yet; see `os_layout`).
         let os_base = crate::os_layout::base_char(keycode_bytes);
         let os_shifted = crate::os_layout::shifted_char(keycode_bytes);
 
         if let Some(base) = &os_base {
-            // A layout can put a genuine letter on a US-symbol slot (German
-            // semicolon-slot -> "ö") — render it like a letter (uppercase,
-            // no stacked legend) ONLY if Shift does nothing but capitalize
-            // it. AZERTY puts accented letters on the *digit row* instead
-            // ("2" key -> base "é", shifted "2") — there Shift produces a
-            // genuinely different, useful character, so that case must keep
-            // the normal Base+Shifted stack instead of swallowing the digit.
+            // A layout can put a real letter on a US-symbol slot (the German
+            // semicolon-slot -> "ö"). Render it like a letter (uppercase, no
+            // stacked legend) only if Shift does nothing but capitalize it.
+            // AZERTY puts accented letters on the digit row instead ("2" key
+            // -> base "é", shifted "2"). There Shift produces a different,
+            // useful character, so keep the normal Base+Shifted stack.
             let is_mere_capitalization = base.chars().next().is_some_and(char::is_alphabetic)
                 && os_shifted
                     .as_deref()
@@ -60,7 +58,7 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
         if let Some(shifted) = os_shifted {
             key.shifted = Some(shifted);
         }
-        // RAlt's result, for the Single-legend live preview — same
+        // RAlt's result, for the Single-legend live preview. Same
         // resolution pass, just a different modifier.
         key.ralt = crate::os_layout::ralt_char(keycode_bytes);
     }
@@ -2996,7 +2994,7 @@ mod tests {
         assert!(key.shifted.is_some());
     }
 
-    // Regression guard: the Single-legend live preview keys off `mod_mask` —
+    // Regression guard: the Single-legend live preview keys off `mod_mask`.
     // Shift keys must carry HELD_MOD_SHIFT, RAlt HELD_MOD_RALT, and
     // everything else (plain Ctrl/Gui/LAlt) must carry neither.
     #[test]
@@ -3016,10 +3014,10 @@ mod tests {
         assert_eq!(ctrl.mod_mask, None);
     }
 
-    // Regression guard: `tap` must localize too, not just `shifted` — on a
+    // Regression guard: `tap` must localize too, not just `shifted`. On a
     // German layout KC_SLASH's base char is "-", not the US "/". Layout-
     // dependent (needs a live German Wayland session), like the os_layout
-    // live tests — not part of the normal `cargo test` run.
+    // live tests, so it is not part of the normal `cargo test` run.
     #[test]
     #[ignore]
     fn symbol_key_tap_localizes_too() {
@@ -3033,7 +3031,7 @@ mod tests {
     }
 
     // Regression guard: AZERTY puts accented letters on the digit row
-    // ("2" key -> base "é", shifted "2") — Shift there is a genuinely
+    // ("2" key -> base "é", shifted "2"). Shift there is a genuinely
     // different, useful character, so it must NOT collapse into a flat
     // letter display like German ö/Ö does. Needs a live French session.
     #[test]
@@ -3046,7 +3044,7 @@ mod tests {
     }
 
     // Regression guard: letters must localize too (QWERTZ swaps Y/Z,
-    // AZERTY swaps A/Q) — uppercased, `shifted` stays untouched (None).
+    // AZERTY swaps A/Q). Uppercased; `shifted` stays untouched (None).
     // Expects a US/German-family layout (AZERTY legitimately gives "Q"
     // here), so needs a matching live session.
     #[test]
@@ -3059,7 +3057,7 @@ mod tests {
     }
 
     // Regression guard: some letters carry an RAlt legend too (German
-    // RAlt+Q -> "@") — needed for the Single-legend live preview even
+    // RAlt+Q -> "@"); needed for the Single-legend live preview even
     // though letters never show a stacked Dual-mode legend.
     #[test]
     #[ignore]

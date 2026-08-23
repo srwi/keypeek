@@ -9,13 +9,11 @@
 //! RAlt on macOS is the **Option** layer. Thus the third legend maps to the
 //! option modifier.
 //!
-//! The system reads the layout on one thread and translates with it on other
-//! threads. `TISGetInputSourceProperty` asserts that it runs on the main
-//! dispatch queue and stops the process otherwise, but keycap labels are
-//! resolved on the connection thread. Thus `init` copies the layout's `'uchr'`
-//! table and the hardware keyboard type on the main thread, and `resolve` uses
-//! those copies. `UCKeyTranslate` is a pure function over its inputs and has no
-//! such limit.
+//! `TISGetInputSourceProperty` must run on the main dispatch queue, but
+//! labels resolve on connection threads. Thus `init` copies the layout's
+//! `'uchr'` table and the hardware keyboard type on the main thread, and
+//! `resolve` works on those copies. `UCKeyTranslate` is a pure function over
+//! its inputs and has no such limit.
 
 use std::ffi::c_void;
 use std::sync::OnceLock;
@@ -74,8 +72,8 @@ const MOD_OPTION: u32 = 1 << 3;
 const K_UC_KEYBOARD_TYPE_ANSI: u32 = 0;
 
 /// Marks HID usages that this table does not map. The value cannot be `0`,
-/// because `0` is a real keycode (`kVK_ANSI_A`). A 0 marker silently dropped
-/// the A key. macOS virtual keycodes end at `0x7E`, thus `0xFF` is free.
+/// because `0` is a real keycode (`kVK_ANSI_A`); a 0 marker would hide it.
+/// macOS virtual keycodes end at `0x7E`, thus `0xFF` is free.
 const UNMAPPED: u8 = 0xFF;
 
 /// USB HID Keyboard/Keypad usage ID -> macOS virtual keycode (kVK_ANSI_* /
@@ -101,7 +99,7 @@ const HID_TO_VK: [u8; 256] = [
     0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
     // 0x60-0x6F  NUBS
     0xFF,0xFF,0xFF,0xFF,0x0A,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
-    // 0x70-0xDF  (media/function keys — not used for character resolution)
+    // 0x70-0xDF  (media/function keys, not used for character resolution)
     0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
     0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
     0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,

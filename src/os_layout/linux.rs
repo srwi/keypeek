@@ -77,9 +77,8 @@ const HID_TO_EVDEV: [u8; 256] = [
     150,158,159,128,136,177,178,176,142,152,173,140,  0,  0,  0,  0,
 ];
 
-/// A parsed XKB keymap plus a reusable probe `State` over it. Legends resolve
-/// one call at a time through the same state, so building it once per keymap
-/// instead of once per call saves work. Both types wrap raw C pointers and are
+/// A parsed XKB keymap with a reusable probe `State`. One state per keymap is
+/// cheaper than one per resolve call. Both types wrap raw C pointers and are
 /// `!Send`, thus they live in thread-local storage.
 struct Xkb {
     // Keeps the state's parent alive; the state holds only a raw pointer.
@@ -244,11 +243,10 @@ const WL_SEAT_VERSION: u32 = 7;
 const KEYMAP_WAIT_ATTEMPTS: usize = 20;
 const KEYMAP_WAIT_INTERVAL_MS: u64 = 25;
 
-/// Key labels are resolved one time per connect, not every frame. Losing the
-/// startup race against the connect handshake would stick for the whole
-/// session, thus the bounded wait instead of an instant give-up. A caller
-/// pays the full wait at most one time. After that, the shared state answers
-/// instantly.
+/// Waits up to 500 ms for the compositor's first keymap delivery. Labels are
+/// resolved one time per connect, so a lost startup race against the connect
+/// handshake would otherwise stay visible for the whole session. After the
+/// first delivery, the shared state answers instantly.
 fn wait_for_keymap_text() -> Option<String> {
     let shared = shared_state();
     for _ in 0..KEYMAP_WAIT_ATTEMPTS {
@@ -279,11 +277,9 @@ fn resolve_wayland(hid_usage: u16, modifier: Modifier) -> Option<String> {
 }
 
 thread_local! {
-    // Holds the last Wayland keymap that this thread parsed, next to the text
-    // it came from. Parsing is expensive, and one connection thread resolves
-    // the legends of many keys. A matching text thus reuses the parsed
-    // keymap and its probe state. A runtime layout change delivers different
-    // text and replaces the entry.
+    // Per-thread cache of the last parsed Wayland keymap, keyed by its text.
+    // Parsing is expensive, and one thread resolves many legends. New text
+    // from a runtime layout change replaces the entry.
     static PARSED_KEYMAP: RefCell<Option<(String, Xkb)>> = const { RefCell::new(None) };
 }
 

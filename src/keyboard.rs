@@ -281,10 +281,10 @@ impl Keyboard {
         self.matrix.lock().unwrap().is_pressed(row, col)
     }
 
-    /// `HELD_MOD_SHIFT`/`HELD_MOD_RALT` bits OR'd over every currently-pressed
-    /// key's `mod_mask` — used by the Single-legend live preview to detect
-    /// "Shift/RAlt is held right now", regardless of which specific key
-    /// (dedicated Shift key, home-row mod, One-Shot-Mod, ...) is holding it.
+    /// `HELD_MOD_SHIFT`/`HELD_MOD_RALT` bits OR'd over every pressed key's
+    /// `mod_mask`. The Single-legend live preview uses this to detect "Shift/
+    /// RAlt is held right now", no matter which key holds it (dedicated key,
+    /// home-row mod, One-Shot-Mod, ...).
     fn held_mod_mask(&self) -> u16 {
         self.layout.keys.iter().fold(0u16, |acc, key| {
             if !self.is_key_pressed(key.row, key.col) {

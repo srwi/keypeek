@@ -62,8 +62,8 @@ impl FromStr for WindowPosition {
 }
 
 /// How a key with more than one legend (a native Shift pair, or an OS-resolved
-/// RAlt result) is displayed. Only three of the four combinations a
-/// bool-pair would allow are meaningful, hence an enum rather than two bools.
+/// RAlt result) is displayed. An enum, not two bools: only three of the four
+/// combinations are meaningful.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum LegendMode {
     /// Base+Shifted stacked, as always (default).
