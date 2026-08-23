@@ -16,7 +16,7 @@ egui = "0.34.3"
 eframe = { version = "0.34.3", features = ["glow"] }
 egui_extras = { version = "0.34.3", features = ["all_loaders"] }
 qmk-via-api = { version = "0.8.0" }
-hidapi = "2.6.5"
+hidapi = { version = "2.6.5", features = ["macos-shared-device"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 egui-phosphor = "0.12.0"
