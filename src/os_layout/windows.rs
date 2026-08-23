@@ -102,6 +102,12 @@ fn char_for(hkl: HKL, vk: u32, scan: u32, modifier: Modifier) -> Option<String> 
                 state[VK_CONTROL.0 as usize] = 0x80;
                 state[VK_MENU.0 as usize] = 0x80;
             }
+            // AltGr plus Shift.
+            Modifier::ShiftRAlt => {
+                state[VK_CONTROL.0 as usize] = 0x80;
+                state[VK_MENU.0 as usize] = 0x80;
+                state[VK_SHIFT.0 as usize] = 0x80;
+            }
         }
         let mut buf = [0u16; 4];
         // Flag 0x4 = KEYBOARD_STATE_NOT_CHANGED: this call must not change the

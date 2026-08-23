@@ -119,6 +119,7 @@ fn translate(layout: &[u8], keyboard_type: u32, vk: u16, modifier: Modifier) -> 
             Modifier::Base => 0,
             Modifier::Shift => MOD_SHIFT,
             Modifier::RAlt => MOD_OPTION,
+            Modifier::ShiftRAlt => MOD_SHIFT | MOD_OPTION,
         };
         let mut dead_key_state: u32 = 0;
         let mut chars = [0u16; 4];

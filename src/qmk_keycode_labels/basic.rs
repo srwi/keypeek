@@ -20,6 +20,7 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
         // +E -> "€"); needed for the Single-legend live preview, even
         // though Dual mode never shows it (letters get no stacked legend).
         key.ralt = crate::os_layout::ralt_char(keycode_bytes);
+        key.ralt_shifted = crate::os_layout::ralt_shifted_char(keycode_bytes);
         return Some(key);
     }
 
@@ -59,8 +60,10 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             key.shifted = Some(shifted);
         }
         // RAlt's result, for the Single-legend live preview. Same
-        // resolution pass, just a different modifier.
+        // resolution pass, just a different modifier; the Shift+RAlt
+        // result comes from the same pass too.
         key.ralt = crate::os_layout::ralt_char(keycode_bytes);
+        key.ralt_shifted = crate::os_layout::ralt_shifted_char(keycode_bytes);
     }
     Some(key)
 }
@@ -3076,5 +3079,25 @@ mod tests {
         let key = get_basic_layout_key(Keycode::KC_Q as u16).unwrap();
         eprintln!("KC_Q -> tap={:?} ralt={:?}", key.tap.full, key.ralt);
         assert_eq!(key.ralt.as_deref(), Some("@"));
+    }
+
+    // Regression guard: keys carrying an RAlt legend may also carry a
+    // Shift+RAlt one, needed for the live preview when both mods are held.
+    // The two always resolve in the same pass, so a Shift+RAlt legend
+    // without an RAlt one would be inconsistent. Layout-dependent (needs a
+    // live session whose layout defines Shift+RAlt characters, e.g. German).
+    #[test]
+    #[ignore]
+    fn ralt_shifted_never_appears_without_ralt() {
+        for usage in [Keycode::KC_Q as u16, Keycode::KC_8 as u16] {
+            let key = get_basic_layout_key(usage).unwrap();
+            eprintln!(
+                "usage {usage:#04x} -> ralt={:?} ralt_shifted={:?}",
+                key.ralt, key.ralt_shifted
+            );
+            if key.ralt_shifted.is_some() {
+                assert!(key.ralt.is_some());
+            }
+        }
     }
 }

@@ -235,6 +235,11 @@ pub struct LayoutKey {
     /// from the same OS-layout resolution pass over a symbol/digit key).
     pub ralt: Option<String>,
 
+    /// Character produced under Shift+RAlt (e.g. "ˇ" for a German
+    /// RAlt+Shift+9), same role as `ralt` but with Shift additionally held.
+    /// Only set alongside `ralt`, from the same resolution pass.
+    pub ralt_shifted: Option<String>,
+
     /// `HELD_MOD_SHIFT`/`HELD_MOD_RALT` bits (OR'd) this key contributes
     /// while physically held. `None` for keys that are not a modifier
     /// source. Read by the Single-legend live preview, ignored otherwise.
@@ -261,6 +266,7 @@ impl Default for LayoutKey {
             argument: None,
             shifted: None,
             ralt: None,
+            ralt_shifted: None,
             mod_mask: None,
             symbol: None,
             kind: KeycodeKind::Basic,

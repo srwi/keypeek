@@ -16,6 +16,8 @@ pub enum Modifier {
     Shift,
     /// Right-Alt (ISO Level 3 Shift on layouts that define one).
     RAlt,
+    /// Shift + Right-Alt held together.
+    ShiftRAlt,
 }
 
 #[cfg(target_os = "linux")]
@@ -63,6 +65,11 @@ pub fn shifted_char(hid_usage: u16) -> Option<String> {
 /// Helper for the `ralt` legend field.
 pub fn ralt_char(hid_usage: u16) -> Option<String> {
     resolve(hid_usage, Modifier::RAlt)
+}
+
+/// Helper for the `ralt_shifted` legend field.
+pub fn ralt_shifted_char(hid_usage: u16) -> Option<String> {
+    resolve(hid_usage, Modifier::ShiftRAlt)
 }
 
 /// Helper for the `tap` label on keys with no sensible US-layout placeholder

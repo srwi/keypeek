@@ -137,7 +137,12 @@ impl OverlayApp {
         // instead of its plain tap. It shows flat, with no stacking
         // (single-legend mode never stacks).
         if legend_mode == LegendMode::SingleLive {
-            let live = if shift_held {
+            let live = if shift_held && ralt_held {
+                // Both held: prefer the Shift+RAlt result where the layout
+                // defines one, otherwise fall back to the single-modifier
+                // results.
+                key.ralt_shifted.as_ref().or(key.shifted.as_ref())
+            } else if shift_held {
                 key.shifted.as_ref()
             } else if ralt_held {
                 key.ralt.as_ref()

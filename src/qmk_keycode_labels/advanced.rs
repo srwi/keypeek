@@ -9,20 +9,20 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             let keycode = input_bytes & 0xff;
             let mods = (input_bytes & 0x1f00) >> 8;
 
-            // Shift and RAlt (the layout's Level-3 shift, where defined) are
-            // the only mods that change the output character. Resolve that
-            // directly and show it flat, with no badge. Everything else
-            // (Ctrl/Gui, or RAlt without a Level 3) produces no text; fall
-            // through to base key + mod badge. On macOS plain Alt is Option,
-            // a Level-3 shift in its own right, so it counts as one too.
-            let text_modifier = if mods & !MOD_RIGHT_FLAG == MOD_LSFT {
+            // Shift and RAlt are the only mods that change the output
+            // character (RAlt as the layout's Level-3 shift, where defined).
+            // Resolve that directly and show it flat, with no badge.
+            // Everything else (Ctrl/Gui) produces no text; fall through to
+            // base key + mod badge. On macOS plain Alt is Option, a Level-3
+            // shift in its own right, so it counts as one too.
+            let plain = mods & !MOD_RIGHT_FLAG;
+            let alt_is_level3 = cfg!(target_os = "macos") || mods & MOD_RIGHT_FLAG != 0;
+            let text_modifier = if plain == MOD_LSFT {
                 Some(crate::os_layout::Modifier::Shift)
-            } else if mods == (MOD_LALT | MOD_RIGHT_FLAG)
-                // On macOS plain (left) Alt is Option, which produces
-                // characters on its own, so resolve it flat as well.
-                || (cfg!(target_os = "macos") && mods & !MOD_RIGHT_FLAG == MOD_LALT)
-            {
+            } else if plain == MOD_LALT && alt_is_level3 {
                 Some(crate::os_layout::Modifier::RAlt)
+            } else if plain == (MOD_LSFT | MOD_LALT) && alt_is_level3 {
+                Some(crate::os_layout::Modifier::ShiftRAlt)
             } else {
                 None
             };
@@ -62,6 +62,7 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
                 argument: Some(mod_label),
                 shifted: tap_key.shifted,
                 ralt: tap_key.ralt,
+                ralt_shifted: tap_key.ralt_shifted,
                 mod_mask: Some(to_held_mod_mask(mod_value)),
                 symbol: tap_key.symbol,
                 kind: KeycodeKind::Basic,
@@ -108,6 +109,7 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
                 tap: tap_key.tap,
                 shifted: tap_key.shifted,
                 ralt: tap_key.ralt,
+                ralt_shifted: tap_key.ralt_shifted,
                 symbol: tap_key.symbol,
                 kind: KeycodeKind::Modifier,
                 layer_ref: Some(layer as u8),

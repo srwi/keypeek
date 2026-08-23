@@ -36,6 +36,7 @@ pub fn keycode_to_layout_key(keycode: &Keycode) -> LayoutKey {
             // even though Dual mode never shows it (letters get no stacked
             // legend).
             key.ralt = crate::os_layout::ralt_char(usage);
+            key.ralt_shifted = crate::os_layout::ralt_shifted_char(usage);
             return key;
         }
 
@@ -70,8 +71,10 @@ pub fn keycode_to_layout_key(keycode: &Keycode) -> LayoutKey {
                 key.shifted = Some(shifted);
             }
             // RAlt's result, for the Single-legend live preview. Same
-            // resolution pass, just a different modifier.
+            // resolution pass, just a different modifier; the Shift+RAlt
+            // result comes from the same pass too.
             key.ralt = crate::os_layout::ralt_char(usage);
+            key.ralt_shifted = crate::os_layout::ralt_shifted_char(usage);
         }
     }
     key

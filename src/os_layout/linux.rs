@@ -111,6 +111,10 @@ impl Xkb {
             Modifier::Shift => 1 << self.mod_index(xkb::MOD_NAME_SHIFT)?,
             // RAlt binds to "Mod5" on almost every layout that has one.
             Modifier::RAlt => 1 << self.mod_index("Mod5")?,
+            // RAlt plus Shift.
+            Modifier::ShiftRAlt => {
+                (1 << self.mod_index(xkb::MOD_NAME_SHIFT)?) | (1 << self.mod_index("Mod5")?)
+            }
         };
         // Always write the whole mask so a previous probe's Shift/RAlt does
         // not leak into this one.
