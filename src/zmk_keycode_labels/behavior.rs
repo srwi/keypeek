@@ -264,7 +264,6 @@ fn hold_tap_layout_key(hold: HidUsage, tap: HidUsage, behavior: Option<Label>) -
         kind: KeycodeKind::Basic,
         layer_ref: None,
         border: BorderStyle::None,
-        ..Default::default()
     }
 }
 

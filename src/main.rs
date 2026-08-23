@@ -18,6 +18,7 @@ use device_discovery::discover_devices;
 use settings::Settings;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    os_layout::init();
     let settings = Settings::load().unwrap_or_default();
     let available_devices = discover_devices();
     platform::run(settings, available_devices)

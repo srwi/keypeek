@@ -2,6 +2,12 @@ use crate::layout_key::modifier_symbols::*;
 use crate::layout_key::{KeycodeKind, Label, LayoutKey};
 use zmk_studio_api::Keycode;
 
+/// Extracts the HID usage ID from ZMK's packed keycode
+/// (`usage page << 16 | usage`).
+fn usage_id(keycode: Keycode) -> u16 {
+    (keycode as u32 & 0xFFFF) as u16
+}
+
 pub fn keycode_to_layout_key(keycode: &Keycode) -> LayoutKey {
     let mut key = match keycode_label(keycode) {
         Some(key) => key,
@@ -25,11 +31,11 @@ pub fn keycode_to_layout_key(keycode: &Keycode) -> LayoutKey {
             if let Some(os_base) = crate::os_layout::base_char(usage) {
                 key.tap = Label::new(os_base.to_uppercase());
             }
-            // Some letters carry an RAlt legend too (German RAlt/AltGr+Q ->
+            // Some letters carry an RAlt legend too (German RAlt+Q ->
             // "@", +E -> "€") — needed for the Single-legend live preview,
             // even though Dual mode never shows it (letters get no stacked
             // legend).
-            key.ralt = crate::os_layout::resolve(usage, crate::os_layout::Modifier::RAlt);
+            key.ralt = crate::os_layout::ralt_char(usage);
             return key;
         }
 
@@ -51,7 +57,9 @@ pub fn keycode_to_layout_key(keycode: &Keycode) -> LayoutKey {
                 // there Shift produces a genuinely different, useful
                 // character, so keep the normal Base+Shifted stack there.
                 let is_mere_capitalization = base.chars().next().is_some_and(char::is_alphabetic)
-                    && os_shifted.as_deref().is_none_or(|s| s == base.to_uppercase());
+                    && os_shifted
+                        .as_deref()
+                        .is_none_or(|s| s == base.to_uppercase());
                 if is_mere_capitalization {
                     key.tap = Label::new(base.to_uppercase());
                     key.shifted = None;
@@ -64,7 +72,7 @@ pub fn keycode_to_layout_key(keycode: &Keycode) -> LayoutKey {
             }
             // RAlt's result, for the Single-legend live preview — same
             // resolution pass, just a different modifier.
-            key.ralt = crate::os_layout::resolve(usage, crate::os_layout::Modifier::RAlt);
+            key.ralt = crate::os_layout::ralt_char(usage);
         }
     }
     key
@@ -292,10 +300,10 @@ fn keycode_label(keycode: &Keycode) -> Option<LayoutKey> {
         }),
         Keycode::NON_US_HASH => Some(LayoutKey {
             tap: Label::new(
-                crate::os_layout::base_char((Keycode::NON_US_HASH as u32 & 0xFFFF) as u16)
+                crate::os_layout::base_char(usage_id(Keycode::NON_US_HASH))
                     .unwrap_or_else(|| "NUHS".to_string()),
             ),
-            shifted: crate::os_layout::shifted_char((Keycode::NON_US_HASH as u32 & 0xFFFF) as u16),
+            shifted: crate::os_layout::shifted_char(usage_id(Keycode::NON_US_HASH)),
             ..Default::default()
         }),
         Keycode::SEMICOLON => Some(LayoutKey {
@@ -968,12 +976,10 @@ fn keycode_label(keycode: &Keycode) -> Option<LayoutKey> {
         }),
         Keycode::NON_US_BACKSLASH => Some(LayoutKey {
             tap: Label::new(
-                crate::os_layout::base_char((Keycode::NON_US_BACKSLASH as u32 & 0xFFFF) as u16)
+                crate::os_layout::base_char(usage_id(Keycode::NON_US_BACKSLASH))
                     .unwrap_or_else(|| "NUBS".to_string()),
             ),
-            shifted: crate::os_layout::shifted_char(
-                (Keycode::NON_US_BACKSLASH as u32 & 0xFFFF) as u16,
-            ),
+            shifted: crate::os_layout::shifted_char(usage_id(Keycode::NON_US_BACKSLASH)),
             ..Default::default()
         }),
         Keycode::C_POWER => Some(LayoutKey {

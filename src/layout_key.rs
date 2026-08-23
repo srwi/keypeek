@@ -221,7 +221,7 @@ pub struct LayoutKey {
     /// Single-legend mode, what's shown instead of `tap` while Shift is held.
     pub shifted: Option<String>,
 
-    /// RAlt-shifted character (e.g. "[" for a German RAlt/AltGr+8) — same role
+    /// RAlt-shifted character (e.g. "[" for a German RAlt+8) — same role
     /// as `shifted` but for RAlt. Only ever set alongside `shifted` (both come
     /// from the same OS-layout resolution pass over a symbol/digit key).
     pub ralt: Option<String>,

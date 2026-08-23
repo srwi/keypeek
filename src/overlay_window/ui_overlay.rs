@@ -87,6 +87,7 @@ fn rotated_text_shape(
 }
 
 impl OverlayApp {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn generate_key_label_galleys(
         &self,
         ui: &egui::Ui,

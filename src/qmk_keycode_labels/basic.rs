@@ -16,10 +16,10 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
         if let Some(os_base) = crate::os_layout::base_char(keycode_bytes) {
             key.tap = Label::new(os_base.to_uppercase());
         }
-        // Some letters carry an RAlt legend too (German RAlt/AltGr+Q -> "@",
+        // Some letters carry an RAlt legend too (German RAlt+Q -> "@",
         // +E -> "€") — needed for the Single-legend live preview, even
         // though Dual mode never shows it (letters get no stacked legend).
-        key.ralt = crate::os_layout::resolve(keycode_bytes, crate::os_layout::Modifier::RAlt);
+        key.ralt = crate::os_layout::ralt_char(keycode_bytes);
         return Some(key);
     }
 
@@ -47,7 +47,9 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             // genuinely different, useful character, so that case must keep
             // the normal Base+Shifted stack instead of swallowing the digit.
             let is_mere_capitalization = base.chars().next().is_some_and(char::is_alphabetic)
-                && os_shifted.as_deref().is_none_or(|s| s == base.to_uppercase());
+                && os_shifted
+                    .as_deref()
+                    .is_none_or(|s| s == base.to_uppercase());
             if is_mere_capitalization {
                 key.tap = Label::new(base.to_uppercase());
                 key.shifted = None;
@@ -60,7 +62,7 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
         }
         // RAlt's result, for the Single-legend live preview — same
         // resolution pass, just a different modifier.
-        key.ralt = crate::os_layout::resolve(keycode_bytes, crate::os_layout::Modifier::RAlt);
+        key.ralt = crate::os_layout::ralt_char(keycode_bytes);
     }
     Some(key)
 }
@@ -974,7 +976,9 @@ fn get_basic_layout_key_static(keycode: Keycode) -> Option<LayoutKey> {
         Keycode::KC_LEFT_ALT => Some(modifier_key(&MOD_ALT, 0)),
         Keycode::KC_LEFT_GUI => Some(modifier_key(&MOD_GUI, 0)),
         Keycode::KC_RIGHT_CTRL => Some(modifier_key(&MOD_CTRL, 0)),
-        Keycode::KC_RIGHT_SHIFT => Some(modifier_key(&MOD_SHIFT, crate::layout_key::HELD_MOD_SHIFT)),
+        Keycode::KC_RIGHT_SHIFT => {
+            Some(modifier_key(&MOD_SHIFT, crate::layout_key::HELD_MOD_SHIFT))
+        }
         // RAlt is the layout's Level-3 shift, on layouts that define one.
         Keycode::KC_RIGHT_ALT => Some(modifier_key(&MOD_ALT, crate::layout_key::HELD_MOD_RALT)),
         Keycode::KC_RIGHT_GUI => Some(modifier_key(&MOD_GUI, 0)),
@@ -3020,7 +3024,10 @@ mod tests {
     #[ignore]
     fn symbol_key_tap_localizes_too() {
         let key = get_basic_layout_key(Keycode::KC_SLASH as u16).unwrap();
-        eprintln!("KC_SLASH -> tap={:?} shifted={:?}", key.tap.full, key.shifted);
+        eprintln!(
+            "KC_SLASH -> tap={:?} shifted={:?}",
+            key.tap.full, key.shifted
+        );
         assert_eq!(key.tap.full, "-");
         assert_eq!(key.shifted.as_deref(), Some("_"));
     }
@@ -3052,7 +3059,7 @@ mod tests {
     }
 
     // Regression guard: some letters carry an RAlt legend too (German
-    // RAlt/AltGr+Q -> "@") — needed for the Single-legend live preview even
+    // RAlt+Q -> "@") — needed for the Single-legend live preview even
     // though letters never show a stacked Dual-mode legend.
     #[test]
     #[ignore]

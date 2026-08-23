@@ -21,7 +21,7 @@ pub const MOD_LCTL: u16 = 0x01;
 pub const MOD_LSFT: u16 = 0x02;
 pub const MOD_LALT: u16 = 0x04;
 pub const MOD_LGUI: u16 = 0x08;
-/// QMK's "right-hand variant" bit, e.g. `MOD_LALT | MOD_RIGHT_FLAG` is RAlt/AltGr.
+/// QMK's "right-hand variant" bit, e.g. `MOD_LALT | MOD_RIGHT_FLAG` is RAlt.
 pub const MOD_RIGHT_FLAG: u16 = 0x10;
 
 /// Translate a raw QMK mod value (bits 0-4, `MOD_L*`/`MOD_RIGHT_FLAG`) into the
