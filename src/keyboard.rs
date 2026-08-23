@@ -281,6 +281,32 @@ impl Keyboard {
         self.matrix.lock().unwrap().is_pressed(row, col)
     }
 
+    /// `HELD_MOD_SHIFT`/`HELD_MOD_RALT` bits OR'd over every currently-pressed
+    /// key's `mod_mask` — used by the Single-legend live preview to detect
+    /// "Shift/RAlt is held right now", regardless of which specific key
+    /// (dedicated Shift key, home-row mod, One-Shot-Mod, ...) is holding it.
+    fn held_mod_mask(&self) -> u16 {
+        self.layout.keys.iter().fold(0u16, |acc, key| {
+            if !self.is_key_pressed(key.row, key.col) {
+                return acc;
+            }
+            let (effective_layer, _) = self.get_effective_key_layer(key.row, key.col);
+            let mask = self
+                .get_key(effective_layer as usize, key.row, key.col)
+                .and_then(|k| k.mod_mask)
+                .unwrap_or(0);
+            acc | mask
+        })
+    }
+
+    pub fn is_shift_held(&self) -> bool {
+        self.held_mod_mask() & crate::layout_key::HELD_MOD_SHIFT != 0
+    }
+
+    pub fn is_ralt_held(&self) -> bool {
+        self.held_mod_mask() & crate::layout_key::HELD_MOD_RALT != 0
+    }
+
     pub fn set_timeout(&self, timeout: i64) {
         self.timeout_ms.store(timeout, Ordering::Relaxed);
     }

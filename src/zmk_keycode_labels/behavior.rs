@@ -43,6 +43,8 @@ pub fn behavior_to_layout_key(behavior: &Behavior, layer_names: &[String]) -> Op
                 tap: key.tap,
                 behavior: Some(behavior_names::STICKY_KEY.label()),
                 shifted: key.shifted,
+                ralt: key.ralt,
+                mod_mask: key.mod_mask,
                 symbol: key.symbol,
                 kind: KeycodeKind::Modifier,
                 ..Default::default()
@@ -235,6 +237,7 @@ fn layer_tap_layout_key(layer_id: u32, tap: HidUsage, behavior: Option<Label>) -
         tap: tap_key.tap,
         behavior,
         shifted: tap_key.shifted,
+        ralt: tap_key.ralt,
         symbol: tap_key.symbol,
         kind: KeycodeKind::Modifier,
         layer_ref: Some(layer_id as u8),
@@ -255,10 +258,13 @@ fn hold_tap_layout_key(hold: HidUsage, tap: HidUsage, behavior: Option<Label>) -
         behavior,
         argument: Some(hold_label),
         shifted: tap_key.shifted,
+        ralt: tap_key.ralt,
+        mod_mask: hold_key.mod_mask,
         symbol: tap_key.symbol,
         kind: KeycodeKind::Basic,
         layer_ref: None,
         border: BorderStyle::None,
+        ..Default::default()
     }
 }
 

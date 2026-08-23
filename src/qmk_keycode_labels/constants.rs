@@ -21,3 +21,34 @@ pub const MOD_LCTL: u16 = 0x01;
 pub const MOD_LSFT: u16 = 0x02;
 pub const MOD_LALT: u16 = 0x04;
 pub const MOD_LGUI: u16 = 0x08;
+/// QMK's "right-hand variant" bit, e.g. `MOD_LALT | MOD_RIGHT_FLAG` is RAlt/AltGr.
+pub const MOD_RIGHT_FLAG: u16 = 0x10;
+
+/// Translate a raw QMK mod value (bits 0-4, `MOD_L*`/`MOD_RIGHT_FLAG`) into the
+/// protocol-agnostic `HELD_MOD_SHIFT`/`HELD_MOD_RALT` flags `LayoutKey::mod_mask` uses.
+pub fn to_held_mod_mask(mods: u16) -> u16 {
+    let mut mask = 0;
+    if mods & MOD_LSFT != 0 {
+        mask |= crate::layout_key::HELD_MOD_SHIFT;
+    }
+    if mods & MOD_LALT != 0 && mods & MOD_RIGHT_FLAG != 0 {
+        mask |= crate::layout_key::HELD_MOD_RALT;
+    }
+    mask
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::layout_key::{HELD_MOD_RALT, HELD_MOD_SHIFT};
+
+    #[test]
+    fn to_held_mod_mask_distinguishes_shift_and_ralt() {
+        assert_eq!(to_held_mod_mask(MOD_LSFT), HELD_MOD_SHIFT);
+        assert_eq!(to_held_mod_mask(MOD_LALT | MOD_RIGHT_FLAG), HELD_MOD_RALT);
+        // Plain (left) Alt is not RAlt — the right-hand flag is what makes it so.
+        assert_eq!(to_held_mod_mask(MOD_LALT), 0);
+        assert_eq!(to_held_mod_mask(MOD_LCTL), 0);
+        assert_eq!(to_held_mod_mask(MOD_LGUI), 0);
+    }
+}

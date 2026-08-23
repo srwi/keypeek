@@ -15,7 +15,8 @@ pub enum Modifier {
     /// No modifier held — the plain/base character.
     Base,
     Shift,
-    AltGr,
+    /// Right-Alt (ISO Level 3 Shift on layouts that define one).
+    RAlt,
 }
 
 #[cfg(target_os = "linux")]

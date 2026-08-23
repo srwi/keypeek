@@ -16,6 +16,10 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
         if let Some(os_base) = crate::os_layout::base_char(keycode_bytes) {
             key.tap = Label::new(os_base.to_uppercase());
         }
+        // Some letters carry an RAlt legend too (German RAlt/AltGr+Q -> "@",
+        // +E -> "€") — needed for the Single-legend live preview, even
+        // though Dual mode never shows it (letters get no stacked legend).
+        key.ralt = crate::os_layout::resolve(keycode_bytes, crate::os_layout::Modifier::RAlt);
         return Some(key);
     }
 
@@ -54,6 +58,9 @@ pub fn get_basic_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
         if let Some(shifted) = os_shifted {
             key.shifted = Some(shifted);
         }
+        // RAlt's result, for the Single-legend live preview — same
+        // resolution pass, just a different modifier.
+        key.ralt = crate::os_layout::resolve(keycode_bytes, crate::os_layout::Modifier::RAlt);
     }
     Some(key)
 }
@@ -962,14 +969,15 @@ fn get_basic_layout_key_static(keycode: Keycode) -> Option<LayoutKey> {
             tap: Label::new("Mouse Acc2"),
             ..Default::default()
         }),
-        Keycode::KC_LEFT_CTRL => Some(modifier_key(&MOD_CTRL)),
-        Keycode::KC_LEFT_SHIFT => Some(modifier_key(&MOD_SHIFT)),
-        Keycode::KC_LEFT_ALT => Some(modifier_key(&MOD_ALT)),
-        Keycode::KC_LEFT_GUI => Some(modifier_key(&MOD_GUI)),
-        Keycode::KC_RIGHT_CTRL => Some(modifier_key(&MOD_CTRL)),
-        Keycode::KC_RIGHT_SHIFT => Some(modifier_key(&MOD_SHIFT)),
-        Keycode::KC_RIGHT_ALT => Some(modifier_key(&MOD_ALT)),
-        Keycode::KC_RIGHT_GUI => Some(modifier_key(&MOD_GUI)),
+        Keycode::KC_LEFT_CTRL => Some(modifier_key(&MOD_CTRL, 0)),
+        Keycode::KC_LEFT_SHIFT => Some(modifier_key(&MOD_SHIFT, crate::layout_key::HELD_MOD_SHIFT)),
+        Keycode::KC_LEFT_ALT => Some(modifier_key(&MOD_ALT, 0)),
+        Keycode::KC_LEFT_GUI => Some(modifier_key(&MOD_GUI, 0)),
+        Keycode::KC_RIGHT_CTRL => Some(modifier_key(&MOD_CTRL, 0)),
+        Keycode::KC_RIGHT_SHIFT => Some(modifier_key(&MOD_SHIFT, crate::layout_key::HELD_MOD_SHIFT)),
+        // RAlt is the layout's Level-3 shift, on layouts that define one.
+        Keycode::KC_RIGHT_ALT => Some(modifier_key(&MOD_ALT, crate::layout_key::HELD_MOD_RALT)),
+        Keycode::KC_RIGHT_GUI => Some(modifier_key(&MOD_GUI, 0)),
         Keycode::QK_SWAP_HANDS_TOGGLE => Some(LayoutKey {
             tap: Label::with_short("Swap Hands Toggle", "SwpHT"),
             ..Default::default()
@@ -2984,6 +2992,26 @@ mod tests {
         assert!(key.shifted.is_some());
     }
 
+    // Regression guard: the Single-legend live preview keys off `mod_mask` —
+    // Shift keys must carry HELD_MOD_SHIFT, RAlt HELD_MOD_RALT, and
+    // everything else (plain Ctrl/Gui/LAlt) must carry neither.
+    #[test]
+    fn standalone_modifier_keys_carry_the_right_mod_mask() {
+        use crate::layout_key::{HELD_MOD_RALT, HELD_MOD_SHIFT};
+
+        let shift = get_basic_layout_key(Keycode::KC_LEFT_SHIFT as u16).unwrap();
+        assert_eq!(shift.mod_mask, Some(HELD_MOD_SHIFT));
+
+        let ralt = get_basic_layout_key(Keycode::KC_RIGHT_ALT as u16).unwrap();
+        assert_eq!(ralt.mod_mask, Some(HELD_MOD_RALT));
+
+        let lalt = get_basic_layout_key(Keycode::KC_LEFT_ALT as u16).unwrap();
+        assert_eq!(lalt.mod_mask, None);
+
+        let ctrl = get_basic_layout_key(Keycode::KC_LEFT_CTRL as u16).unwrap();
+        assert_eq!(ctrl.mod_mask, None);
+    }
+
     // Regression guard: `tap` must localize too, not just `shifted` — on a
     // German layout KC_SLASH's base char is "-", not the US "/". Layout-
     // dependent (needs a live German Wayland session), like the os_layout
@@ -3021,5 +3049,16 @@ mod tests {
         eprintln!("KC_A -> tap={:?} shifted={:?}", key.tap.full, key.shifted);
         assert_eq!(key.tap.full, "A");
         assert!(key.shifted.is_none());
+    }
+
+    // Regression guard: some letters carry an RAlt legend too (German
+    // RAlt/AltGr+Q -> "@") — needed for the Single-legend live preview even
+    // though letters never show a stacked Dual-mode legend.
+    #[test]
+    #[ignore]
+    fn letter_key_carries_ralt_for_live_preview() {
+        let key = get_basic_layout_key(Keycode::KC_Q as u16).unwrap();
+        eprintln!("KC_Q -> tap={:?} ralt={:?}", key.tap.full, key.ralt);
+        assert_eq!(key.ralt.as_deref(), Some("@"));
     }
 }

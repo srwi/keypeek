@@ -1,6 +1,6 @@
 use super::state::AppConnectionState;
 use super::OverlayApp;
-use crate::settings::{LayerMask, ThemeColor, ThemeSettings, WindowPosition};
+use crate::settings::{LayerMask, LegendMode, ThemeColor, ThemeSettings, WindowPosition};
 use egui::Window;
 
 impl OverlayApp {
@@ -291,6 +291,30 @@ impl OverlayApp {
                                 &mut self.settings.draft.auto_fit_before_ellipsis,
                                 "Fit long labels to available space",
                             );
+                            ui.end_row();
+
+                            ui.label("Legend mode");
+                            egui::ComboBox::from_id_salt("legend_mode_combo")
+                                .width(ui.available_width())
+                                .selected_text(self.settings.draft.legend_mode.to_string())
+                                .show_ui(ui, |ui| {
+                                    for mode in
+                                        [LegendMode::Stacked, LegendMode::Single, LegendMode::SingleLive]
+                                    {
+                                        ui.selectable_value(
+                                            &mut self.settings.draft.legend_mode,
+                                            mode,
+                                            mode.to_string(),
+                                        );
+                                    }
+                                })
+                                .response
+                                .on_hover_text(
+                                    "Stacked: Base+Shifted shown together (default). Single: \
+                                     only what a plain tap produces. Single + live preview: \
+                                     also swaps to the Shift/RAlt result while that modifier \
+                                     is physically held.",
+                                );
                             ui.end_row();
                         });
                 });
