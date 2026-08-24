@@ -12,7 +12,6 @@ struct HidInfo {
     vendor_id: u16,
     product_id: u16,
     usage_page: u16,
-    manufacturer: Option<String>,
     product: Option<String>,
     serial_number: Option<String>,
 }
@@ -26,7 +25,6 @@ fn scan_all_hid() -> Vec<HidInfo> {
             vendor_id: d.vendor_id(),
             product_id: d.product_id(),
             usage_page: d.usage_page(),
-            manufacturer: d.manufacturer_string().map(|s| s.to_string()),
             product: d.product_string().map(|s| s.to_string()),
             serial_number: d.serial_number().map(|s| s.to_string()),
         })
@@ -84,50 +82,8 @@ pub fn discover_devices() -> Vec<DiscoveredDevice> {
 
     let mut devices: Vec<DiscoveredDevice> = Vec::new();
     let mut zmk_vid_pid: HashSet<(u16, u16)> = HashSet::new();
-    let mut non_zmk_via_vid_pid: HashSet<(u16, u16)> = HashSet::new();
-
-    {
-        let mut seen_via: HashSet<(u16, u16)> = HashSet::new();
-        for dev in &all_hid {
-            if dev.usage_page != VIA_USAGE_PAGE {
-                continue;
-            }
-            if !seen_via.insert((dev.vendor_id, dev.product_id)) {
-                continue; // Duplicate interface for same device
-            }
-            let base_name = dev
-                .product
-                .clone()
-                .unwrap_or_else(|| format!("{:04X}:{:04X}", dev.vendor_id, dev.product_id));
-            let kind = if is_vial_device(dev) {
-                DeviceKind::Vial
-            } else if is_probable_zmk_hid(dev) {
-                DeviceKind::Zmk
-            } else {
-                DeviceKind::Qmk
-            };
-            devices.push(DiscoveredDevice {
-                base_name,
-                vid: dev.vendor_id,
-                pid: dev.product_id,
-                serial_port: None,
-                ble_device_id: None,
-                kind,
-            });
-            if kind == DeviceKind::Zmk {
-                zmk_vid_pid.insert((dev.vendor_id, dev.product_id));
-            } else {
-                non_zmk_via_vid_pid.insert((dev.vendor_id, dev.product_id));
-            }
-        }
-    }
 
     for sp in zmk_rpc::scan_serial_ports() {
-        if non_zmk_via_vid_pid.contains(&(sp.vid, sp.pid)) {
-            continue;
-        }
-
-        // Prefer the product name from HID if the keyboard is also visible there.
         let base_name = all_hid
             .iter()
             .find(|d| d.vendor_id == sp.vid && d.product_id == sp.pid)
@@ -148,12 +104,6 @@ pub fn discover_devices() -> Vec<DiscoveredDevice> {
     if let Ok(ble_devices) = zmk_rpc::scan_ble_devices() {
         for ble in ble_devices {
             if let Some(hid) = find_matching_hid_for_ble(&all_hid, &ble.display_name) {
-                if non_zmk_via_vid_pid.contains(&(hid.vendor_id, hid.product_id)) {
-                    continue;
-                }
-
-                // If a serial transport exists for the same board, prefer serial and hide BLE.
-                // This avoids platform-specific BLE RPC instability when USB and BLE are both active.
                 if zmk_vid_pid.contains(&(hid.vendor_id, hid.product_id)) {
                     let has_serial = devices.iter().any(|d| {
                         d.kind == DeviceKind::Zmk
@@ -190,15 +140,35 @@ pub fn discover_devices() -> Vec<DiscoveredDevice> {
         }
     }
 
-    // Drop any non-ZMK entry whose VID+PID is covered by a ZMK transport.
-    devices.retain(|d| d.kind == DeviceKind::Zmk || !zmk_vid_pid.contains(&(d.vid, d.pid)));
-
-    // Drop ZMK entries that have no connectable transport (neither BLE nor serial).
-    // This can happen when a ZMK device is detected via HID but BLE discovery failed
-    // (e.g. Bluetooth adapter off, permissions denied).
-    devices.retain(|d| {
-        d.kind != DeviceKind::Zmk || d.ble_device_id.is_some() || d.serial_port.is_some()
-    });
+    let mut seen_via: HashSet<(u16, u16)> = HashSet::new();
+    for dev in &all_hid {
+        if dev.usage_page != VIA_USAGE_PAGE {
+            continue;
+        }
+        if !seen_via.insert((dev.vendor_id, dev.product_id)) {
+            continue;
+        }
+        if zmk_vid_pid.contains(&(dev.vendor_id, dev.product_id)) {
+            continue;
+        }
+        let base_name = dev
+            .product
+            .clone()
+            .unwrap_or_else(|| format!("{:04X}:{:04X}", dev.vendor_id, dev.product_id));
+        let kind = if is_vial_device(dev) {
+            DeviceKind::Vial
+        } else {
+            DeviceKind::Qmk
+        };
+        devices.push(DiscoveredDevice {
+            base_name,
+            vid: dev.vendor_id,
+            pid: dev.product_id,
+            serial_port: None,
+            ble_device_id: None,
+            kind,
+        });
+    }
 
     devices.sort_by_cached_key(|d| d.display_name());
     devices.dedup_by(|a, b| {
@@ -272,21 +242,11 @@ fn is_vial_device(dev: &HidInfo) -> bool {
         .is_some_and(|s| s.to_ascii_lowercase().starts_with("vial:"))
 }
 
-fn is_probable_zmk_hid(dev: &HidInfo) -> bool {
-    dev.manufacturer
-        .as_deref()
-        .is_some_and(|m| m.to_ascii_lowercase().contains("zmk"))
-        || dev
-            .product
-            .as_deref()
-            .is_some_and(|p| p.to_ascii_lowercase().contains("zmk"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        find_matching_hid_for_ble, is_possible_ble_match, is_probable_zmk_hid, mock_device,
-        DeviceKind, DiscoveredDevice, HidInfo, VIA_USAGE_PAGE,
+        find_matching_hid_for_ble, is_possible_ble_match, mock_device, DeviceKind,
+        DiscoveredDevice, HidInfo, VIA_USAGE_PAGE,
     };
 
     #[test]
@@ -368,7 +328,6 @@ mod tests {
             vendor_id: 0x1234,
             product_id: 0x5678,
             usage_page: VIA_USAGE_PAGE,
-            manufacturer: None,
             product: Some("Corne".to_string()),
             serial_number: None,
         };
@@ -376,7 +335,6 @@ mod tests {
             vendor_id: 0x1234,
             product_id: 0x5678,
             usage_page: 0x0001,
-            manufacturer: None,
             product: Some("Corne".to_string()),
             serial_number: None,
         };
@@ -392,7 +350,6 @@ mod tests {
             vendor_id: 0x1234,
             product_id: 0x5678,
             usage_page: VIA_USAGE_PAGE,
-            manufacturer: None,
             product: Some("Corne".to_string()),
             serial_number: None,
         };
@@ -408,24 +365,10 @@ mod tests {
             vendor_id: 0x1234,
             product_id: 0x5678,
             usage_page: VIA_USAGE_PAGE,
-            manufacturer: None,
             product: Some("Corne".to_string()),
             serial_number: None,
         };
 
         assert!(is_possible_ble_match(&hid, "Corne [{\"uuid\":\"abc\"}]"));
-    }
-
-    #[test]
-    fn probable_zmk_hid_detects_zmk_project_manufacturer() {
-        let hid = HidInfo {
-            vendor_id: 0x1234,
-            product_id: 0x5678,
-            usage_page: VIA_USAGE_PAGE,
-            manufacturer: Some("ZMK Project".to_string()),
-            product: Some("Iskra Numpad".to_string()),
-            serial_number: None,
-        };
-        assert!(is_probable_zmk_hid(&hid));
     }
 }
