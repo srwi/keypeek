@@ -43,7 +43,6 @@ jobs:
           cargo appimage
         env:
           APPIMAGE_EXTRACT_AND_RUN: 1
-          APPIMAGE_LINUXDEPLOY_EXTRA_ARGS: "--library /usr/lib/x86_64-linux-gnu/libxdo.so.3"
 
       - name: Get version
         id: get_version
