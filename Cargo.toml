@@ -63,3 +63,32 @@ winresource = "0.1.31"
 name = "KeyPeek"
 identifier = "dev.srwi.keypeek"
 osx_info_plist_exts = ["resources/macos-info-plist-ext.xml"]
+
+[package.metadata.appimage]
+# Bundle only libxdo: it's the one dependency that is NOT part of every
+# mainstream distro's base desktop stack (Ubuntu/Fedora/Arch etc. all ship
+# GTK/X11/Wayland/Mesa already, but libxdo comes from the niche `xdotool`
+# project and is often missing or has a different soname). Everything else
+# stays excluded so we don't ship a second copy of GTK/Mesa/X11 that could
+# clash with the host's graphics drivers and theme integration.
+auto_link = true
+auto_link_exclude_list = [
+    "ld-linux*", "libc.so*", "libm.so*", "libdl.so*", "libpthread.so*", "librt.so*",
+    "libgcc_s.so*", "libstdc++.so*",
+    "libgtk-3.so*", "libgdk-3.so*", "libgdk_pixbuf-2.0.so*", "libgio-2.0.so*",
+    "libgobject-2.0.so*", "libglib-2.0.so*", "libgmodule-2.0.so*",
+    "libX11.so*", "libXi.so*", "libXext.so*", "libXfixes.so*", "libXcursor.so*",
+    "libXdamage.so*", "libXcomposite.so*", "libXrandr.so*", "libXinerama.so*",
+    "libXrender.so*", "libXau.so*", "libXdmcp.so*", "libxcb*.so*",
+    "libwayland-*.so*", "libEGL.so*", "libGLdispatch.so*", "libepoxy.so*",
+    "libxkbcommon.so*",
+    "libpango*.so*", "libcairo*.so*", "libharfbuzz.so*", "libfribidi.so*",
+    "libfontconfig.so*", "libfreetype.so*", "libthai.so*", "libdatrie.so*",
+    "libgraphite2.so*", "libpixman-1.so*", "libpng16.so*",
+    "libatk*.so*", "libatspi.so*", "libcloudproviders.so*", "libtinysparql*.so*",
+    "libglycin*.so*",
+    "libudev.so*", "libsystemd.so*", "libdbus-1.so*", "libmount.so*", "libblkid.so*",
+    "libffi.so*", "libpcre2*.so*", "libz.so*", "libbz2.so*", "libbrotli*.so*",
+    "libseccomp.so*", "libexpat.so*", "libjson-glib*.so*", "libxml2.so*",
+    "libsqlite3.so*", "liblcms2.so*", "libicu*.so*",
+]
