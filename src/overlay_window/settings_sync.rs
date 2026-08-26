@@ -1,27 +1,29 @@
 use super::state::AppConnectionState;
 use super::OverlayApp;
+use crate::keyboard::OverlayConfig;
 use crate::settings::{ProtocolType, WindowPosition};
 use egui::Align2;
 use std::time::Instant;
 
 impl OverlayApp {
+    /// The active settings as the overlay timing values `Keyboard` runs on.
+    pub(super) fn overlay_config(&self) -> OverlayConfig {
+        OverlayConfig {
+            timeout_ms: self.settings.active.timeout,
+            activation_delay_ms: self.settings.active.activation_delay,
+            visible_layers: self.settings.active.visible_layers.bits(),
+        }
+    }
+
     pub(super) fn apply_live_visual_settings(&mut self) {
         if self.settings.active == self.settings.draft {
             return;
         }
 
-        let previous = std::mem::replace(&mut self.settings.active, self.settings.draft.clone());
+        self.settings.active = self.settings.draft.clone();
 
         if let AppConnectionState::Connected { keyboard } = &self.session.connection {
-            if previous.timeout != self.settings.active.timeout {
-                keyboard.set_timeout(self.settings.active.timeout);
-            }
-            if previous.activation_delay != self.settings.active.activation_delay {
-                keyboard.set_activation_delay(self.settings.active.activation_delay);
-            }
-            if previous.visible_layers != self.settings.active.visible_layers {
-                keyboard.set_visible_layers(self.settings.active.visible_layers.bits());
-            }
+            keyboard.set_config(self.overlay_config());
         }
     }
 

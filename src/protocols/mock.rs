@@ -214,7 +214,7 @@ fn keycode_names() -> &'static HashMap<String, u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::keyboard::Keyboard;
+    use crate::keyboard::{Keyboard, OverlayConfig};
     use crate::ui_wake::UiWake;
     use std::collections::HashSet;
     use std::sync::Arc;
@@ -296,7 +296,12 @@ mod tests {
         }));
 
         // A negative timeout means "never hide", keeping the overlay timer out of the way.
-        let keyboard = Keyboard::new(Box::new(protocol), layout, -1, 0, u32::MAX, ui_wake).unwrap();
+        let config = OverlayConfig {
+            timeout_ms: -1,
+            activation_delay_ms: 0,
+            visible_layers: u32::MAX,
+        };
+        let keyboard = Keyboard::new(Box::new(protocol), layout, config, ui_wake).unwrap();
 
         // Row 0, col 1 is mapped on every layer in the fixture, so the effective layer
         // there is exactly the layer the mock currently reports.
