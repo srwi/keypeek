@@ -14,6 +14,24 @@ pub struct Candidate {
 /// `on_select` with the candidate's code.
 pub fn picker_grid(
     ui: &mut egui::Ui,
+    id_salt: &str,
+    candidates: &[Candidate],
+    selected: Option<u32>,
+    on_select: impl FnMut(u32),
+) {
+    egui::ScrollArea::vertical()
+        .max_height(280.0)
+        .show(ui, |ui| {
+            picker_grid_rows(ui, id_salt, candidates, selected, on_select);
+        });
+}
+
+/// The grid inside `picker_grid`, without its own scroll area (for embedding
+/// inside an outer scroll region). `id_salt` must be unique per grid in the
+/// same window so egui does not report duplicate widget ids.
+pub fn picker_grid_rows(
+    ui: &mut egui::Ui,
+    id_salt: &str,
     candidates: &[Candidate],
     selected: Option<u32>,
     mut on_select: impl FnMut(u32),
@@ -27,33 +45,26 @@ pub fn picker_grid(
         .floor()
         .max(1.0) as usize;
 
-    egui::ScrollArea::vertical()
-        .max_height(280.0)
+    egui::Grid::new(ui.id().with(id_salt))
+        .spacing([spacing, 6.0])
         .show(ui, |ui| {
-            egui::Grid::new(ui.id().with("picker_grid"))
-                .spacing([spacing, 6.0])
-                .show(ui, |ui| {
-                    for (i, candidate) in candidates.iter().enumerate() {
-                        let is_selected = selected == Some(candidate.code);
-                        let button = ui.add_sized(
-                            button_size,
-                            egui::Button::new(
-                                egui::RichText::new(&candidate.text).small().strong(),
-                            )
-                            .selected(is_selected),
-                        );
-                        if button.clicked() {
-                            on_select(candidate.code);
-                        }
-                        if (i + 1) % cols == 0 {
-                            ui.end_row();
-                        }
-                    }
-                    // Flush any trailing partial row so the last column aligns.
-                    if candidates.len() % cols != 0 {
-                        ui.end_row();
-                    }
-                });
+            for (i, candidate) in candidates.iter().enumerate() {
+                let is_selected = selected == Some(candidate.code);
+                let button = ui.add_sized(
+                    button_size,
+                    egui::Button::new(egui::RichText::new(&candidate.text).small().strong())
+                        .selected(is_selected),
+                );
+                if button.clicked() {
+                    on_select(candidate.code);
+                }
+                if (i + 1) % cols == 0 {
+                    ui.end_row();
+                }
+            }
+            if candidates.len() % cols != 0 {
+                ui.end_row();
+            }
         });
 }
 
