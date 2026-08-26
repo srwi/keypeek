@@ -25,8 +25,14 @@ pub struct KeyColors {
 
 pub enum AppConnectionState {
     Disconnected,
-    Connected { keyboard: Keyboard },
-    Reconnecting { next_attempt_at: Instant },
+    /// Shared so the overlay can draw and the editor can write through the same
+    /// `Keyboard` while other UI code mutates app state.
+    Connected {
+        keyboard: Arc<Keyboard>,
+    },
+    Reconnecting {
+        next_attempt_at: Instant,
+    },
 }
 
 #[derive(Clone)]
@@ -60,6 +66,8 @@ pub struct UiState {
     pub settings_warning: Option<String>,
     pub mouse_passthrough: Option<bool>,
     pub file_dialog: FileDialog,
+    /// `None` = the live "Active" view; `Some(n)` freezes the overlay on layer `n`.
+    pub pinned_layer: Option<usize>,
 }
 
 pub struct SettingsState {

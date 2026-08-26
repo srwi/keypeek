@@ -2,7 +2,7 @@ use super::state::{KeyColors, LabelGalleys};
 use super::OverlayApp;
 use crate::keyboard::Keyboard;
 use crate::layout_key::{BorderStyle, KeycodeKind, LayoutKey};
-use crate::settings::{LegendMode, ThemeColor};
+use crate::settings::{LegendMode, ThemeColor, WindowPosition};
 use egui::Window;
 
 /// Rotate `point` clockwise around `origin` by `angle_rad` (screen space, y-down).
@@ -448,18 +448,21 @@ impl OverlayApp {
         ThemeColor::new(color.r(), color.g(), color.b(), color.a())
     }
 
+    /// Returns the overlay window's rect when it was shown, so the layer picker
+    /// can sit adjacent to it.
     pub(super) fn draw_overlay_window(
-        &self,
+        &mut self,
         ctx: &egui::Context,
         keyboard: &Keyboard,
         visible: bool,
-    ) {
+    ) -> Option<egui::Rect> {
         let anchor_params = self.get_anchor_params();
         let mut window_open = visible;
         let size = self.settings.active.size as f32;
         let font_scale = self.settings.active.font_size_multiplier;
+        let pinned = self.ui.pinned_layer;
 
-        Window::new("KeyPeek")
+        let overlay_response = Window::new("KeyPeek")
             .open(&mut window_open)
             .auto_sized()
             .interactable(false)
@@ -474,14 +477,27 @@ impl OverlayApp {
 
                 // Only walk the matrix for live modifier state when the preview can
                 // actually use it; same reasoning as `is_key_pressed` elsewhere.
+                // A pinned layer renders flat, so the live preview does not apply.
                 let live_preview_active =
-                    self.settings.active.legend_mode == LegendMode::SingleLive;
+                    pinned.is_none() && self.settings.active.legend_mode == LegendMode::SingleLive;
                 let shift_held = live_preview_active && keyboard.is_shift_held();
                 let ralt_held = live_preview_active && keyboard.is_ralt_held();
 
                 for key in &keyboard.layout.keys {
-                    let (effective_layer, is_background_key) =
-                        keyboard.get_effective_key_layer(key.row, key.col);
+                    let (effective_layer, is_background_key) = match pinned {
+                        Some(layer) => (layer as u8, false),
+                        None => keyboard.get_effective_key_layer(key.row, key.col),
+                    };
+
+                    // A pinned transparent binding (a slot with no label) renders as a
+                    // dimmed empty key; an absent slot is a plain empty key.
+                    let transparent = pinned.is_some()
+                        && keyboard
+                            .get_action(effective_layer as usize, key.row, key.col)
+                            .is_some()
+                        && keyboard
+                            .get_key(effective_layer as usize, key.row, key.col)
+                            .is_none();
 
                     let layout_key = keyboard
                         .get_key(effective_layer as usize, key.row, key.col)
@@ -494,9 +510,9 @@ impl OverlayApp {
 
                     let pressed = keyboard.is_key_pressed(key.row, key.col);
                     let KeyColors {
-                        fill: fill_color,
-                        border: stroke_color,
-                        border_thickness,
+                        fill: mut fill_color,
+                        border: mut stroke_color,
+                        mut border_thickness,
                         font: font_color,
                     } = self.get_keycode_color(
                         layout_key.layer_ref.unwrap_or(effective_layer),
@@ -504,6 +520,12 @@ impl OverlayApp {
                         is_background_key,
                         pressed,
                     );
+
+                    if transparent {
+                        fill_color = fill_color.gamma_multiply(0.25);
+                        stroke_color = fill_color;
+                        border_thickness = 1.0;
+                    }
 
                     let rect = egui::Rect::from_min_size(
                         egui::pos2(key.x * size, key.y * size) + window_pos.to_vec2(),
@@ -631,5 +653,74 @@ impl OverlayApp {
                     }
                 }
             });
+
+        overlay_response.map(|response| response.response.rect)
     }
+
+    /// The dropdown next to the overlay that picks which layer it shows. Only
+    /// present in settings mode; "Active" restores the live view.
+    pub(super) fn draw_layer_picker(
+        &mut self,
+        ctx: &egui::Context,
+        keyboard: &Keyboard,
+        overlay_rect: egui::Rect,
+    ) {
+        let layer_infos = keyboard.layer_infos();
+
+        // The layer count can change across a reconnect; drop a stale pin.
+        if let Some(layer) = self.ui.pinned_layer {
+            if layer >= layer_infos.len() {
+                self.ui.pinned_layer = None;
+            }
+        }
+
+        // Sit the picker above a bottom-anchored overlay, below it otherwise.
+        let bottom_anchored = matches!(
+            self.settings.active.position,
+            WindowPosition::BottomLeft | WindowPosition::BottomRight | WindowPosition::Bottom
+        );
+        let gap = 8.0;
+        let (pivot, pos) = if bottom_anchored {
+            (
+                egui::Align2::CENTER_BOTTOM,
+                egui::pos2(overlay_rect.center().x, overlay_rect.top() - gap),
+            )
+        } else {
+            (
+                egui::Align2::CENTER_TOP,
+                egui::pos2(overlay_rect.center().x, overlay_rect.bottom() + gap),
+            )
+        };
+
+        let mut selected = self.ui.pinned_layer;
+        Window::new("layer_picker")
+            .title_bar(false)
+            .collapsible(false)
+            .resizable(false)
+            .auto_sized()
+            .pivot(pivot)
+            .fixed_pos(pos)
+            .show(ctx, |ui| {
+                let selected_text = selected
+                    .map(|i| format!("{i}: {}", layer_display_name(&layer_infos, i)))
+                    .unwrap_or_else(|| "Active".to_string());
+                egui::ComboBox::from_id_salt("layer_picker_combo")
+                    .selected_text(selected_text)
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut selected, None, "Active");
+                        for (i, _) in layer_infos.iter().enumerate() {
+                            let label = format!("{i}: {}", layer_display_name(&layer_infos, i));
+                            ui.selectable_value(&mut selected, Some(i), label);
+                        }
+                    });
+            });
+        self.ui.pinned_layer = selected;
+    }
+}
+
+fn layer_display_name(layer_infos: &[crate::key_action::LayerInfo], index: usize) -> String {
+    layer_infos
+        .get(index)
+        .and_then(|info| info.name.clone())
+        .unwrap_or_else(|| format!("Layer {index}"))
 }

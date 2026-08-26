@@ -110,7 +110,7 @@ impl OverlayApp {
         self.session.connected_definition = Some(connected.definition);
         self.session.reopen = connected.reopen;
         self.session.connection = AppConnectionState::Connected {
-            keyboard: connected.keyboard,
+            keyboard: Arc::new(connected.keyboard),
         };
         self.session.ever_connected = true;
         self.ui.settings_error = None;
