@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -46,6 +46,17 @@ impl ActiveLayers {
     }
 }
 
+/// The overlay's tuning knobs, all changeable while connected.
+#[derive(Clone, Copy)]
+pub struct OverlayConfig {
+    /// How long the overlay lingers once no selected layer is held; negative never hides.
+    pub timeout_ms: i64,
+    /// How long a layer has to be held before the overlay appears.
+    pub activation_delay_ms: u32,
+    /// Bit `i` keeps the overlay up while layer `i` is active; see `ActiveLayers`.
+    pub visible_layers: u32,
+}
+
 /// The stretch of time the overlay is shown for: from `from` until `until`, where `None`
 /// keeps it up until the layer state changes again.
 #[derive(Clone, Copy)]
@@ -84,8 +95,7 @@ fn next_visibility_window(
     previous: ActiveLayers,
     current: VisibilityWindow,
     now: Instant,
-    timeout_ms: i64,
-    activation_delay_ms: u32,
+    config: OverlayConfig,
 ) -> VisibilityWindow {
     // A held layer whose activation delay has not elapsed yet.
     let pending = now < current.from;
@@ -97,7 +107,7 @@ fn next_visibility_window(
             from: if pending || current.is_visible(now) {
                 current.from
             } else {
-                now + Duration::from_millis(activation_delay_ms as u64)
+                now + Duration::from_millis(config.activation_delay_ms as u64)
             },
             until: None,
         },
@@ -109,7 +119,8 @@ fn next_visibility_window(
         }
         ActiveLayers::Base => VisibilityWindow {
             from: now,
-            until: (timeout_ms >= 0).then(|| now + Duration::from_millis(timeout_ms as u64)),
+            until: (config.timeout_ms >= 0)
+                .then(|| now + Duration::from_millis(config.timeout_ms as u64)),
         },
     }
 }
@@ -120,9 +131,7 @@ pub struct Keyboard {
     matrix: Arc<Mutex<KeyMatrix>>,
     layer_state: Arc<Mutex<u32>>,
     default_layer_state: Arc<Mutex<u32>>,
-    timeout_ms: Arc<AtomicI64>,
-    activation_delay_ms: Arc<AtomicU32>,
-    visible_layers: Arc<AtomicU32>,
+    config: Arc<Mutex<OverlayConfig>>,
     alive: Arc<AtomicBool>,
     _keepalive: Option<mpsc::Sender<()>>,
 }
@@ -131,9 +140,7 @@ impl Keyboard {
     pub fn new(
         protocol: Box<dyn KeyboardProtocol>,
         layout_name: String,
-        timeout: i64,
-        activation_delay: u32,
-        visible_layers: u32,
+        config: OverlayConfig,
         ui_wake: UiWake,
     ) -> Result<Self, String> {
         let definition = protocol.get_layout_definition();
@@ -152,9 +159,7 @@ impl Keyboard {
         let layer_state = Arc::new(Mutex::new(0));
         let default_layer_state = Arc::new(Mutex::new(0));
         let overlay_visibility = Arc::new(Mutex::new(VisibilityWindow::hidden(Instant::now())));
-        let timeout_ms = Arc::new(AtomicI64::new(timeout));
-        let activation_delay_ms = Arc::new(AtomicU32::new(activation_delay));
-        let visible_layers = Arc::new(AtomicU32::new(visible_layers));
+        let config = Arc::new(Mutex::new(config));
         let matrix = Arc::new(Mutex::new(matrix));
         let alive = Arc::new(AtomicBool::new(true));
 
@@ -182,9 +187,7 @@ impl Keyboard {
             overlay_visibility: Arc::clone(&overlay_visibility),
             layer_state: Arc::clone(&layer_state),
             default_layer_state: Arc::clone(&default_layer_state),
-            timeout_ms: Arc::clone(&timeout_ms),
-            activation_delay_ms: Arc::clone(&activation_delay_ms),
-            visible_layers: Arc::clone(&visible_layers),
+            config: Arc::clone(&config),
             alive: Arc::clone(&alive),
             _keepalive: keepalive,
         };
@@ -192,9 +195,7 @@ impl Keyboard {
         let layer_state_clone = Arc::clone(&keyboard.layer_state);
         let default_layer_state_clone = Arc::clone(&keyboard.default_layer_state);
         let visibility_clone = Arc::clone(&keyboard.overlay_visibility);
-        let timeout_clone = Arc::clone(&keyboard.timeout_ms);
-        let activation_delay_clone = Arc::clone(&keyboard.activation_delay_ms);
-        let visible_layers_clone = Arc::clone(&keyboard.visible_layers);
+        let config_clone = Arc::clone(&keyboard.config);
         let matrix_clone = Arc::clone(&matrix);
         let alive_clone = Arc::clone(&alive);
 
@@ -247,10 +248,11 @@ impl Keyboard {
                         layer_bytes[..size].copy_from_slice(&response[2 + size..2 + 2 * size]);
                         let layer_state = u32::from_le_bytes(layer_bytes);
 
+                        let config = *config_clone.lock().unwrap();
                         let active_layers = ActiveLayers::classify(
                             layer_state,
                             default_layer_state,
-                            visible_layers_clone.load(Ordering::Relaxed),
+                            config.visible_layers,
                         );
                         *layer_state_clone.lock().unwrap() = layer_state;
                         *default_layer_state_clone.lock().unwrap() = default_layer_state;
@@ -261,8 +263,7 @@ impl Keyboard {
                             previous_layers,
                             *visibility,
                             Instant::now(),
-                            timeout_clone.load(Ordering::Relaxed),
-                            activation_delay_clone.load(Ordering::Relaxed),
+                            config,
                         );
                         previous_layers = active_layers;
                         needs_repaint = true;
@@ -364,17 +365,8 @@ impl Keyboard {
         self.held_mod_mask() & crate::layout_key::HELD_MOD_RALT != 0
     }
 
-    pub fn set_timeout(&self, timeout: i64) {
-        self.timeout_ms.store(timeout, Ordering::Relaxed);
-    }
-
-    pub fn set_activation_delay(&self, activation_delay: u32) {
-        self.activation_delay_ms
-            .store(activation_delay, Ordering::Relaxed);
-    }
-
-    pub fn set_visible_layers(&self, visible_layers: u32) {
-        self.visible_layers.store(visible_layers, Ordering::Relaxed);
+    pub fn set_config(&self, config: OverlayConfig) {
+        *self.config.lock().unwrap() = config;
     }
 
     pub fn set_layout(&mut self, layout: KeyboardLayout) {
@@ -387,8 +379,11 @@ mod tests {
     use super::ActiveLayers::{Base, Excluded, Selected};
     use super::*;
 
-    const TIMEOUT: i64 = 2000;
-    const DELAY: u32 = 300;
+    const CONFIG: OverlayConfig = OverlayConfig {
+        timeout_ms: 2000,
+        activation_delay_ms: 300,
+        visible_layers: u32::MAX,
+    };
 
     /// Walks the layer-state transitions the activation delay has to survive.
     #[test]
@@ -398,26 +393,26 @@ mod tests {
         let hidden = VisibilityWindow::hidden(start);
 
         // Holding a layer arms the delay; the overlay only shows once it has elapsed.
-        let held = next_visibility_window(Selected, Base, hidden, start, TIMEOUT, DELAY);
+        let held = next_visibility_window(Selected, Base, hidden, start, CONFIG);
         assert!(!held.is_visible(at(299)));
         assert!(held.is_visible(at(300)));
         assert_eq!(held.changes_in(start), Some(Duration::from_millis(300)));
 
         // A second layer added mid-hold keeps the original countdown.
-        let more = next_visibility_window(Selected, Selected, held, at(200), TIMEOUT, DELAY);
+        let more = next_visibility_window(Selected, Selected, held, at(200), CONFIG);
         assert!(more.is_visible(at(300)));
 
         // Releasing before the delay elapsed shows nothing at all.
-        let tapped = next_visibility_window(Base, Selected, held, at(100), TIMEOUT, DELAY);
+        let tapped = next_visibility_window(Base, Selected, held, at(100), CONFIG);
         assert!(!tapped.is_visible(at(100)));
 
         // Releasing after it elapsed lingers for the display duration.
-        let released = next_visibility_window(Base, Selected, held, at(400), TIMEOUT, DELAY);
+        let released = next_visibility_window(Base, Selected, held, at(400), CONFIG);
         assert!(released.is_visible(at(2399)));
         assert!(!released.is_visible(at(2400)));
 
         // A layer held while the overlay is still up must not blink it away.
-        let again = next_visibility_window(Selected, Base, released, at(500), TIMEOUT, DELAY);
+        let again = next_visibility_window(Selected, Base, released, at(500), CONFIG);
         assert!(again.is_visible(at(500)));
     }
 
@@ -426,15 +421,19 @@ mod tests {
     fn zero_delay_shows_the_overlay_right_away() {
         let start = Instant::now();
         let hidden = VisibilityWindow::hidden(start);
+        let no_delay = OverlayConfig {
+            activation_delay_ms: 0,
+            ..CONFIG
+        };
 
-        let held = next_visibility_window(Selected, Base, hidden, start, TIMEOUT, 0);
+        let held = next_visibility_window(Selected, Base, hidden, start, no_delay);
         assert!(held.is_visible(start));
         assert_eq!(held.changes_in(start), None);
 
         // Leaving an excluded layer still must not surface the base layer.
-        let excluded = next_visibility_window(Excluded, Selected, held, start, TIMEOUT, 0);
+        let excluded = next_visibility_window(Excluded, Selected, held, start, no_delay);
         assert!(!excluded.is_visible(start));
-        let base = next_visibility_window(Base, Excluded, excluded, start, TIMEOUT, 0);
+        let base = next_visibility_window(Base, Excluded, excluded, start, no_delay);
         assert!(!base.is_visible(start));
     }
 }
