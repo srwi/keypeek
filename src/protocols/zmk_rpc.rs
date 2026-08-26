@@ -1,11 +1,9 @@
-use crate::layout_key::LayoutKey;
-use crate::zmk_keycode_labels::behavior_to_layout_key;
 use std::error::Error;
 use std::io::{Read, Write};
 use std::time::Duration;
 use zmk_studio_api::proto::zmk::{core, keymap};
 use zmk_studio_api::transport::{BleDiscoveryMode, PlatformBleTransport};
-use zmk_studio_api::{ClientError, StudioClient};
+use zmk_studio_api::{ClientError, ResolvedLayer, StudioClient};
 
 pub struct ZmkSerialDevice {
     pub port_name: String,
@@ -108,7 +106,7 @@ fn windows_bluetooth_radio_is_on() -> windows::core::Result<bool> {
 
 pub struct ZmkData {
     pub physical_layouts: keymap::PhysicalLayouts,
-    pub layout_keys: Vec<Vec<Option<LayoutKey>>>,
+    pub resolved_layers: Vec<ResolvedLayer>,
 }
 
 pub fn fetch_zmk_data(transport: &ZmkTransport) -> Result<ZmkData, Box<dyn Error>> {
@@ -165,22 +163,6 @@ fn fetch_zmk_data_from_client<T: Read + Write>(
 
     let resolved_layers = client.resolve_keymap()?;
 
-    let layer_names: Vec<String> = resolved_layers
-        .iter()
-        .map(|layer| layer.name.clone())
-        .collect();
-
-    let layout_keys: Vec<Vec<Option<LayoutKey>>> = resolved_layers
-        .iter()
-        .map(|layer| {
-            layer
-                .bindings
-                .iter()
-                .map(|behavior| behavior_to_layout_key(behavior, &layer_names))
-                .collect()
-        })
-        .collect();
-
     // Drop the ZMK RPC connection and give transport time to settle before
     // the caller opens any other handle (e.g. HID).
     drop(client);
@@ -188,6 +170,6 @@ fn fetch_zmk_data_from_client<T: Read + Write>(
 
     Ok(ZmkData {
         physical_layouts,
-        layout_keys,
+        resolved_layers,
     })
 }

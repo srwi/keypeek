@@ -1,18 +1,17 @@
 use super::layout_geometry::flattened_top_left_after_center_rotation;
 use super::zmk_rpc::{self, ZmkData, ZmkTransport};
 use super::{Key, KeyboardDefinition, KeyboardLayout, KeyboardProtocol, Reopener};
-use crate::layout_key::LayoutKey;
+use crate::key_action::{KeyAction, KeymapSnapshot, LayerInfo};
 use hidapi::{HidApi, HidDevice};
 use std::error::Error;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-type LayerKeys3d = Vec<Vec<Vec<Option<LayoutKey>>>>;
 const ZMK_USAGE_PAGE: u16 = 0xff60;
 
 struct ZmkLayout {
     definition: KeyboardDefinition,
-    layout_keys: LayerKeys3d,
+    snapshot: KeymapSnapshot,
 }
 
 pub struct ZmkProtocol {
@@ -121,12 +120,8 @@ impl KeyboardProtocol for ZmkProtocol {
         &self.layout.definition
     }
 
-    fn get_layer_count(&self) -> Result<usize, Box<dyn Error>> {
-        Ok(self.layout.layout_keys.len())
-    }
-
-    fn read_all_keys(&self, _layers: usize, _rows: usize, _cols: usize) -> LayerKeys3d {
-        self.layout.layout_keys.clone()
+    fn read_keymap(&self) -> Result<KeymapSnapshot, Box<dyn Error>> {
+        Ok(self.layout.snapshot.clone())
     }
 
     fn hid_read(&self) -> Result<Vec<u8>, Box<dyn Error>> {
@@ -201,11 +196,26 @@ fn build_from_zmk_data(vid: u16, pid: u16, data: ZmkData) -> Result<ZmkLayout, B
         }],
     };
 
-    let layout_keys: LayerKeys3d = data
-        .layout_keys
-        .into_iter()
+    let layers: Vec<LayerInfo> = data
+        .resolved_layers
+        .iter()
+        .map(|layer| LayerInfo {
+            id: layer.id,
+            name: (!layer.name.is_empty()).then(|| layer.name.clone()),
+        })
+        .collect();
+
+    // Bindings beyond the physical key count are padding (`None`), matching the
+    // matrix dimensions.
+    let actions = data
+        .resolved_layers
+        .iter()
         .map(|layer| {
-            let mut row: Vec<Option<LayoutKey>> = layer.into_iter().take(num_keys).collect();
+            let mut row: Vec<Option<KeyAction>> = layer
+                .bindings
+                .iter()
+                .map(|b| Some(KeyAction::Zmk(b.clone())))
+                .collect();
             row.resize(num_keys, None);
             vec![row]
         })
@@ -213,6 +223,6 @@ fn build_from_zmk_data(vid: u16, pid: u16, data: ZmkData) -> Result<ZmkLayout, B
 
     Ok(ZmkLayout {
         definition,
-        layout_keys,
+        snapshot: KeymapSnapshot { layers, actions },
     })
 }
