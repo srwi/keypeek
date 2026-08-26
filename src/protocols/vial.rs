@@ -1,8 +1,7 @@
 use super::{
     kle_parser, KeyboardDefinition, KeyboardProtocol, RawHidSubscription, SubscriptionSender,
 };
-use crate::layout_key::LayoutKey;
-use crate::qmk_keycode_labels::get_layout_key;
+use crate::key_action::{KeyAction, KeymapSnapshot};
 use qmk_via_api::api::{KeyboardApi, MatrixInfo};
 use std::error::Error;
 
@@ -26,6 +25,39 @@ impl VialProtocol {
             .map_err(|e| format!("Failed to connect to device ({vid:04x}:{pid:04x}): {e}"))?;
 
         Self::init_from_api(api, vid, pid)
+    }
+
+    fn layer_count(&self) -> Result<usize, Box<dyn Error>> {
+        let count = self
+            .api
+            .get_layer_count()
+            .map_err(|e| format!("Failed to get layer count: {e}"))?;
+        Ok(count as usize)
+    }
+
+    fn read_snapshot(&self) -> Result<KeymapSnapshot, Box<dyn Error>> {
+        let layers = self.layer_count()?;
+        let (rows, cols) = (self.definition.rows, self.definition.cols);
+        let matrix_info = MatrixInfo {
+            rows: rows as u8,
+            cols: cols as u8,
+        };
+
+        let mut actions = vec![vec![vec![None; cols]; rows]; layers];
+        for (layer, layer_actions) in actions.iter_mut().enumerate() {
+            if let Ok(raw_matrix) = self.api.read_raw_matrix(matrix_info, layer as u8) {
+                for (i, &keycode) in raw_matrix.iter().enumerate() {
+                    let row = i / cols;
+                    let col = i % cols;
+                    layer_actions[row][col] = Some(KeyAction::Qmk(keycode));
+                }
+            }
+        }
+
+        Ok(KeymapSnapshot {
+            layers: crate::key_action::LayerInfo::indexed(layers),
+            actions,
+        })
     }
 
     fn init_from_api(api: KeyboardApi, vid: u16, pid: u16) -> Result<Self, Box<dyn Error>> {
@@ -137,37 +169,8 @@ impl KeyboardProtocol for VialProtocol {
         &self.definition
     }
 
-    fn get_layer_count(&self) -> Result<usize, Box<dyn Error>> {
-        let count = self
-            .api
-            .get_layer_count()
-            .map_err(|e| format!("Failed to get layer count: {e}"))?;
-        Ok(count as usize)
-    }
-
-    fn read_all_keys(
-        &self,
-        layers: usize,
-        rows: usize,
-        cols: usize,
-    ) -> Vec<Vec<Vec<Option<LayoutKey>>>> {
-        let mut keys = vec![vec![vec![None; cols]; rows]; layers];
-        let matrix_info = MatrixInfo {
-            rows: rows as u8,
-            cols: cols as u8,
-        };
-
-        for (layer, layer_keys) in keys.iter_mut().enumerate().take(layers) {
-            if let Ok(raw_matrix) = self.api.read_raw_matrix(matrix_info, layer as u8) {
-                for (i, &keycode) in raw_matrix.iter().enumerate() {
-                    let row = i / cols;
-                    let col = i % cols;
-                    layer_keys[row][col] = get_layout_key(keycode);
-                }
-            }
-        }
-
-        keys
+    fn read_keymap(&self) -> Result<KeymapSnapshot, Box<dyn Error>> {
+        self.read_snapshot()
     }
 
     fn hid_read(&self) -> Result<Vec<u8>, Box<dyn Error>> {

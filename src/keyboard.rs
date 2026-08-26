@@ -149,12 +149,10 @@ impl Keyboard {
             .get_layout(&layout_name)
             .map_err(|_| "Failed to get layout".to_string())?;
 
-        let layers = protocol
-            .get_layer_count()
-            .map_err(|e| format!("Failed to get layer count: {e}"))?;
-
-        let keys = protocol.read_all_keys(layers, definition.rows, definition.cols);
-        let matrix = KeyMatrix::from_layout_keys(keys, definition.rows, definition.cols);
+        let snapshot = protocol
+            .read_keymap()
+            .map_err(|e| format!("Failed to read keymap: {e}"))?;
+        let matrix = KeyMatrix::from_snapshot(snapshot, definition.rows, definition.cols);
 
         let layer_state = Arc::new(Mutex::new(0));
         let default_layer_state = Arc::new(Mutex::new(0));
@@ -332,6 +330,23 @@ impl Keyboard {
             .lock()
             .unwrap()
             .get_key(layer, row, col)
+            .cloned()
+    }
+
+    pub fn layer_infos(&self) -> Vec<crate::key_action::LayerInfo> {
+        self.matrix.lock().unwrap().layer_infos().to_vec()
+    }
+
+    pub fn get_action(
+        &self,
+        layer: usize,
+        row: usize,
+        col: usize,
+    ) -> Option<crate::key_action::KeyAction> {
+        self.matrix
+            .lock()
+            .unwrap()
+            .get_action(layer, row, col)
             .cloned()
     }
 

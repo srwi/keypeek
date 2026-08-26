@@ -5,11 +5,10 @@
 //! during discovery in debug builds (`cfg!(debug_assertions)` in `device_discovery`).
 
 use super::{KeyboardDefinition, KeyboardProtocol};
-use crate::layout_key::LayoutKey;
+use crate::key_action::{KeyAction, KeymapSnapshot};
 use crate::qmk_keycode_labels::constants::{
     QK_DEF_LAYER, QK_LAYER_TAP_TOGGLE, QK_MOMENTARY, QK_ONE_SHOT_LAYER, QK_TO, QK_TOGGLE_LAYER,
 };
-use crate::qmk_keycode_labels::get_layout_key;
 use qmk_via_api::keycodes::Keycode;
 use std::collections::HashMap;
 use std::error::Error;
@@ -100,31 +99,23 @@ impl KeyboardProtocol for MockProtocol {
         &self.definition
     }
 
-    fn get_layer_count(&self) -> Result<usize, Box<dyn Error>> {
-        Ok(self.layers.len())
-    }
+    fn read_keymap(&self) -> Result<KeymapSnapshot, Box<dyn Error>> {
+        let (rows, cols) = (self.definition.rows, self.definition.cols);
+        let mut actions = vec![vec![vec![None; cols]; rows]; self.layers.len()];
 
-    fn read_all_keys(
-        &self,
-        layers: usize,
-        rows: usize,
-        cols: usize,
-    ) -> Vec<Vec<Vec<Option<LayoutKey>>>> {
-        let mut keys = vec![vec![vec![None; cols]; rows]; layers];
-
-        for (layer, layer_keys) in keys.iter_mut().enumerate() {
-            let Some(codes) = self.layers.get(layer) else {
-                continue;
-            };
+        for (layer, codes) in self.layers.iter().enumerate() {
             for (i, &keycode) in codes.iter().enumerate() {
                 let (row, col) = (i / cols, i % cols);
                 if row < rows {
-                    layer_keys[row][col] = get_layout_key(keycode);
+                    actions[layer][row][col] = Some(KeyAction::Qmk(keycode));
                 }
             }
         }
 
-        keys
+        Ok(KeymapSnapshot {
+            layers: crate::key_action::LayerInfo::indexed(self.layers.len()),
+            actions,
+        })
     }
 
     fn hid_read(&self) -> Result<Vec<u8>, Box<dyn Error>> {
@@ -214,18 +205,46 @@ fn keycode_names() -> &'static HashMap<String, u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::key_action::{KeyAction, LayerInfo};
+    use crate::key_matrix::KeyMatrix;
     use crate::keyboard::{Keyboard, OverlayConfig};
+    use crate::qmk_keycode_labels::get_layout_key;
     use crate::ui_wake::UiWake;
     use std::collections::HashSet;
     use std::sync::Arc;
     use std::time::Instant;
+
+    /// Layer 0, index 39 (row 3, col 3) holds `MO(1)` in the fixture.
+    const FIXTURE_MO_KEY: (usize, usize, usize) = (0, 3, 3);
+
+    #[test]
+    fn mo_fixture_key_resolves_action_and_label() {
+        let mock = MockProtocol::connect().expect("fixture should load");
+        let snapshot = mock.read_keymap().unwrap();
+        let definition = mock.get_layout_definition();
+        let matrix = KeyMatrix::from_snapshot(snapshot, definition.rows, definition.cols);
+
+        let (layer, row, col) = FIXTURE_MO_KEY;
+        assert_eq!(
+            matrix.get_action(layer, row, col),
+            Some(&KeyAction::Qmk(0x5221))
+        );
+        assert_eq!(
+            matrix.get_key(layer, row, col).cloned(),
+            get_layout_key(0x5221)
+        );
+        assert_eq!(
+            matrix.layer_infos(),
+            LayerInfo::indexed(matrix.get_num_layers()).as_slice()
+        );
+    }
 
     #[test]
     fn fixture_loads_and_matches_its_matrix() {
         let mock = MockProtocol::connect().expect("fixture should load");
         let definition = mock.get_layout_definition();
 
-        assert!(mock.get_layer_count().unwrap() > 1);
+        assert!(mock.layers.len() > 1);
         for layer in &mock.layers {
             assert_eq!(layer.len(), definition.rows * definition.cols);
         }

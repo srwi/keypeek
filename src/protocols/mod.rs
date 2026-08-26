@@ -7,7 +7,6 @@ pub mod vial;
 pub mod zmk;
 pub mod zmk_rpc;
 
-use crate::layout_key::LayoutKey;
 use qmk_via_api::api::KeyboardApi;
 use std::error::Error;
 use std::sync::Arc;
@@ -79,14 +78,7 @@ impl KeyboardDefinition {
 pub trait KeyboardProtocol: Send {
     fn get_layout_definition(&self) -> &KeyboardDefinition;
 
-    fn get_layer_count(&self) -> Result<usize, Box<dyn Error>>;
-
-    fn read_all_keys(
-        &self,
-        layers: usize,
-        rows: usize,
-        cols: usize,
-    ) -> Vec<Vec<Vec<Option<LayoutKey>>>>;
+    fn read_keymap(&self) -> Result<crate::key_action::KeymapSnapshot, Box<dyn Error>>;
 
     fn hid_read(&self) -> Result<Vec<u8>, Box<dyn Error>>;
 
