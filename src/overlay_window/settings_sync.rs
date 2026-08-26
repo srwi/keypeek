@@ -3,6 +3,7 @@ use super::OverlayApp;
 use crate::keyboard::OverlayConfig;
 use crate::settings::{ProtocolType, WindowPosition};
 use egui::Align2;
+use std::sync::Arc;
 use std::time::Instant;
 
 impl OverlayApp {
@@ -61,7 +62,9 @@ impl OverlayApp {
             return;
         };
 
-        keyboard.set_layout(next_layout);
+        if let Some(keyboard) = Arc::get_mut(keyboard) {
+            keyboard.set_layout(next_layout);
+        }
         self.session.active_layout_name = selected_layout;
     }
 
