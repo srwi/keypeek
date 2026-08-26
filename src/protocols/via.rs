@@ -1,5 +1,6 @@
 use super::{
     qmk_json_parser, KeyboardDefinition, KeyboardProtocol, RawHidSubscription, SubscriptionSender,
+    WriteSupport,
 };
 use crate::key_action::{KeyAction, KeymapSnapshot};
 use qmk_via_api::api::{KeyboardApi, MatrixInfo};
@@ -52,7 +53,9 @@ impl ViaProtocol {
     }
 
     fn get_api(vid: u16, pid: u16) -> Result<KeyboardApi, Box<dyn Error>> {
-        let api = KeyboardApi::new(vid, pid, 0xff60, None)
+        // A read timeout keeps command/response round trips bounded so the HID
+        // reader loop stays responsive between commands.
+        let api = KeyboardApi::new(vid, pid, 0xff60, Some(250))
             .map_err(|e| format!("Failed to connect to device ({vid:04x}:{pid:04x}): {e}"))?;
 
         let protocol_version = api
@@ -84,6 +87,26 @@ impl KeyboardProtocol for ViaProtocol {
         self.api
             .hid_read()
             .map_err(|e| format!("HID read error: {e}").into())
+    }
+
+    fn write_support(&self) -> WriteSupport {
+        WriteSupport::Immediate
+    }
+
+    fn set_key(
+        &mut self,
+        _layer: &crate::key_action::LayerInfo,
+        layer_index: usize,
+        row: usize,
+        col: usize,
+        action: &KeyAction,
+    ) -> Result<(), Box<dyn Error>> {
+        match action {
+            KeyAction::Qmk(code) => {
+                super::qmk_set_key_with_retry(&self.api, layer_index, row, col, *code)
+            }
+            KeyAction::Zmk(_) => Err("Cannot apply a ZMK behavior to a QMK keyboard".into()),
+        }
     }
 
     fn subscription_sender(&self) -> Result<Option<Box<dyn SubscriptionSender>>, Box<dyn Error>> {
