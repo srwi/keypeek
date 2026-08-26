@@ -98,7 +98,8 @@ impl OverlayApp {
             });
     }
 
-    fn schedule_overlay_hide_repaint(&self, ctx: &egui::Context) {
+    /// Wakes the UI up when the overlay is due to appear or disappear on its own.
+    fn schedule_overlay_repaint(&self, ctx: &egui::Context) {
         if self.ui.settings_visible {
             return;
         }
@@ -107,17 +108,7 @@ impl OverlayApp {
             return;
         };
 
-        let Some(time_to_hide) = keyboard
-            .time_to_hide_overlay
-            .lock()
-            .unwrap()
-            .as_ref()
-            .copied()
-        else {
-            return;
-        };
-
-        if let Some(delay) = time_to_hide.checked_duration_since(Instant::now()) {
+        if let Some(delay) = keyboard.overlay_changes_in(Instant::now()) {
             ctx.request_repaint_after(delay);
         }
     }
@@ -165,6 +156,6 @@ impl OverlayApp {
         Self::message_window(ctx, "Error", &mut self.ui.settings_error);
         Self::message_window(ctx, "Notice", &mut self.ui.settings_warning);
 
-        self.schedule_overlay_hide_repaint(ctx);
+        self.schedule_overlay_repaint(ctx);
     }
 }

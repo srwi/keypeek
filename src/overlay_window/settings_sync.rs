@@ -16,6 +16,9 @@ impl OverlayApp {
             if previous.timeout != self.settings.active.timeout {
                 keyboard.set_timeout(self.settings.active.timeout);
             }
+            if previous.activation_delay != self.settings.active.activation_delay {
+                keyboard.set_activation_delay(self.settings.active.activation_delay);
+            }
             if previous.visible_layers != self.settings.active.visible_layers {
                 keyboard.set_visible_layers(self.settings.active.visible_layers.bits());
             }
@@ -78,14 +81,7 @@ impl OverlayApp {
         match &self.session.connection {
             AppConnectionState::Disconnected | AppConnectionState::Reconnecting { .. } => false,
             AppConnectionState::Connected { keyboard } => {
-                if self.ui.settings_visible {
-                    true
-                } else {
-                    match keyboard.time_to_hide_overlay.lock().unwrap().as_ref() {
-                        Some(time_to_hide) => Instant::now() < *time_to_hide,
-                        None => true,
-                    }
-                }
+                self.ui.settings_visible || keyboard.overlay_is_visible(Instant::now())
             }
         }
     }

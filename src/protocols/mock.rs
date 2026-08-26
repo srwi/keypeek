@@ -296,7 +296,7 @@ mod tests {
         }));
 
         // A negative timeout means "never hide", keeping the overlay timer out of the way.
-        let keyboard = Keyboard::new(Box::new(protocol), layout, -1, u32::MAX, ui_wake).unwrap();
+        let keyboard = Keyboard::new(Box::new(protocol), layout, -1, 0, u32::MAX, ui_wake).unwrap();
 
         // Row 0, col 1 is mapped on every layer in the fixture, so the effective layer
         // there is exactly the layer the mock currently reports.

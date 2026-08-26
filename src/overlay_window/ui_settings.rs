@@ -1,6 +1,6 @@
 use super::state::AppConnectionState;
 use super::OverlayApp;
-use crate::settings::{LayerMask, LegendMode, ThemeColor, ThemeSettings, WindowPosition};
+use crate::settings::{LayerMask, LegendMode, Settings, ThemeColor, ThemeSettings, WindowPosition};
 use egui::Window;
 
 impl OverlayApp {
@@ -255,6 +255,19 @@ impl OverlayApp {
                                     }),
                             );
                             self.settings.draft.timeout = Self::ui_value_to_timeout(timeout_ui);
+                            ui.end_row();
+
+                            ui.label("Activation delay");
+                            ui.add_sized(
+                                ui.available_size(),
+                                egui::DragValue::new(&mut self.settings.draft.activation_delay)
+                                    .speed(10)
+                                    .range(0..=Settings::MAX_ACTIVATION_DELAY_MS)
+                                    .suffix(" ms"),
+                            )
+                            .on_hover_text(
+                                "How long a layer has to be held before the overlay appears",
+                            );
                             ui.end_row();
 
                             ui.label("Distance from screen edge");

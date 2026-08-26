@@ -46,36 +46,82 @@ impl ActiveLayers {
     }
 }
 
-/// How long the overlay stays visible; `None` keeps it visible until the layer state
-/// changes, `Duration::ZERO` hides it right away.
-fn overlay_visible_duration(
+/// The stretch of time the overlay is shown for: from `from` until `until`, where `None`
+/// keeps it up until the layer state changes again.
+#[derive(Clone, Copy)]
+struct VisibilityWindow {
+    from: Instant,
+    until: Option<Instant>,
+}
+
+impl VisibilityWindow {
+    /// An empty window, keeping the overlay hidden until the next layer state arrives.
+    fn hidden(now: Instant) -> Self {
+        Self {
+            from: now,
+            until: Some(now),
+        }
+    }
+
+    fn is_visible(&self, now: Instant) -> bool {
+        now >= self.from && self.until.is_none_or(|until| now < until)
+    }
+
+    /// How long until the overlay appears or disappears on its own.
+    fn changes_in(&self, now: Instant) -> Option<Duration> {
+        let next = if now < self.from {
+            Some(self.from)
+        } else {
+            self.until
+        };
+        next.filter(|at| now < *at).map(|at| at - now)
+    }
+}
+
+/// The window a freshly arrived layer state puts the overlay in.
+fn next_visibility_window(
     active: ActiveLayers,
     previous: ActiveLayers,
+    current: VisibilityWindow,
+    now: Instant,
     timeout_ms: i64,
-) -> Option<Duration> {
+    activation_delay_ms: u32,
+) -> VisibilityWindow {
+    // A held layer whose activation delay has not elapsed yet.
+    let pending = now < current.from;
+
     match active {
-        ActiveLayers::Selected => None,
-        ActiveLayers::Excluded => Some(Duration::ZERO),
-        ActiveLayers::Base => {
-            if timeout_ms < 0 {
-                None
-            } else if previous == ActiveLayers::Excluded {
-                // Leaving an excluded layer must not surface the base layer.
-                Some(Duration::ZERO)
+        ActiveLayers::Selected => VisibilityWindow {
+            // A window still arming or already up keeps its start: layers added mid-hold
+            // must not restart the countdown, nor blink a visible overlay away.
+            from: if pending || current.is_visible(now) {
+                current.from
             } else {
-                Some(Duration::from_millis(timeout_ms as u64))
-            }
+                now + Duration::from_millis(activation_delay_ms as u64)
+            },
+            until: None,
+        },
+        ActiveLayers::Excluded => VisibilityWindow::hidden(now),
+        // Neither leaving an excluded layer nor releasing a layer before its activation
+        // delay elapsed may surface the base layer.
+        ActiveLayers::Base if previous == ActiveLayers::Excluded || pending => {
+            VisibilityWindow::hidden(now)
         }
+        ActiveLayers::Base => VisibilityWindow {
+            from: now,
+            until: (timeout_ms >= 0).then(|| now + Duration::from_millis(timeout_ms as u64)),
+        },
     }
 }
 
 pub struct Keyboard {
     pub layout: KeyboardLayout,
-    pub time_to_hide_overlay: Arc<Mutex<Option<Instant>>>,
+    overlay_visibility: Arc<Mutex<VisibilityWindow>>,
     matrix: Arc<Mutex<KeyMatrix>>,
     layer_state: Arc<Mutex<u32>>,
     default_layer_state: Arc<Mutex<u32>>,
     timeout_ms: Arc<AtomicI64>,
+    activation_delay_ms: Arc<AtomicU32>,
     visible_layers: Arc<AtomicU32>,
     alive: Arc<AtomicBool>,
     _keepalive: Option<mpsc::Sender<()>>,
@@ -86,6 +132,7 @@ impl Keyboard {
         protocol: Box<dyn KeyboardProtocol>,
         layout_name: String,
         timeout: i64,
+        activation_delay: u32,
         visible_layers: u32,
         ui_wake: UiWake,
     ) -> Result<Self, String> {
@@ -104,8 +151,9 @@ impl Keyboard {
 
         let layer_state = Arc::new(Mutex::new(0));
         let default_layer_state = Arc::new(Mutex::new(0));
-        let time_to_hide_overlay = Arc::new(Mutex::new(Some(Instant::now())));
+        let overlay_visibility = Arc::new(Mutex::new(VisibilityWindow::hidden(Instant::now())));
         let timeout_ms = Arc::new(AtomicI64::new(timeout));
+        let activation_delay_ms = Arc::new(AtomicU32::new(activation_delay));
         let visible_layers = Arc::new(AtomicU32::new(visible_layers));
         let matrix = Arc::new(Mutex::new(matrix));
         let alive = Arc::new(AtomicBool::new(true));
@@ -131,10 +179,11 @@ impl Keyboard {
         let keyboard = Keyboard {
             layout,
             matrix: Arc::clone(&matrix),
-            time_to_hide_overlay: Arc::clone(&time_to_hide_overlay),
+            overlay_visibility: Arc::clone(&overlay_visibility),
             layer_state: Arc::clone(&layer_state),
             default_layer_state: Arc::clone(&default_layer_state),
             timeout_ms: Arc::clone(&timeout_ms),
+            activation_delay_ms: Arc::clone(&activation_delay_ms),
             visible_layers: Arc::clone(&visible_layers),
             alive: Arc::clone(&alive),
             _keepalive: keepalive,
@@ -142,8 +191,9 @@ impl Keyboard {
 
         let layer_state_clone = Arc::clone(&keyboard.layer_state);
         let default_layer_state_clone = Arc::clone(&keyboard.default_layer_state);
-        let time_to_hide_clone = Arc::clone(&keyboard.time_to_hide_overlay);
+        let visibility_clone = Arc::clone(&keyboard.overlay_visibility);
         let timeout_clone = Arc::clone(&keyboard.timeout_ms);
+        let activation_delay_clone = Arc::clone(&keyboard.activation_delay_ms);
         let visible_layers_clone = Arc::clone(&keyboard.visible_layers);
         let matrix_clone = Arc::clone(&matrix);
         let alive_clone = Arc::clone(&alive);
@@ -202,17 +252,19 @@ impl Keyboard {
                             default_layer_state,
                             visible_layers_clone.load(Ordering::Relaxed),
                         );
-                        let visible_for = overlay_visible_duration(
-                            active_layers,
-                            previous_layers,
-                            timeout_clone.load(Ordering::Relaxed),
-                        );
-                        previous_layers = active_layers;
-                        *time_to_hide_clone.lock().unwrap() =
-                            visible_for.map(|duration| Instant::now() + duration);
-
                         *layer_state_clone.lock().unwrap() = layer_state;
                         *default_layer_state_clone.lock().unwrap() = default_layer_state;
+
+                        let mut visibility = visibility_clone.lock().unwrap();
+                        *visibility = next_visibility_window(
+                            active_layers,
+                            previous_layers,
+                            *visibility,
+                            Instant::now(),
+                            timeout_clone.load(Ordering::Relaxed),
+                            activation_delay_clone.load(Ordering::Relaxed),
+                        );
+                        previous_layers = active_layers;
                         needs_repaint = true;
                     }
                     Some(KEY_EVENT_PACKET) if response.len() >= 4 => {
@@ -222,11 +274,7 @@ impl Keyboard {
                         if let Ok(mut mat) = matrix_clone.lock() {
                             mat.set_pressed(row, col, pressed != 0);
                         }
-                        needs_repaint = time_to_hide_clone
-                            .lock()
-                            .unwrap()
-                            .as_ref()
-                            .is_none_or(|time_to_hide| Instant::now() < *time_to_hide);
+                        needs_repaint = visibility_clone.lock().unwrap().is_visible(Instant::now());
                     }
                     _ => {}
                 }
@@ -242,6 +290,15 @@ impl Keyboard {
 
     pub fn is_alive(&self) -> bool {
         self.alive.load(Ordering::Relaxed)
+    }
+
+    pub fn overlay_is_visible(&self, now: Instant) -> bool {
+        self.overlay_visibility.lock().unwrap().is_visible(now)
+    }
+
+    /// How long until the overlay appears or disappears on its own, for scheduling a repaint.
+    pub fn overlay_changes_in(&self, now: Instant) -> Option<Duration> {
+        self.overlay_visibility.lock().unwrap().changes_in(now)
     }
 
     pub fn get_effective_key_layer(&self, row: usize, col: usize) -> (u8, bool) {
@@ -311,11 +368,73 @@ impl Keyboard {
         self.timeout_ms.store(timeout, Ordering::Relaxed);
     }
 
+    pub fn set_activation_delay(&self, activation_delay: u32) {
+        self.activation_delay_ms
+            .store(activation_delay, Ordering::Relaxed);
+    }
+
     pub fn set_visible_layers(&self, visible_layers: u32) {
         self.visible_layers.store(visible_layers, Ordering::Relaxed);
     }
 
     pub fn set_layout(&mut self, layout: KeyboardLayout) {
         self.layout = layout;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ActiveLayers::{Base, Excluded, Selected};
+    use super::*;
+
+    const TIMEOUT: i64 = 2000;
+    const DELAY: u32 = 300;
+
+    /// Walks the layer-state transitions the activation delay has to survive.
+    #[test]
+    fn activation_delay_gates_the_overlay() {
+        let start = Instant::now();
+        let at = |ms| start + Duration::from_millis(ms);
+        let hidden = VisibilityWindow::hidden(start);
+
+        // Holding a layer arms the delay; the overlay only shows once it has elapsed.
+        let held = next_visibility_window(Selected, Base, hidden, start, TIMEOUT, DELAY);
+        assert!(!held.is_visible(at(299)));
+        assert!(held.is_visible(at(300)));
+        assert_eq!(held.changes_in(start), Some(Duration::from_millis(300)));
+
+        // A second layer added mid-hold keeps the original countdown.
+        let more = next_visibility_window(Selected, Selected, held, at(200), TIMEOUT, DELAY);
+        assert!(more.is_visible(at(300)));
+
+        // Releasing before the delay elapsed shows nothing at all.
+        let tapped = next_visibility_window(Base, Selected, held, at(100), TIMEOUT, DELAY);
+        assert!(!tapped.is_visible(at(100)));
+
+        // Releasing after it elapsed lingers for the display duration.
+        let released = next_visibility_window(Base, Selected, held, at(400), TIMEOUT, DELAY);
+        assert!(released.is_visible(at(2399)));
+        assert!(!released.is_visible(at(2400)));
+
+        // A layer held while the overlay is still up must not blink it away.
+        let again = next_visibility_window(Selected, Base, released, at(500), TIMEOUT, DELAY);
+        assert!(again.is_visible(at(500)));
+    }
+
+    /// Without a delay the overlay behaves as it does with the feature turned off.
+    #[test]
+    fn zero_delay_shows_the_overlay_right_away() {
+        let start = Instant::now();
+        let hidden = VisibilityWindow::hidden(start);
+
+        let held = next_visibility_window(Selected, Base, hidden, start, TIMEOUT, 0);
+        assert!(held.is_visible(start));
+        assert_eq!(held.changes_in(start), None);
+
+        // Leaving an excluded layer still must not surface the base layer.
+        let excluded = next_visibility_window(Excluded, Selected, held, start, TIMEOUT, 0);
+        assert!(!excluded.is_visible(start));
+        let base = next_visibility_window(Base, Excluded, excluded, start, TIMEOUT, 0);
+        assert!(!base.is_visible(start));
     }
 }
