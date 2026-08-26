@@ -1,9 +1,15 @@
 //! Persistent "Edit key" window: its content follows the most recently clicked
-//! key on a pinned layer. The per-firmware editing UI lands in later stages;
-//! this module currently shows the target and its current binding.
+//! key on a pinned layer.
+
+mod picker;
+mod qmk_catalog;
+mod qmk_editor;
+
+pub use qmk_editor::QmkDraft;
 
 use crate::key_action::KeyAction;
 use crate::keyboard::Keyboard;
+use crate::protocols::WriteSupport;
 use egui::Window;
 use std::sync::mpsc;
 
@@ -19,10 +25,12 @@ pub struct EditTarget {
 pub struct EditorState {
     /// `None` = window closed.
     pub target: Option<EditTarget>,
-    /// An in-flight write; polled each frame (added in the write stages).
+    /// An in-flight write; polled each frame.
     pub pending: Option<mpsc::Receiver<Result<(), String>>>,
     /// Last write/read error shown in the window.
     pub error: Option<String>,
+    /// Per-firmware draft state, rebuilt on each retarget.
+    pub qmk_draft: qmk_editor::QmkDraft,
 }
 
 impl EditorState {
@@ -31,6 +39,7 @@ impl EditorState {
             target: None,
             pending: None,
             error: None,
+            qmk_draft: qmk_editor::QmkDraft::default(),
         }
     }
 }
@@ -67,8 +76,7 @@ pub fn describe_action(action: &KeyAction, layer_names: &[String]) -> String {
 }
 
 impl crate::overlay_window::OverlayApp {
-    /// Draws the persistent "Edit key" window for the current target. The body
-    /// is just the header and an error slot until the write stages arrive.
+    /// Draws the persistent "Edit key" window for the current target.
     pub(super) fn draw_editor_window(&mut self, ctx: &egui::Context, keyboard: &Keyboard) {
         let Some(target) = self.editor.target else {
             return;
@@ -83,6 +91,8 @@ impl crate::overlay_window::OverlayApp {
             .get(target.layer_index)
             .and_then(|info| info.name.clone())
             .unwrap_or_else(|| format!("Layer {}", target.layer_index));
+
+        self.poll_pending_write(ctx);
 
         let mut open = true;
         Window::new("Edit key")
@@ -105,6 +115,22 @@ impl crate::overlay_window::OverlayApp {
                     }
                 }
 
+                let can_edit = keyboard.write_support() == WriteSupport::Immediate
+                    && matches!(
+                        keyboard.get_action(target.layer_index, target.row, target.col),
+                        Some(KeyAction::Qmk(_))
+                    );
+                if can_edit {
+                    ui.add_space(8.0);
+                    ui.separator();
+                    let mut draft = self.editor.qmk_draft.clone();
+                    self.draw_qmk_editor_body(ui, keyboard, target, &mut draft);
+                    self.editor.qmk_draft = draft;
+                } else {
+                    ui.add_space(8.0);
+                    ui.weak("This key cannot be edited in this version.");
+                }
+
                 if let Some(error) = &self.editor.error {
                     ui.add_space(4.0);
                     ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
@@ -112,9 +138,35 @@ impl crate::overlay_window::OverlayApp {
             });
 
         if !open {
-            self.editor.target = None;
-            self.editor.pending = None;
-            self.editor.error = None;
+            self.close_editor_window();
         }
+    }
+
+    /// Polls an in-flight write once per frame, repainting while it is pending.
+    fn poll_pending_write(&mut self, ctx: &egui::Context) {
+        let Some(receiver) = &self.editor.pending else {
+            return;
+        };
+        match receiver.try_recv() {
+            Ok(Ok(())) => self.editor.pending = None,
+            Ok(Err(e)) => {
+                self.editor.pending = None;
+                self.editor.error = Some(e);
+            }
+            Err(mpsc::TryRecvError::Empty) => {
+                ctx.request_repaint();
+            }
+            Err(mpsc::TryRecvError::Disconnected) => {
+                self.editor.pending = None;
+                self.editor.error = Some("Connection lost".to_string());
+            }
+        }
+    }
+
+    fn close_editor_window(&mut self) {
+        self.editor.target = None;
+        self.editor.pending = None;
+        self.editor.error = None;
+        self.editor.qmk_draft = Default::default();
     }
 }
