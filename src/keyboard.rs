@@ -4,10 +4,12 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::key_matrix::KeyMatrix;
+use crate::key_action::{KeyAction, KeymapSnapshot};
+use crate::key_matrix::{BoundKey, KeyMatrix};
 use crate::layout_key::LayoutKey;
-use crate::protocols::{KeyboardLayout, KeyboardProtocol};
+use crate::protocols::{DeviceLocked, KeyboardLayout, KeyboardProtocol, WriteSupport};
 use crate::ui_wake::UiWake;
+use std::error::Error;
 
 /// A layer packet's size field is `sizeof(layer_state_t)` and at most 4 bytes.
 const MAX_LAYER_STATE_BYTES: usize = 4;
@@ -15,6 +17,14 @@ const MAX_LAYER_STATE_BYTES: usize = 4;
 const LAYER_STATE_PACKET: u8 = 0xff;
 /// Leading byte of a key event packet, followed by `row`, `col`, `pressed`.
 const KEY_EVENT_PACKET: u8 = 0xF1;
+
+/// A `0xff`-led packet is only a real layer-state packet when its size field is
+/// `sizeof(layer_state_t)` and both bitmasks fit; firmware without this module
+/// echoes other packets with the same leading byte.
+fn is_layer_state_packet(response: &[u8]) -> bool {
+    let size = response[1] as usize;
+    size != 0 && size <= MAX_LAYER_STATE_BYTES && 2 + 2 * size <= response.len()
+}
 
 /// The active layers as seen through the visible-layer bitmask (bit `i` selects layer
 /// `i`; see `Settings::visible_layers`).
@@ -133,7 +143,118 @@ pub struct Keyboard {
     default_layer_state: Arc<Mutex<u32>>,
     config: Arc<Mutex<OverlayConfig>>,
     alive: Arc<AtomicBool>,
+    command_tx: mpsc::Sender<KeymapCommand>,
+    write_support: WriteSupport,
     _keepalive: Option<mpsc::Sender<()>>,
+}
+
+/// A keymap write request for the protocol, executed on the reader thread so
+/// writes and reads never race the same HID handle.
+pub enum KeymapCommand {
+    SetKey {
+        layer_index: usize,
+        row: usize,
+        col: usize,
+        action: KeyAction,
+        respond: mpsc::Sender<Result<(), String>>,
+    },
+    Save {
+        respond: mpsc::Sender<Result<(), String>>,
+    },
+    Discard {
+        respond: mpsc::Sender<Result<(), String>>,
+    },
+    /// Fire-and-forget; closes any transient write connection.
+    EndEditSession,
+}
+
+/// The error text shown for a failed write. Locked ZMK devices get a
+/// retryable message instead of the raw RPC error.
+fn write_error_text(error: Box<dyn Error>) -> String {
+    if error.is::<DeviceLocked>() {
+        "Device is locked. Press the ZMK Studio unlock key combination on your keyboard, \
+         then try again."
+            .to_string()
+    } else {
+        error.to_string()
+    }
+}
+
+/// Replaces the matrix content from a fresh snapshot while keeping per-key
+/// pressed state (a discard must not clear keys the user is holding).
+fn replace_matrix_content(matrix: &Arc<Mutex<KeyMatrix>>, snapshot: KeymapSnapshot) {
+    let mut guard = matrix.lock().unwrap();
+    let pressed = guard.pressed.clone();
+    let rows = pressed.len();
+    let cols = pressed.first().map_or(0, Vec::len);
+    let mut replacement = KeyMatrix::from_snapshot(snapshot, rows, cols);
+    replacement.pressed = pressed;
+    *guard = replacement;
+}
+
+/// Executes one command on the protocol. Runs on the reader thread.
+fn run_keymap_command(
+    protocol: &mut dyn KeyboardProtocol,
+    command: KeymapCommand,
+    layer_names: &[String],
+    matrix: &Arc<Mutex<KeyMatrix>>,
+    ui_wake: &UiWake,
+) {
+    match command {
+        KeymapCommand::SetKey {
+            layer_index,
+            row,
+            col,
+            action,
+            respond,
+        } => {
+            let layer_info = matrix
+                .lock()
+                .unwrap()
+                .layer_infos()
+                .get(layer_index)
+                .cloned();
+
+            let result = layer_info
+                .ok_or_else(|| format!("Unknown layer index {layer_index}"))
+                .and_then(|layer| {
+                    protocol
+                        .set_key(&layer, layer_index, row, col, &action)
+                        .map_err(write_error_text)
+                });
+
+            if result.is_ok() {
+                let label = action.resolve_label(layer_names);
+                let mut guard = matrix.lock().unwrap();
+                if let Some(cell) = guard
+                    .keys
+                    .get_mut(layer_index)
+                    .and_then(|layer| layer.get_mut(row))
+                    .and_then(|r| r.get_mut(col))
+                {
+                    *cell = Some(BoundKey { label, action });
+                }
+                drop(guard);
+                ui_wake.request_repaint();
+            }
+            let _ = respond.send(result);
+        }
+        KeymapCommand::Save { respond } => {
+            let result = protocol.save_keymap().map_err(write_error_text);
+            let _ = respond.send(result);
+        }
+        KeymapCommand::Discard { respond } => match protocol.discard_keymap() {
+            Ok(snapshot) => {
+                replace_matrix_content(matrix, snapshot);
+                ui_wake.request_repaint();
+                let _ = respond.send(Ok(()));
+            }
+            Err(e) => {
+                let _ = respond.send(Err(write_error_text(e)));
+            }
+        },
+        KeymapCommand::EndEditSession => protocol.end_edit_session(),
+    }
 }
 
 impl Keyboard {
@@ -152,7 +273,17 @@ impl Keyboard {
         let snapshot = protocol
             .read_keymap()
             .map_err(|e| format!("Failed to read keymap: {e}"))?;
+        // Kept outside the matrix so command execution can resolve labels for
+        // freshly written actions without locking it.
+        let layer_names: Vec<String> = snapshot
+            .layers
+            .iter()
+            .map(|l| l.name.clone().unwrap_or_default())
+            .collect();
         let matrix = KeyMatrix::from_snapshot(snapshot, definition.rows, definition.cols);
+
+        let write_support = protocol.write_support();
+        let (command_tx, command_rx) = mpsc::channel::<KeymapCommand>();
 
         let layer_state = Arc::new(Mutex::new(0));
         let default_layer_state = Arc::new(Mutex::new(0));
@@ -187,6 +318,8 @@ impl Keyboard {
             default_layer_state: Arc::clone(&default_layer_state),
             config: Arc::clone(&config),
             alive: Arc::clone(&alive),
+            command_tx,
+            write_support,
             _keepalive: keepalive,
         };
 
@@ -198,6 +331,7 @@ impl Keyboard {
         let alive_clone = Arc::clone(&alive);
 
         thread::spawn(move || {
+            let mut protocol = protocol;
             // A dropped link (sleep, BLE/USB disconnect) makes `hid_read` error repeatedly.
             // Mark the connection dead after a few consecutive errors to trigger reconnect.
             const MAX_CONSECUTIVE_ERRORS: u32 = 5;
@@ -206,7 +340,6 @@ impl Keyboard {
 
             loop {
                 let response = match protocol.hid_read() {
-                    Ok(response) if response.is_empty() => continue,
                     Ok(response) => {
                         consecutive_errors = 0;
                         response
@@ -225,18 +358,10 @@ impl Keyboard {
 
                 let mut needs_repaint = false;
                 match response.first().copied() {
-                    Some(LAYER_STATE_PACKET) if response.len() >= 2 => {
+                    Some(LAYER_STATE_PACKET)
+                        if response.len() >= 2 && is_layer_state_packet(&response) =>
+                    {
                         let size = response[1] as usize;
-
-                        // Not every 0xff packet is a layer packet: firmware without this module
-                        // echoes our subscribe command back starting with 0xff. A real layer
-                        // packet's length is sizeof(layer_state_t) (<=4), so skip anything else.
-                        if size == 0
-                            || size > MAX_LAYER_STATE_BYTES
-                            || 2 + 2 * size > response.len()
-                        {
-                            continue;
-                        }
 
                         let mut default_bytes = [0u8; 4];
                         default_bytes[..size].copy_from_slice(&response[2..2 + size]);
@@ -280,6 +405,22 @@ impl Keyboard {
 
                 if needs_repaint {
                     ui_wake.request_repaint();
+                }
+
+                // Commands run once per loop iteration, after the read: writes
+                // and reads never race the same HID handle, and a command waits
+                // at most one `hid_read` timeout.
+                loop {
+                    match command_rx.try_recv() {
+                        Ok(command) => run_keymap_command(
+                            protocol.as_mut(),
+                            command,
+                            &layer_names,
+                            &matrix_clone,
+                            &ui_wake,
+                        ),
+                        Err(_) => break,
+                    }
                 }
             }
         });
@@ -352,6 +493,62 @@ impl Keyboard {
 
     pub fn is_key_pressed(&self, row: usize, col: usize) -> bool {
         self.matrix.lock().unwrap().is_pressed(row, col)
+    }
+
+    pub fn write_support(&self) -> WriteSupport {
+        self.write_support
+    }
+
+    pub fn set_key(
+        &self,
+        layer_index: usize,
+        row: usize,
+        col: usize,
+        action: KeyAction,
+    ) -> mpsc::Receiver<Result<(), String>> {
+        self.send_keymap_command(|respond| KeymapCommand::SetKey {
+            layer_index,
+            row,
+            col,
+            action,
+            respond,
+        })
+    }
+
+    pub fn save_keymap(&self) -> mpsc::Receiver<Result<(), String>> {
+        self.send_keymap_command(|respond| KeymapCommand::Save { respond })
+    }
+
+    pub fn discard_keymap(&self) -> mpsc::Receiver<Result<(), String>> {
+        self.send_keymap_command(|respond| KeymapCommand::Discard { respond })
+    }
+
+    /// Fire-and-forget: closes any transient write connection on the protocol.
+    pub fn end_edit_session(&self) {
+        let _ = self.command_tx.send(KeymapCommand::EndEditSession);
+    }
+
+    /// Queues a command for the reader thread and returns the receiver for its
+    /// result. If the thread is gone (connection lost), the receiver carries an
+    /// error instead of hanging.
+    fn send_keymap_command(
+        &self,
+        build: impl FnOnce(mpsc::Sender<Result<(), String>>) -> KeymapCommand,
+    ) -> mpsc::Receiver<Result<(), String>> {
+        let (respond, receiver) = mpsc::channel();
+        let command = build(respond);
+
+        if let Err(send_error) = self.command_tx.send(command) {
+            match send_error.0 {
+                KeymapCommand::SetKey { respond, .. }
+                | KeymapCommand::Save { respond }
+                | KeymapCommand::Discard { respond } => {
+                    let _ = respond.send(Err("Connection lost".to_string()));
+                }
+                KeymapCommand::EndEditSession => {}
+            }
+        }
+        receiver
     }
 
     /// `HELD_MOD_SHIFT`/`HELD_MOD_RALT` bits OR'd over every pressed key's

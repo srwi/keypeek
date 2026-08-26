@@ -10,6 +10,8 @@ pub mod zmk_rpc;
 use qmk_via_api::api::KeyboardApi;
 use std::error::Error;
 use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
 
 use self::mock::MockProtocol;
 use self::via::ViaProtocol;
@@ -21,6 +23,35 @@ pub use self::zmk_rpc::DeviceLocked;
 pub const KEYPEEK_SUBSCRIBE_MARKER: u8 = 0xC0;
 pub const KEYPEEK_SUBSCRIBE_ACTIVE: u8 = 0xA1;
 pub const KEYPEEK_SUBSCRIBE_INACTIVE: u8 = 0xA0;
+
+/// Writes one dynamic-keymap keycode through the VIA protocol.
+///
+/// A layer-state packet arriving between `set_key`'s send and its single
+/// response read makes the crate report `BadCommandResponse` even though the
+/// write usually applied; a matching `get_key` readback confirms success.
+pub(crate) fn qmk_set_key_with_retry(
+    api: &KeyboardApi,
+    layer_index: usize,
+    row: usize,
+    col: usize,
+    code: u16,
+) -> Result<(), Box<dyn Error>> {
+    match api.set_key(layer_index as u8, row as u8, col as u8, code) {
+        Ok(_) => Ok(()),
+        Err(qmk_via_api::Error::BadCommandResponse(_)) => {
+            for _ in 0..3 {
+                thread::sleep(Duration::from_millis(50));
+                if let Ok(readback) = api.get_key(layer_index as u8, row as u8, col as u8) {
+                    if readback == code {
+                        return Ok(());
+                    }
+                }
+            }
+            Err("Failed to set key: the device did not confirm the write".into())
+        }
+        Err(e) => Err(format!("Failed to set key: {e}").into()),
+    }
+}
 
 pub type Row = usize;
 pub type Column = usize;
@@ -75,12 +106,53 @@ impl KeyboardDefinition {
     }
 }
 
+/// How a protocol persists keymap writes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WriteSupport {
+    /// The protocol cannot write keymaps.
+    None,
+    /// Every write persists at once (QMK/Vial/mock).
+    Immediate,
+    /// Writes live in RAM until `save_keymap` persists them (ZMK).
+    Session,
+}
+
 pub trait KeyboardProtocol: Send {
     fn get_layout_definition(&self) -> &KeyboardDefinition;
 
     fn read_keymap(&self) -> Result<crate::key_action::KeymapSnapshot, Box<dyn Error>>;
 
     fn hid_read(&self) -> Result<Vec<u8>, Box<dyn Error>>;
+
+    fn write_support(&self) -> WriteSupport {
+        WriteSupport::None
+    }
+
+    /// Writes one binding. `layer` carries the stable ZMK layer id (`layer_index`
+    /// is the position in the layer list, which QMK keys off instead).
+    fn set_key(
+        &mut self,
+        _layer: &crate::key_action::LayerInfo,
+        _layer_index: usize,
+        _row: usize,
+        _col: usize,
+        _action: &crate::key_action::KeyAction,
+    ) -> Result<(), Box<dyn Error>> {
+        Err("not supported".into())
+    }
+
+    /// ZMK: persist pending writes. Immediate protocols: `Ok(())`.
+    fn save_keymap(&mut self) -> Result<(), Box<dyn Error>> {
+        Ok(())
+    }
+
+    /// ZMK: revert pending writes; returns the reverted keymap.
+    fn discard_keymap(&mut self) -> Result<crate::key_action::KeymapSnapshot, Box<dyn Error>> {
+        Err("not supported".into())
+    }
+
+    /// Closes any transient write connection (ZMK Studio client).
+    fn end_edit_session(&mut self) {}
 
     fn subscription_sender(&self) -> Result<Option<Box<dyn SubscriptionSender>>, Box<dyn Error>> {
         Ok(None)

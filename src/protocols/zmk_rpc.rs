@@ -2,8 +2,8 @@ use std::error::Error;
 use std::io::{Read, Write};
 use std::time::Duration;
 use zmk_studio_api::proto::zmk::{core, keymap};
-use zmk_studio_api::transport::{BleDiscoveryMode, PlatformBleTransport};
-use zmk_studio_api::{ClientError, ResolvedLayer, StudioClient};
+use zmk_studio_api::transport::{serial::SerialTransport, BleDiscoveryMode, PlatformBleTransport};
+use zmk_studio_api::{Behavior, ClientError, ResolvedLayer, StudioClient};
 
 pub struct ZmkSerialDevice {
     pub port_name: String,
@@ -107,6 +107,84 @@ fn windows_bluetooth_radio_is_on() -> windows::core::Result<bool> {
 pub struct ZmkData {
     pub physical_layouts: keymap::PhysicalLayouts,
     pub resolved_layers: Vec<ResolvedLayer>,
+}
+
+/// A ZMK Studio RPC connection held open across an edit session. The two
+/// transports are different concrete client types; they are not unified
+/// generically.
+pub enum ZmkStudioSession {
+    Serial(StudioClient<SerialTransport>),
+    Ble(StudioClient<PlatformBleTransport>),
+}
+
+impl ZmkStudioSession {
+    /// Opens a session on the given transport and verifies the device is unlocked.
+    pub fn open(transport: &ZmkTransport) -> Result<Self, Box<dyn Error>> {
+        let mut session = match transport {
+            ZmkTransport::SerialPort(port_name) => {
+                Self::Serial(StudioClient::open_serial(port_name).map_err(|e| {
+                    format!(
+                        "Failed to open serial port '{port_name}': {e}. \
+                         The port may be in use by another application such as ZMK Studio."
+                    )
+                })?)
+            }
+            ZmkTransport::BleDevice(device_id) => Self::Ble(
+                StudioClient::<PlatformBleTransport>::open_ble(device_id).map_err(|e| {
+                    format!(
+                        "Failed to connect to BLE device '{device_id}': {e}. \
+                     Make sure the keyboard is paired in your OS Bluetooth settings."
+                    )
+                })?,
+            ),
+        };
+
+        if session.lock_state()? == core::LockState::ZmkStudioCoreLockStateLocked {
+            return Err(Box::new(DeviceLocked));
+        }
+
+        Ok(session)
+    }
+
+    fn lock_state(&mut self) -> Result<core::LockState, Box<dyn Error>> {
+        Ok(match self {
+            Self::Serial(client) => client.get_lock_state()?,
+            Self::Ble(client) => client.get_lock_state()?,
+        })
+    }
+
+    pub fn set_key(
+        &mut self,
+        layer_id: u32,
+        key_position: i32,
+        behavior: Behavior,
+    ) -> Result<(), Box<dyn Error>> {
+        match self {
+            Self::Serial(client) => client.set_key_at(layer_id, key_position, behavior)?,
+            Self::Ble(client) => client.set_key_at(layer_id, key_position, behavior)?,
+        }
+        Ok(())
+    }
+
+    pub fn save(&mut self) -> Result<(), Box<dyn Error>> {
+        match self {
+            Self::Serial(client) => client.save_changes()?,
+            Self::Ble(client) => client.save_changes()?,
+        }
+        Ok(())
+    }
+
+    /// Reverts pending writes and returns the device's restored keymap.
+    pub fn discard(&mut self) -> Result<Vec<ResolvedLayer>, Box<dyn Error>> {
+        match self {
+            Self::Serial(client) => client.discard_changes()?,
+            Self::Ble(client) => client.discard_changes()?,
+        };
+        Ok(match self {
+            Self::Serial(client) => client.resolve_keymap()?,
+            Self::Ble(client) => client.resolve_keymap()?,
+        })
+    }
 }
 
 pub fn fetch_zmk_data(transport: &ZmkTransport) -> Result<ZmkData, Box<dyn Error>> {
