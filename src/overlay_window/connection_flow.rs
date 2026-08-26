@@ -182,6 +182,7 @@ impl OverlayApp {
         let request = ConnectionRequest {
             spec,
             timeout: self.settings.active.timeout,
+            activation_delay: self.settings.active.activation_delay,
             visible_layers: self.settings.active.visible_layers.bits(),
             layout_name,
             reopen,

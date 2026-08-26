@@ -231,6 +231,7 @@ pub struct Settings {
     pub auto_fit_before_ellipsis: bool,
     pub position: WindowPosition,
     pub timeout: i64,
+    pub activation_delay: u32,
     pub margin: u32,
     pub visible_layers: LayerMask,
     pub theme: ThemeSettings,
@@ -245,6 +246,7 @@ impl Default for Settings {
             auto_fit_before_ellipsis: false,
             position: WindowPosition::BottomRight,
             timeout: 2000,
+            activation_delay: 0,
             margin: 10,
             visible_layers: LayerMask::ALL,
             theme: ThemeSettings::default(),
@@ -254,6 +256,9 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// Upper bound for `activation_delay`, shared with the settings UI.
+    pub const MAX_ACTIVATION_DELAY_MS: u32 = 3_000;
+
     pub fn config_file_path() -> Option<PathBuf> {
         Self::project_dirs().map(|dirs| dirs.config_dir().join("settings.ini"))
     }
@@ -295,6 +300,7 @@ impl Settings {
         );
         section.set("position", self.position.to_string());
         section.set("timeout", self.timeout.to_string());
+        section.set("activation_delay", self.activation_delay.to_string());
         section.set("margin", self.margin.to_string());
         section.set("visible_layers", self.visible_layers.to_string());
         for (index, color) in self.theme.layer_colors.iter().enumerate() {
@@ -331,6 +337,10 @@ impl Settings {
             } else {
                 parsed.clamp(0, 14_999)
             };
+        }
+        if let Some(val) = section.get("activation_delay") {
+            let parsed = val.parse::<u32>().unwrap_or(s.activation_delay);
+            s.activation_delay = parsed.min(Self::MAX_ACTIVATION_DELAY_MS);
         }
         if let Some(val) = section.get("margin") {
             s.margin = val.parse().unwrap_or(s.margin);
