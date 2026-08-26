@@ -4,6 +4,7 @@ mod device_discovery;
 mod key_action;
 mod key_matrix;
 mod keyboard;
+mod keymap_editor;
 mod layout_key;
 mod os_layout;
 mod overlay_window;

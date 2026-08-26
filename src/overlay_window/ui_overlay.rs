@@ -461,19 +461,33 @@ impl OverlayApp {
         let size = self.settings.active.size as f32;
         let font_scale = self.settings.active.font_size_multiplier;
         let pinned = self.ui.pinned_layer;
+        // Keys can only be clicked on a pinned layer while settings are open.
+        let hit_test_enabled = self.ui.settings_visible && pinned.is_some();
 
         let overlay_response = Window::new("KeyPeek")
             .open(&mut window_open)
             .auto_sized()
-            .interactable(false)
+            .interactable(hit_test_enabled)
             .anchor(anchor_params.0, anchor_params.1)
             .frame(egui::Frame::NONE.fill(egui::Color32::TRANSPARENT))
             .fade_out(true)
             .title_bar(false)
             .show(ctx, |ui| {
                 let layout_size = keyboard.layout.get_dimensions();
-                ui.allocate_space(egui::vec2(layout_size.0 * size, layout_size.1 * size));
-                let window_pos = ui.min_rect().min;
+                let overlay_space =
+                    ui.allocate_space(egui::vec2(layout_size.0 * size, layout_size.1 * size));
+                let overlay_rect = overlay_space.1;
+                let window_pos = overlay_rect.min;
+
+                // Route pointer input through egui so a click on a key under an
+                // overlapping settings window is not misread.
+                let overlay_response = ui.interact(
+                    overlay_rect,
+                    ui.id().with("overlay_keys"),
+                    egui::Sense::click(),
+                );
+
+                let mut hovered_key: Option<(usize, usize)> = None;
 
                 // Only walk the matrix for live modifier state when the preview can
                 // actually use it; same reasoning as `is_key_pressed` elsewhere.
@@ -537,6 +551,20 @@ impl OverlayApp {
                     let center = rect.center();
                     let corner_radius = 0.1 * size;
 
+                    // Only keys with an existing binding slot are clickable; a
+                    // transparent slot counts, an absent one does not.
+                    let clickable = hit_test_enabled
+                        && keyboard
+                            .get_action(effective_layer as usize, key.row, key.col)
+                            .is_some();
+                    let hovered = clickable
+                        && overlay_response
+                            .hover_pos()
+                            .is_some_and(|p| rect.contains(rotate_point(p, center, -angle)));
+                    if hovered {
+                        hovered_key = Some((key.row, key.col));
+                    }
+
                     // Fill first; the border is drawn separately so layer keys can carry
                     // a styled outline. The pressed outline always wins; otherwise a layer
                     // key uses a heavier styled border hinting how its layer activates.
@@ -545,7 +573,7 @@ impl OverlayApp {
                             .with_angle(angle),
                     );
 
-                    let (border_style, border_width, border_color) =
+                    let (border_style, border_width, mut border_color) =
                         if pressed || layout_key.border == BorderStyle::None {
                             (BorderStyle::Solid, border_thickness, stroke_color)
                         } else {
@@ -556,6 +584,10 @@ impl OverlayApp {
                                 fill_color.lerp_to_gamma(egui::Color32::WHITE, 0.45),
                             )
                         };
+                    if hovered {
+                        border_color = fill_color.lerp_to_gamma(egui::Color32::WHITE, 0.45);
+                        ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+                    }
                     self.paint_key_border(
                         ui,
                         rect,
@@ -652,7 +684,27 @@ impl OverlayApp {
                         _ => {}
                     }
                 }
+
+                (hovered_key, overlay_response.clicked())
             });
+
+        // Handle a click after the closure so editor state can be mutated.
+        if hit_test_enabled {
+            if let Some(response) = overlay_response.as_ref() {
+                if let Some((hovered, clicked)) = response.inner {
+                    if clicked {
+                        if let Some((row, col)) = hovered {
+                            self.editor.target = Some(crate::keymap_editor::EditTarget {
+                                layer_index: pinned.unwrap(),
+                                row,
+                                col,
+                            });
+                            self.editor.error = None;
+                        }
+                    }
+                }
+            }
+        }
 
         overlay_response.map(|response| response.response.rect)
     }

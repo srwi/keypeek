@@ -396,6 +396,7 @@ impl OverlayApp {
         if self.ui.settings_visible && !open {
             self.ui.settings_visible = false;
             self.ui.pinned_layer = None;
+            self.close_editor();
             self.persist_settings();
             if !self.session.ever_connected {
                 host.request_close();

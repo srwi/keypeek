@@ -199,6 +199,7 @@ impl OverlayApp {
     pub(super) fn maintain_connection(&mut self, ctx: &egui::Context) {
         if let AppConnectionState::Connected { keyboard } = &self.session.connection {
             if !keyboard.is_alive() {
+                self.close_editor();
                 self.session.connection = AppConnectionState::Reconnecting {
                     next_attempt_at: Instant::now(),
                 };
