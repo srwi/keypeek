@@ -3,25 +3,14 @@
 
 use crate::key_action::KeyAction;
 use crate::keyboard::Keyboard;
-use zmk_studio_api::{
-    Behavior, HidUsage, HID_USAGE_KEYBOARD, MOD_LALT, MOD_LCTL, MOD_LGUI, MOD_LSFT,
-};
+use zmk_studio_api::{Behavior, HidUsage, HID_USAGE_KEYBOARD};
 
-use super::picker::{picker_grid_rows, KEY_UNIT};
+use super::picker::{
+    candidate_groups_rows, modifier_select_grid, modifier_toggle_row, picker_grid_rows, Candidate,
+    KEY_UNIT, MOD_KEY_UNIT,
+};
 use super::zmk_catalog;
 use super::{EditTarget, PendingKind};
-
-/// The eight dedicated modifier keycodes offered as a Mod-Tap hold side.
-const MODIFIER_KEYCODES: [(u16, &str); 8] = [
-    (0xE0, "LCTL"),
-    (0xE1, "LSFT"),
-    (0xE2, "LALT"),
-    (0xE3, "LGUI"),
-    (0xE4, "RCTL"),
-    (0xE5, "RSFT"),
-    (0xE6, "RALT"),
-    (0xE7, "RGUI"),
-];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ZmkBehaviorKind {
@@ -53,7 +42,7 @@ pub enum ZmkBehaviorKind {
 }
 
 impl ZmkBehaviorKind {
-    fn label(&self) -> &'static str {
+    pub(super) fn label(&self) -> &'static str {
         use ZmkBehaviorKind::*;
         match self {
             KeyPress => "Key Press",
@@ -86,28 +75,10 @@ impl ZmkBehaviorKind {
 }
 
 /// Which ZMK behaviors carry parameters (and so need an Apply button); the
-/// rest apply on selection.
+/// layer, parameterless, and command kinds apply on click from their key grids.
 fn needs_params(kind: ZmkBehaviorKind) -> bool {
     use ZmkBehaviorKind::*;
-    matches!(
-        kind,
-        KeyPress
-            | KeyToggle
-            | StickyKey
-            | MomentaryLayer
-            | ToggleLayer
-            | ToLayer
-            | StickyLayer
-            | LayerTap
-            | ModTap
-            | Bluetooth
-            | OutputSelection
-            | Backlight
-            | Underglow
-            | MouseKeyPress
-            | MouseMove
-            | MouseScroll
-    )
+    matches!(kind, KeyPress | KeyToggle | StickyKey | ModTap)
 }
 
 const KEY_LIST: &[ZmkBehaviorKind] = &[
@@ -115,25 +86,7 @@ const KEY_LIST: &[ZmkBehaviorKind] = &[
     ZmkBehaviorKind::KeyToggle,
     ZmkBehaviorKind::StickyKey,
 ];
-const LAYER_LIST: &[ZmkBehaviorKind] = &[
-    ZmkBehaviorKind::MomentaryLayer,
-    ZmkBehaviorKind::ToggleLayer,
-    ZmkBehaviorKind::ToLayer,
-    ZmkBehaviorKind::StickyLayer,
-    ZmkBehaviorKind::LayerTap,
-];
 const MOD_LIST: &[ZmkBehaviorKind] = &[ZmkBehaviorKind::ModTap];
-const NO_PARAM_LIST: &[ZmkBehaviorKind] = &[
-    ZmkBehaviorKind::Transparent,
-    ZmkBehaviorKind::NoneBehavior,
-    ZmkBehaviorKind::CapsWord,
-    ZmkBehaviorKind::KeyRepeat,
-    ZmkBehaviorKind::GraveEscape,
-    ZmkBehaviorKind::StudioUnlock,
-    ZmkBehaviorKind::Reset,
-    ZmkBehaviorKind::Bootloader,
-    ZmkBehaviorKind::SoftOff,
-];
 const COMMAND_LIST: &[ZmkBehaviorKind] = &[
     ZmkBehaviorKind::Bluetooth,
     ZmkBehaviorKind::OutputSelection,
@@ -361,7 +314,8 @@ impl crate::overlay_window::OverlayApp {
         // Two-pane layout: every behavior kind lives in the left panel under
         // its group header, full-width selectable; the right pane holds the
         // selected kind's parameter form. Each pane scrolls independently and
-        // fills the window instead of growing it.
+        // fills the window instead of growing it. The parameterless behaviors
+        // share one "Special" entry whose pane is a key grid.
         egui::Panel::left("zmk_kinds")
             .resizable(false)
             .exact_size(110.0)
@@ -369,18 +323,30 @@ impl crate::overlay_window::OverlayApp {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.add_space(2.0);
                     ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
-                        for (header, list) in [
-                            ("Keys", KEY_LIST),
-                            ("Layers", LAYER_LIST),
-                            ("Mods", MOD_LIST),
-                            ("No parameters", NO_PARAM_LIST),
-                            ("Commands", COMMAND_LIST),
-                        ] {
-                            ui.weak(header);
-                            for kind in list {
-                                ui.selectable_value(&mut draft.kind, *kind, kind.label());
-                            }
-                            ui.add_space(4.0);
+                        ui.weak("Keys");
+                        for kind in KEY_LIST {
+                            ui.selectable_value(&mut draft.kind, *kind, kind.label());
+                        }
+                        ui.add_space(4.0);
+                        // All layer behaviors share one page of grouped keys.
+                        let response = ui.selectable_label(is_layer_kind(draft.kind), "Layers");
+                        if response.clicked() {
+                            draft.kind = ZmkBehaviorKind::MomentaryLayer;
+                        }
+                        ui.add_space(4.0);
+                        ui.weak("Mods");
+                        for kind in MOD_LIST {
+                            ui.selectable_value(&mut draft.kind, *kind, kind.label());
+                        }
+                        ui.add_space(4.0);
+                        ui.weak("Commands");
+                        for kind in COMMAND_LIST {
+                            ui.selectable_value(&mut draft.kind, *kind, kind.label());
+                        }
+                        ui.add_space(4.0);
+                        let response = ui.selectable_label(is_no_param(draft.kind), "Special");
+                        if response.clicked() {
+                            draft.kind = ZmkBehaviorKind::Transparent;
                         }
                     });
                 });
@@ -389,38 +355,8 @@ impl crate::overlay_window::OverlayApp {
         egui::CentralPanel::default().show_inside(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 match draft.kind {
-                    ZmkBehaviorKind::KeyPress
-                    | ZmkBehaviorKind::KeyToggle
-                    | ZmkBehaviorKind::StickyKey => {
-                        self.draw_usage_picker(ui, draft, true);
-                    }
-                    ZmkBehaviorKind::MomentaryLayer
-                    | ZmkBehaviorKind::ToggleLayer
-                    | ZmkBehaviorKind::ToLayer
-                    | ZmkBehaviorKind::StickyLayer => {
-                        self.draw_layer_selector(ui, &layer_infos, &mut draft.layer_id);
-                    }
-                    ZmkBehaviorKind::LayerTap => {
-                        self.draw_layer_selector(ui, &layer_infos, &mut draft.layer_id);
-                        ui.label("Tap key:");
-                        self.draw_usage_picker(ui, draft, true);
-                    }
-                    ZmkBehaviorKind::ModTap => {
-                        ui.label("Hold modifier:");
-                        egui::ComboBox::from_id_salt("hold_mod_combo")
-                            .selected_text(modifier_label(draft.hold_mod))
-                            .show_ui(ui, |ui| {
-                                for (id, name) in MODIFIER_KEYCODES {
-                                    ui.selectable_value(
-                                        &mut draft.hold_mod,
-                                        HidUsage::from_parts(HID_USAGE_KEYBOARD, id, 0),
-                                        name,
-                                    );
-                                }
-                            });
-                        ui.label("Tap key:");
-                        self.draw_usage_picker(ui, draft, true);
-                    }
+                    // Every parameterless behavior is a key here; clicking
+                    // applies it directly.
                     ZmkBehaviorKind::Transparent
                     | ZmkBehaviorKind::NoneBehavior
                     | ZmkBehaviorKind::CapsWord
@@ -429,126 +365,47 @@ impl crate::overlay_window::OverlayApp {
                     | ZmkBehaviorKind::StudioUnlock
                     | ZmkBehaviorKind::Reset
                     | ZmkBehaviorKind::Bootloader
-                    | ZmkBehaviorKind::SoftOff => {}
-                    ZmkBehaviorKind::Bluetooth => {
-                        ui.horizontal(|ui| {
-                            ui.label("Command");
-                            egui::ComboBox::from_id_salt("bt_command_combo")
-                                .selected_text(bt_command_label(draft.bt_command))
-                                .show_ui(ui, |ui| {
-                                    ui.selectable_value(&mut draft.bt_command, 0, "Clear");
-                                    ui.selectable_value(&mut draft.bt_command, 1, "Next");
-                                    ui.selectable_value(&mut draft.bt_command, 2, "Previous");
-                                    ui.selectable_value(&mut draft.bt_command, 3, "Select");
-                                    ui.selectable_value(&mut draft.bt_command, 4, "Clear All");
-                                    ui.selectable_value(&mut draft.bt_command, 5, "Disconnect");
-                                });
-                        });
-                        if draft.bt_command == 3 || draft.bt_command == 5 {
-                            ui.horizontal(|ui| {
-                                ui.label("Profile");
-                                ui.add(egui::DragValue::new(&mut draft.bt_profile).range(0..=9));
-                            });
-                        }
+                    | ZmkBehaviorKind::SoftOff => {
+                        self.draw_special_grid(ui, keyboard, target);
                     }
-                    ZmkBehaviorKind::OutputSelection => {
-                        ui.horizontal(|ui| {
-                            ui.label("Output");
-                            egui::ComboBox::from_id_salt("out_combo")
-                                .selected_text(output_label(draft.out_value))
-                                .show_ui(ui, |ui| {
-                                    ui.selectable_value(&mut draft.out_value, 0, "Toggle");
-                                    ui.selectable_value(&mut draft.out_value, 1, "USB");
-                                    ui.selectable_value(&mut draft.out_value, 2, "BLE");
-                                    ui.selectable_value(&mut draft.out_value, 3, "None");
-                                });
-                        });
+                    ZmkBehaviorKind::KeyPress
+                    | ZmkBehaviorKind::KeyToggle
+                    | ZmkBehaviorKind::StickyKey => {
+                        self.draw_usage_picker(ui, draft, true);
                     }
-                    ZmkBehaviorKind::Backlight => {
-                        self.draw_command_selector(
+                    ZmkBehaviorKind::MomentaryLayer
+                    | ZmkBehaviorKind::ToggleLayer
+                    | ZmkBehaviorKind::ToLayer
+                    | ZmkBehaviorKind::StickyLayer
+                    | ZmkBehaviorKind::LayerTap => {
+                        // One page of grouped layer keys; see draw_zmk_layer_page.
+                        self.draw_zmk_layer_page(ui, keyboard, target, draft, &layer_infos);
+                    }
+                    ZmkBehaviorKind::ModTap => {
+                        ui.label("Hold modifier:");
+                        let mod_style = self.paint_style(MOD_KEY_UNIT);
+                        modifier_select_grid(
                             ui,
-                            "Command",
-                            &mut draft.bl_command,
-                            &[
-                                (0, "On"),
-                                (1, "Off"),
-                                (2, "Toggle"),
-                                (3, "Increase"),
-                                (4, "Decrease"),
-                                (5, "Cycle"),
-                                (6, "Set"),
-                            ],
+                            "zmk_hold_mod",
+                            Some(draft.hold_mod.id()),
+                            &mod_style,
+                            |id| {
+                                draft.hold_mod = HidUsage::from_parts(HID_USAGE_KEYBOARD, id, 0);
+                            },
                         );
-                        if draft.bl_command == 6 {
-                            ui.horizontal(|ui| {
-                                ui.label("Level");
-                                ui.add(egui::DragValue::new(&mut draft.bl_value).range(0..=255));
-                            });
-                        }
+                        ui.label("Tap key:");
+                        self.draw_usage_picker(ui, draft, true);
                     }
-                    ZmkBehaviorKind::Underglow => {
-                        self.draw_command_selector(
-                            ui,
-                            "Command",
-                            &mut draft.rgb_command,
-                            &[
-                                (0, "Toggle"),
-                                (1, "On"),
-                                (2, "Off"),
-                                (3, "Hue +"),
-                                (4, "Hue -"),
-                                (5, "Saturation +"),
-                                (6, "Saturation -"),
-                                (7, "Brightness +"),
-                                (8, "Brightness -"),
-                                (9, "Speed +"),
-                                (10, "Speed -"),
-                                (11, "Effect +"),
-                                (12, "Effect -"),
-                                (13, "Effect Set"),
-                                (14, "Color"),
-                            ],
-                        );
-                    }
-                    ZmkBehaviorKind::MouseKeyPress => {
-                        self.draw_command_selector(
-                            ui,
-                            "Button",
-                            &mut draft.mouse_button,
-                            &[
-                                (1, "Left"),
-                                (2, "Right"),
-                                (4, "Middle"),
-                                (8, "Mouse 4"),
-                                (16, "Mouse 5"),
-                            ],
-                        );
-                    }
-                    ZmkBehaviorKind::MouseMove => {
-                        self.draw_command_selector(
-                            ui,
-                            "Direction",
-                            &mut draft.mouse_direction,
-                            &[
-                                (0x0001_0000, "Up"),
-                                (0xFFFF_FFFF, "Down"),
-                                (0x0000_0001, "Right"),
-                                (0x0000_FFFF, "Left"),
-                            ],
-                        );
-                    }
-                    ZmkBehaviorKind::MouseScroll => {
-                        self.draw_command_selector(
-                            ui,
-                            "Direction",
-                            &mut draft.mouse_direction,
-                            &[
-                                (0x0000_0001, "Up"),
-                                (0x0000_FFFF, "Down"),
-                                (0x0001_0000, "Right"),
-                                (0xFFFF_FFFF, "Left"),
-                            ],
-                        );
+                    ZmkBehaviorKind::Bluetooth
+                    | ZmkBehaviorKind::OutputSelection
+                    | ZmkBehaviorKind::Backlight
+                    | ZmkBehaviorKind::Underglow
+                    | ZmkBehaviorKind::MouseKeyPress
+                    | ZmkBehaviorKind::MouseMove
+                    | ZmkBehaviorKind::MouseScroll => {
+                        // Commands render as their own keys too; clicking
+                        // applies directly.
+                        self.draw_command_grid(ui, keyboard, target, draft);
                     }
                 }
 
@@ -559,104 +416,200 @@ impl crate::overlay_window::OverlayApp {
                             self.apply_zmk_write(keyboard, target, behavior);
                         }
                     }
-                } else if ui.button("Apply").clicked() {
-                    if let Some(behavior) = draft.to_behavior() {
-                        self.apply_zmk_write(keyboard, target, behavior);
-                    }
                 }
             });
         });
     }
 
-    fn draw_usage_picker(&mut self, ui: &mut egui::Ui, draft: &mut ZmkDraft, with_mods: bool) {
+    /// The usage-page key grid (with optional modifier toggles). Stages the
+    /// picked usage into the draft; returns true when a usage was clicked so
+    /// callers can apply the finished binding immediately.
+    fn draw_usage_picker(
+        &mut self,
+        ui: &mut egui::Ui,
+        draft: &mut ZmkDraft,
+        with_mods: bool,
+    ) -> bool {
         // The usage-page categories stay as headers inside one shared scroll
         // region; the key-shaped cells come from the shared picker grid.
         let selected =
             zmk_studio_api::HidUsage::from_parts(draft.usage.page(), draft.usage.id(), 0)
                 .to_hid_usage();
         let style = self.paint_style(KEY_UNIT);
+        let mut picked = false;
 
         if with_mods {
-            ui.horizontal(|ui| {
-                let mut ctrl = draft.modifiers & MOD_LCTL != 0;
-                let mut shift = draft.modifiers & MOD_LSFT != 0;
-                let mut alt = draft.modifiers & MOD_LALT != 0;
-                let mut gui = draft.modifiers & MOD_LGUI != 0;
-                if ui.checkbox(&mut ctrl, "Ctrl").changed()
-                    || ui.checkbox(&mut shift, "Shift").changed()
-                    || ui.checkbox(&mut alt, "Alt").changed()
-                    || ui.checkbox(&mut gui, "Gui").changed()
-                {
-                    draft.modifiers = 0;
-                    draft.modifiers |= if ctrl { MOD_LCTL } else { 0 };
-                    draft.modifiers |= if shift { MOD_LSFT } else { 0 };
-                    draft.modifiers |= if alt { MOD_LALT } else { 0 };
-                    draft.modifiers |= if gui { MOD_LGUI } else { 0 };
-                }
-            });
+            let mod_style = self.paint_style(MOD_KEY_UNIT);
+            modifier_toggle_row(
+                ui,
+                "zmk_mods",
+                u16::from(draft.modifiers),
+                &mod_style,
+                |mask| {
+                    draft.modifiers ^= mask as u8;
+                },
+            );
         }
 
         // No inner scroll area: the surrounding editor pane already scrolls,
         // so categories lay out flat inside it.
-        for category in zmk_catalog::categories() {
-            ui.label(category.name);
-            picker_grid_rows(
-                ui,
-                category.name,
-                &category.candidates,
-                Some(selected),
-                &style,
-                |code| {
-                    let usage = HidUsage::from_encoded(code);
-                    draft.usage = HidUsage::from_parts(usage.page(), usage.id(), draft.modifiers);
-                },
-            );
-            ui.add_space(6.0);
+        let categories = zmk_catalog::categories();
+        let selected = vec![Some(selected); categories.len()];
+        candidate_groups_rows(ui, categories, &selected, &style, |_, candidate| {
+            let usage = HidUsage::from_encoded(candidate.code);
+            draft.usage = HidUsage::from_parts(usage.page(), usage.id(), draft.modifiers);
+            picked = true;
+        });
+        picked
+    }
+
+    /// The ZMK layer page: every layer behavior as one key per layer, grouped
+    /// by behavior like the usage picker's categories. Momentary/Toggle/To/
+    /// Sticky apply on click. Picking a Layer-Tap key only stages the layer and
+    /// reveals the tap-key picker below; picking a tap key then applies the
+    /// finished binding.
+    fn draw_zmk_layer_page(
+        &mut self,
+        ui: &mut egui::Ui,
+        keyboard: &Keyboard,
+        target: EditTarget,
+        draft: &mut ZmkDraft,
+        layer_infos: &[crate::key_action::LayerInfo],
+    ) {
+        let layer_names: Vec<String> = layer_infos
+            .iter()
+            .map(|info| info.name.clone().unwrap_or_default())
+            .collect();
+        let tap = HidUsage::from_parts(draft.usage.page(), draft.usage.id(), draft.modifiers);
+        let style = self.paint_style(KEY_UNIT);
+        let groups = zmk_catalog::layer_groups(layer_infos, &layer_names, tap);
+
+        // Per-group highlight: the staged Layer-Tap key, or the key matching
+        // the current binding.
+        let selected: Vec<Option<u32>> = zmk_catalog::LAYER_KINDS
+            .iter()
+            .zip(&groups)
+            .map(|(kind, group)| {
+                if *kind == ZmkBehaviorKind::LayerTap {
+                    if draft.kind == ZmkBehaviorKind::LayerTap {
+                        layer_infos
+                            .iter()
+                            .position(|info| info.id == draft.layer_id)
+                            .map(|i| i as u32)
+                    } else {
+                        None
+                    }
+                } else {
+                    self.selected_behavior_code(keyboard, target, &group.candidates)
+                }
+            })
+            .collect();
+
+        candidate_groups_rows(ui, &groups, &selected, &style, |gi, candidate| {
+            let kind = zmk_catalog::LAYER_KINDS[gi];
+            if let Some(behavior) = &candidate.behavior {
+                if kind == ZmkBehaviorKind::LayerTap {
+                    // Selecting a Layer-Tap key only stages the layer; the
+                    // tap-key picker appears below and its click applies.
+                    if let Some(layer_id) = behavior_layer_id(behavior) {
+                        draft.kind = ZmkBehaviorKind::LayerTap;
+                        draft.layer_id = layer_id;
+                    }
+                } else {
+                    draft.kind = kind;
+                    if let Some(layer_id) = behavior_layer_id(behavior) {
+                        draft.layer_id = layer_id;
+                    }
+                    self.apply_zmk_write(keyboard, target, behavior.clone());
+                }
+            }
+        });
+
+        if draft.kind == ZmkBehaviorKind::LayerTap {
+            ui.label("Tap key:");
+            if self.draw_usage_picker(ui, draft, true) {
+                let tap =
+                    HidUsage::from_parts(draft.usage.page(), draft.usage.id(), draft.modifiers);
+                self.apply_zmk_write(
+                    keyboard,
+                    target,
+                    Behavior::LayerTap {
+                        layer_id: draft.layer_id,
+                        tap,
+                    },
+                );
+            }
         }
     }
 
-    fn draw_layer_selector(
-        &mut self,
-        ui: &mut egui::Ui,
-        layer_infos: &[crate::key_action::LayerInfo],
-        layer_id: &mut u32,
-    ) {
-        ui.horizontal(|ui| {
-            ui.label("Layer");
-            egui::ComboBox::from_id_salt("zmk_layer_combo")
-                .selected_text(layer_label(layer_infos, *layer_id))
-                .show_ui(ui, |ui| {
-                    for (i, info) in layer_infos.iter().enumerate() {
-                        let label = format!("{i}: {}", info.name.clone().unwrap_or_default());
-                        ui.selectable_value(layer_id, info.id, label);
-                    }
-                });
-        });
+    /// The parameterless behaviors as one key grid; clicking applies directly.
+    fn draw_special_grid(&mut self, ui: &mut egui::Ui, keyboard: &Keyboard, target: EditTarget) {
+        let candidates = zmk_catalog::special_candidates();
+        let selected = self.selected_behavior_code(keyboard, target, candidates);
+        let style = self.paint_style(KEY_UNIT);
+        picker_grid_rows(
+            ui,
+            "zmk_special",
+            candidates,
+            selected,
+            &style,
+            |candidate| {
+                if let Some(behavior) = &candidate.behavior {
+                    self.apply_zmk_write(keyboard, target, behavior.clone());
+                }
+            },
+        );
     }
 
-    fn draw_command_selector(
+    /// One command kind's options as a key grid; clicking applies directly.
+    /// Backlight's `Set` keeps a level DragValue, since its value is part of
+    /// the binding rather than a choice between keys.
+    fn draw_command_grid(
         &mut self,
         ui: &mut egui::Ui,
-        label: &str,
-        value: &mut u32,
-        options: &[(u32, &str)],
+        keyboard: &Keyboard,
+        target: EditTarget,
+        draft: &mut ZmkDraft,
     ) {
-        ui.horizontal(|ui| {
-            ui.label(label);
-            egui::ComboBox::from_id_salt((ui.id(), label))
-                .selected_text(
-                    options
-                        .iter()
-                        .find(|(v, _)| *v == *value)
-                        .map(|(_, name)| *name)
-                        .unwrap_or(&format!("{value}")),
-                )
-                .show_ui(ui, |ui| {
-                    for (v, name) in options {
-                        ui.selectable_value(value, *v, *name);
-                    }
-                });
-        });
+        if draft.kind == ZmkBehaviorKind::Backlight {
+            ui.horizontal(|ui| {
+                ui.weak("Set level");
+                ui.add(egui::DragValue::new(&mut draft.bl_value).range(0..=255));
+            });
+            ui.add_space(4.0);
+        }
+        let candidates = zmk_catalog::command_candidates(draft.kind, draft.bl_value);
+        let selected = self.selected_behavior_code(keyboard, target, &candidates);
+        let style = self.paint_style(KEY_UNIT);
+        picker_grid_rows(
+            ui,
+            draft.kind.label(),
+            &candidates,
+            selected,
+            &style,
+            |candidate| {
+                if let Some(behavior) = &candidate.behavior {
+                    self.apply_zmk_write(keyboard, target, behavior.clone());
+                }
+            },
+        );
+    }
+
+    /// The candidate matching the target's current binding, for the pressed
+    /// highlight in behavior grids.
+    fn selected_behavior_code(
+        &self,
+        keyboard: &Keyboard,
+        target: EditTarget,
+        candidates: &[Candidate],
+    ) -> Option<u32> {
+        match keyboard.get_action(target.layer_index, target.row, target.col) {
+            Some(KeyAction::Zmk(behavior)) => candidates
+                .iter()
+                .find(|candidate| candidate.behavior.as_ref() == Some(&behavior))
+                .map(|candidate| candidate.code),
+            _ => None,
+        }
     }
 
     fn apply_zmk_write(&mut self, keyboard: &Keyboard, target: EditTarget, behavior: Behavior) {
@@ -675,47 +628,49 @@ impl crate::overlay_window::OverlayApp {
     }
 }
 
-fn layer_label(layer_infos: &[crate::key_action::LayerInfo], layer_id: u32) -> String {
-    layer_infos
-        .iter()
-        .position(|info| info.id == layer_id)
-        .map(|i| format!("{i}: {}", layer_infos[i].name.clone().unwrap_or_default()))
-        .unwrap_or_else(|| format!("Layer {layer_id}"))
+/// Whether `kind` is one of the parameterless behaviors shown in the Special
+/// pane's key grid.
+fn is_no_param(kind: ZmkBehaviorKind) -> bool {
+    use ZmkBehaviorKind::*;
+    matches!(
+        kind,
+        Transparent
+            | NoneBehavior
+            | CapsWord
+            | KeyRepeat
+            | GraveEscape
+            | StudioUnlock
+            | Reset
+            | Bootloader
+            | SoftOff
+    )
 }
 
-fn modifier_label(usage: HidUsage) -> String {
-    MODIFIER_KEYCODES
-        .iter()
-        .find(|(id, _)| *id == usage.id())
-        .map(|(_, name)| name.to_string())
-        .unwrap_or_else(|| format!("0x{:02X}", usage.id()))
+/// Whether `kind` is one of the layer behaviors sharing the Layers page.
+fn is_layer_kind(kind: ZmkBehaviorKind) -> bool {
+    use ZmkBehaviorKind::*;
+    matches!(
+        kind,
+        MomentaryLayer | ToggleLayer | ToLayer | StickyLayer | LayerTap
+    )
 }
 
-fn bt_command_label(command: u32) -> &'static str {
-    match command {
-        0 => "Clear",
-        1 => "Next",
-        2 => "Previous",
-        3 => "Select",
-        4 => "Clear All",
-        5 => "Disconnect",
-        _ => "Unknown",
-    }
-}
-
-fn output_label(value: u32) -> &'static str {
-    match value {
-        0 => "Toggle",
-        1 => "USB",
-        2 => "BLE",
-        3 => "None",
-        _ => "Unknown",
+/// The layer a layer-ish behavior targets, if any.
+fn behavior_layer_id(behavior: &Behavior) -> Option<u32> {
+    match behavior {
+        Behavior::MomentaryLayer { layer_id }
+        | Behavior::ToggleLayer { layer_id }
+        | Behavior::ToLayer { layer_id }
+        | Behavior::StickyLayer { layer_id }
+        | Behavior::LayerTap { layer_id, .. } => Some(*layer_id),
+        _ => None,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zmk_studio_api::MOD_LSFT;
 
     fn round_trip(behavior: Behavior) {
         let draft = ZmkDraft::from_behavior(&behavior);

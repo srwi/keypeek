@@ -4,7 +4,8 @@
 //! `get_basic_layout_key` labels, so the categories enumerate those ranges
 //! rather than hand-maintaining hundreds of entries.
 
-use super::picker::Candidate;
+use super::picker::{Candidate, CandidateGroup};
+use super::qmk_editor::{encode_layer, LayerKind};
 use crate::layout_key::{Label, LayoutKey};
 use crate::qmk_keycode_labels::get_layout_key;
 use qmk_via_api::keycodes::Keycode;
@@ -39,6 +40,23 @@ pub fn categories() -> Vec<Category> {
     ]
 }
 
+/// The layer page's groups: one candidate per real layer for each QMK layer
+/// keycode kind, rendered like the overlay paints the binding (`L1`, `L2`, …).
+/// `layer_count` is the keyboard's actual layer count, as reported by
+/// VIA/Vial; kinds whose keycode range is smaller simply show fewer keys.
+pub fn layer_groups(layer_count: usize) -> Vec<CandidateGroup> {
+    LayerKind::ALL
+        .iter()
+        .map(|kind| CandidateGroup {
+            name: kind.label(),
+            candidates: (0..layer_count)
+                .filter_map(|layer| encode_layer(*kind, layer))
+                .map(qmk_candidate)
+                .collect(),
+        })
+        .collect()
+}
+
 /// The candidate for a QMK keycode: the fully resolved `LayoutKey`, with
 /// explicit stand-ins for `KC_TRANSPARENT` and `KC_NO`, whose raw labels are
 /// unusable as key legends.
@@ -51,6 +69,7 @@ pub fn qmk_candidate(code: u16) -> Candidate {
                 ..Default::default()
             },
             transparent: true,
+            behavior: None,
         };
     }
     if code == Keycode::KC_NO as u16 {

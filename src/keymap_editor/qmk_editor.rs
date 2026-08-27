@@ -7,7 +7,9 @@ use crate::keyboard::Keyboard;
 use crate::qmk_keycode_labels::constants::*;
 use crate::qmk_keycode_labels::get_layout_key;
 
-use super::picker::{picker_grid_rows, Candidate, KEY_UNIT};
+use super::picker::{
+    candidate_groups_rows, modifier_toggle_row, picker_grid_rows, Candidate, KEY_UNIT, MOD_KEY_UNIT,
+};
 use super::qmk_catalog::qmk_candidate;
 use super::EditTarget;
 
@@ -50,7 +52,7 @@ pub enum LayerKind {
 }
 
 impl LayerKind {
-    const ALL: [LayerKind; 6] = [
+    pub(super) const ALL: [LayerKind; 6] = [
         LayerKind::Mo,
         LayerKind::Tg,
         LayerKind::To,
@@ -58,7 +60,7 @@ impl LayerKind {
         LayerKind::Tt,
         LayerKind::Df,
     ];
-    fn label(&self) -> &'static str {
+    pub(super) fn label(&self) -> &'static str {
         match self {
             LayerKind::Mo => "MO",
             LayerKind::Tg => "TG",
@@ -68,7 +70,7 @@ impl LayerKind {
             LayerKind::Df => "DF",
         }
     }
-    fn range(&self) -> std::ops::Range<u16> {
+    pub(super) fn range(&self) -> std::ops::Range<u16> {
         match self {
             LayerKind::Mo => QK_MOMENTARY,
             LayerKind::Tg => QK_TOGGLE_LAYER,
@@ -150,7 +152,7 @@ impl QmkDraft {
 // ── Encoders ────────────────────────────────────────────────────────────────
 
 /// `MO/TG/TO/OSL/TT/DF(layer)` → keycode.
-fn encode_layer(kind: LayerKind, layer: usize) -> Option<u16> {
+pub(super) fn encode_layer(kind: LayerKind, layer: usize) -> Option<u16> {
     let range = kind.range();
     let layer = layer as u16;
     range
@@ -299,30 +301,14 @@ impl crate::overlay_window::OverlayApp {
                         "qmk_media"
                     };
                     let style = self.paint_style(KEY_UNIT);
-                    picker_grid_rows(ui, salt, &candidates, selected, &style, |code| {
-                        self.apply_qmk_write(keyboard, target, code as u16);
+                    picker_grid_rows(ui, salt, &candidates, selected, &style, |candidate| {
+                        self.apply_qmk_write(keyboard, target, candidate.code as u16);
                     });
                 }
                 Section::Layers => {
-                    ui.horizontal(|ui| {
-                        ui.label("Kind");
-                        egui::ComboBox::from_id_salt("layer_kind_combo")
-                            .selected_text(draft.layer_kind.label())
-                            .show_ui(ui, |ui| {
-                                for kind in LayerKind::ALL {
-                                    ui.selectable_value(&mut draft.layer_kind, kind, kind.label());
-                                }
-                            });
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Layer");
-                        ui.add(egui::DragValue::new(&mut draft.layer).range(0..=31));
-                    });
-                    if ui.button("Apply").clicked() {
-                        if let Some(code) = encode_layer(draft.layer_kind, draft.layer) {
-                            self.apply_qmk_write(keyboard, target, code);
-                        }
-                    }
+                    // One page of grouped layer keys, one per real layer; see
+                    // draw_qmk_layer_page.
+                    self.draw_qmk_layer_page(ui, keyboard, target);
                 }
                 Section::Mods => self.draw_mods_section(ui, keyboard, target, draft),
                 Section::Any => {
@@ -359,6 +345,24 @@ impl crate::overlay_window::OverlayApp {
         });
     }
 
+    /// The layer page: every layer keycode kind as one key per real layer,
+    /// grouped like the ZMK layer page. A QMK layer keycode is fully determined
+    /// by its kind and layer, so clicking applies directly and nothing needs
+    /// staging. QMK keymaps carry no layer names, so keys show their index.
+    fn draw_qmk_layer_page(&mut self, ui: &mut egui::Ui, keyboard: &Keyboard, target: EditTarget) {
+        let layer_count = keyboard.layer_infos().len();
+        let groups = super::qmk_catalog::layer_groups(layer_count);
+        let selected_code = match keyboard.get_action(target.layer_index, target.row, target.col) {
+            Some(KeyAction::Qmk(code)) if is_layer_code(code) => Some(code as u32),
+            _ => None,
+        };
+        let selected = vec![selected_code; groups.len()];
+        let style = self.paint_style(KEY_UNIT);
+        candidate_groups_rows(ui, &groups, &selected, &style, |_, candidate| {
+            self.apply_qmk_write(keyboard, target, candidate.code as u16);
+        });
+    }
+
     fn draw_mods_section(
         &mut self,
         ui: &mut egui::Ui,
@@ -374,24 +378,28 @@ impl crate::overlay_window::OverlayApp {
                 }
             });
 
+        // Modifier toggles look like the overlay's modifier keys; selected bits
+        // use the pressed look, matching the selected picker cell.
+        let mod_style = self.paint_style(MOD_KEY_UNIT);
         ui.horizontal(|ui| {
-            let mut ctrl = draft.mods & MOD_LCTL != 0;
-            let mut shift = draft.mods & MOD_LSFT != 0;
-            let mut alt = draft.mods & MOD_LALT != 0;
-            let mut gui = draft.mods & MOD_LGUI != 0;
-            if ui.checkbox(&mut ctrl, "Ctrl").changed()
-                || ui.checkbox(&mut shift, "Shift").changed()
-                || ui.checkbox(&mut alt, "Alt").changed()
-                || ui.checkbox(&mut gui, "Gui").changed()
-            {
-                draft.mods = 0;
-                draft.mods |= if ctrl { MOD_LCTL } else { 0 };
-                draft.mods |= if shift { MOD_LSFT } else { 0 };
-                draft.mods |= if alt { MOD_LALT } else { 0 };
-                draft.mods |= if gui { MOD_LGUI } else { 0 };
-            }
+            modifier_toggle_row(ui, "qmk_mods", draft.mods, &mod_style, |mask| {
+                draft.mods ^= mask;
+            });
             if draft.mod_mode == ModMode::Combo || draft.mod_mode == ModMode::ModTap {
-                ui.checkbox(&mut draft.right, "Right");
+                ui.weak("Hand");
+                if ui
+                    .add(egui::Button::new("L").small().selected(!draft.right))
+                    .clicked()
+                {
+                    draft.right = false;
+                }
+                if ui
+                    .add(egui::Button::new("R").small().selected(draft.right))
+                    .on_hover_text("Right-hand modifiers (RCTL, RSFT, RALT, RGUI)")
+                    .clicked()
+                {
+                    draft.right = true;
+                }
             }
         });
 
@@ -437,8 +445,8 @@ impl crate::overlay_window::OverlayApp {
             &candidates,
             Some(draft.base_code as u32),
             &style,
-            |code| {
-                draft.base_code = code as u16;
+            |candidate| {
+                draft.base_code = candidate.code as u16;
             },
         );
     }
@@ -458,6 +466,11 @@ impl crate::overlay_window::OverlayApp {
     }
 }
 
+/// Whether a keycode is a layer-switch key from the layer page's groups.
+fn is_layer_code(code: u16) -> bool {
+    LayerKind::ALL.iter().any(|k| k.range().contains(&code))
+}
+
 /// Whether a keycode carries parameters (layer/mod logic) and so is better
 /// edited in its dedicated section than highlighted in the plain picker.
 fn has_params(code: u16) -> bool {
@@ -465,7 +478,7 @@ fn has_params(code: u16) -> bool {
         || QK_MOD_TAP.contains(&code)
         || QK_LAYER_TAP.contains(&code)
         || QK_ONE_SHOT_MOD.contains(&code)
-        || LayerKind::ALL.iter().any(|k| k.range().contains(&code))
+        || is_layer_code(code)
 }
 
 #[cfg(test)]
