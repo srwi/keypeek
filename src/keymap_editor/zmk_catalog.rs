@@ -13,7 +13,70 @@ pub const HID_USAGE_KEYBOARD: u16 = 0x07;
 pub const HID_USAGE_CONSUMER: u16 = 0x0C;
 
 use super::picker::{Candidate, CandidateGroup};
-use super::zmk_editor::ZmkBehaviorKind;
+
+/// The ZMK behavior kinds the editor can assign, one label each. The draft's
+/// selected kind drives which editor page is shown.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ZmkBehaviorKind {
+    KeyPress,
+    KeyToggle,
+    StickyKey,
+    MomentaryLayer,
+    ToggleLayer,
+    ToLayer,
+    StickyLayer,
+    LayerTap,
+    ModTap,
+    Transparent,
+    NoneBehavior,
+    CapsWord,
+    KeyRepeat,
+    GraveEscape,
+    StudioUnlock,
+    Reset,
+    Bootloader,
+    SoftOff,
+    Bluetooth,
+    OutputSelection,
+    Backlight,
+    Underglow,
+    MouseKeyPress,
+    MouseMove,
+    MouseScroll,
+}
+
+impl ZmkBehaviorKind {
+    pub(super) fn label(&self) -> &'static str {
+        use ZmkBehaviorKind::*;
+        match self {
+            KeyPress => "Key Press",
+            KeyToggle => "Key Toggle",
+            StickyKey => "Sticky Key",
+            MomentaryLayer => "Momentary Layer",
+            ToggleLayer => "Toggle Layer",
+            ToLayer => "To Layer",
+            StickyLayer => "Sticky Layer",
+            LayerTap => "Layer-Tap",
+            ModTap => "Mod-Tap",
+            Transparent => "Transparent",
+            NoneBehavior => "None",
+            CapsWord => "Caps Word",
+            KeyRepeat => "Key Repeat",
+            GraveEscape => "Grave Escape",
+            StudioUnlock => "Studio Unlock",
+            Reset => "Reset",
+            Bootloader => "Bootloader",
+            SoftOff => "Soft Off",
+            Bluetooth => "Bluetooth",
+            OutputSelection => "Output Selection",
+            Backlight => "Backlight",
+            Underglow => "Underglow",
+            MouseKeyPress => "Mouse Key",
+            MouseMove => "Mouse Move",
+            MouseScroll => "Mouse Scroll",
+        }
+    }
+}
 
 /// The parameterless behaviors, applied directly on click. The grid replaces
 /// the old per-kind panes that held nothing but an Apply button.

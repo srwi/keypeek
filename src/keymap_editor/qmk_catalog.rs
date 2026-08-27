@@ -5,8 +5,8 @@
 //! rather than hand-maintaining hundreds of entries.
 
 use super::picker::{Candidate, CandidateGroup};
-use super::qmk_editor::{encode_layer, LayerKind};
 use crate::layout_key::{Label, LayoutKey};
+use crate::qmk_keycode_labels::constants::*;
 use crate::qmk_keycode_labels::get_layout_key;
 use qmk_via_api::keycodes::Keycode;
 use std::ops::RangeInclusive;
@@ -38,6 +38,58 @@ pub fn categories() -> Vec<Category> {
             codes: MEDIA_RANGE.collect(),
         },
     ]
+}
+
+/// The QMK layer keycode kinds offered on the layer page, with their keycode
+/// ranges and two-letter labels.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum LayerKind {
+    Mo,
+    Tg,
+    To,
+    Osl,
+    Tt,
+    Df,
+}
+
+impl LayerKind {
+    pub(super) const ALL: [LayerKind; 6] = [
+        LayerKind::Mo,
+        LayerKind::Tg,
+        LayerKind::To,
+        LayerKind::Osl,
+        LayerKind::Tt,
+        LayerKind::Df,
+    ];
+    pub(super) fn label(&self) -> &'static str {
+        match self {
+            LayerKind::Mo => "MO",
+            LayerKind::Tg => "TG",
+            LayerKind::To => "TO",
+            LayerKind::Osl => "OSL",
+            LayerKind::Tt => "TT",
+            LayerKind::Df => "DF",
+        }
+    }
+    pub(super) fn range(&self) -> std::ops::Range<u16> {
+        match self {
+            LayerKind::Mo => QK_MOMENTARY,
+            LayerKind::Tg => QK_TOGGLE_LAYER,
+            LayerKind::To => QK_TO,
+            LayerKind::Osl => QK_ONE_SHOT_LAYER,
+            LayerKind::Tt => QK_LAYER_TAP_TOGGLE,
+            LayerKind::Df => QK_DEF_LAYER,
+        }
+    }
+}
+
+/// `MO/TG/TO/OSL/TT/DF(layer)` → keycode.
+pub(super) fn encode_layer(kind: LayerKind, layer: usize) -> Option<u16> {
+    let range = kind.range();
+    let layer = layer as u16;
+    range
+        .contains(&(range.start + layer))
+        .then_some(range.start + layer)
 }
 
 /// The layer page's groups: one candidate per real layer for each QMK layer

@@ -10,7 +10,7 @@ use crate::qmk_keycode_labels::get_layout_key;
 use super::picker::{
     candidate_groups_rows, modifier_toggle_row, picker_grid_rows, Candidate, KEY_UNIT, MOD_KEY_UNIT,
 };
-use super::qmk_catalog::qmk_candidate;
+use super::qmk_catalog::{qmk_candidate, LayerKind};
 use super::EditTarget;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -37,47 +37,6 @@ impl Section {
             Section::Layers => "Layers",
             Section::Mods => "Mods",
             Section::Any => "Any",
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum LayerKind {
-    Mo,
-    Tg,
-    To,
-    Osl,
-    Tt,
-    Df,
-}
-
-impl LayerKind {
-    pub(super) const ALL: [LayerKind; 6] = [
-        LayerKind::Mo,
-        LayerKind::Tg,
-        LayerKind::To,
-        LayerKind::Osl,
-        LayerKind::Tt,
-        LayerKind::Df,
-    ];
-    pub(super) fn label(&self) -> &'static str {
-        match self {
-            LayerKind::Mo => "MO",
-            LayerKind::Tg => "TG",
-            LayerKind::To => "TO",
-            LayerKind::Osl => "OSL",
-            LayerKind::Tt => "TT",
-            LayerKind::Df => "DF",
-        }
-    }
-    pub(super) fn range(&self) -> std::ops::Range<u16> {
-        match self {
-            LayerKind::Mo => QK_MOMENTARY,
-            LayerKind::Tg => QK_TOGGLE_LAYER,
-            LayerKind::To => QK_TO,
-            LayerKind::Osl => QK_ONE_SHOT_LAYER,
-            LayerKind::Tt => QK_LAYER_TAP_TOGGLE,
-            LayerKind::Df => QK_DEF_LAYER,
         }
     }
 }
@@ -146,15 +105,6 @@ impl QmkDraft {
 }
 
 // ── Encoders ────────────────────────────────────────────────────────────────
-
-/// `MO/TG/TO/OSL/TT/DF(layer)` → keycode.
-pub(super) fn encode_layer(kind: LayerKind, layer: usize) -> Option<u16> {
-    let range = kind.range();
-    let layer = layer as u16;
-    range
-        .contains(&(range.start + layer))
-        .then_some(range.start + layer)
-}
 
 /// `LSFT(kc)`-style combo: `(mods << 8) | keycode`. Needs at least one mod and
 /// an 8-bit tap key.
@@ -478,6 +428,7 @@ fn has_params(code: u16) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::keymap_editor::qmk_catalog::encode_layer;
 
     fn assert_round_trips(draft: QmkDraft, code: u16) {
         // The encoded code must decode back into the same section.

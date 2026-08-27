@@ -9,70 +9,8 @@ use super::picker::{
     candidate_groups_rows, modifier_select_grid, modifier_toggle_row, picker_grid_rows, Candidate,
     KEY_UNIT, MOD_KEY_UNIT,
 };
-use super::zmk_catalog;
+use super::zmk_catalog::{self, ZmkBehaviorKind};
 use super::{EditTarget, PendingKind};
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ZmkBehaviorKind {
-    KeyPress,
-    KeyToggle,
-    StickyKey,
-    MomentaryLayer,
-    ToggleLayer,
-    ToLayer,
-    StickyLayer,
-    LayerTap,
-    ModTap,
-    Transparent,
-    NoneBehavior,
-    CapsWord,
-    KeyRepeat,
-    GraveEscape,
-    StudioUnlock,
-    Reset,
-    Bootloader,
-    SoftOff,
-    Bluetooth,
-    OutputSelection,
-    Backlight,
-    Underglow,
-    MouseKeyPress,
-    MouseMove,
-    MouseScroll,
-}
-
-impl ZmkBehaviorKind {
-    pub(super) fn label(&self) -> &'static str {
-        use ZmkBehaviorKind::*;
-        match self {
-            KeyPress => "Key Press",
-            KeyToggle => "Key Toggle",
-            StickyKey => "Sticky Key",
-            MomentaryLayer => "Momentary Layer",
-            ToggleLayer => "Toggle Layer",
-            ToLayer => "To Layer",
-            StickyLayer => "Sticky Layer",
-            LayerTap => "Layer-Tap",
-            ModTap => "Mod-Tap",
-            Transparent => "Transparent",
-            NoneBehavior => "None",
-            CapsWord => "Caps Word",
-            KeyRepeat => "Key Repeat",
-            GraveEscape => "Grave Escape",
-            StudioUnlock => "Studio Unlock",
-            Reset => "Reset",
-            Bootloader => "Bootloader",
-            SoftOff => "Soft Off",
-            Bluetooth => "Bluetooth",
-            OutputSelection => "Output Selection",
-            Backlight => "Backlight",
-            Underglow => "Underglow",
-            MouseKeyPress => "Mouse Key",
-            MouseMove => "Mouse Move",
-            MouseScroll => "Mouse Scroll",
-        }
-    }
-}
 
 /// Which ZMK behaviors carry parameters (and so need an Apply button); the
 /// layer, parameterless, and command kinds apply on click from their key grids.
