@@ -700,6 +700,21 @@ impl OverlayApp {
                                 col,
                             });
                             self.editor.error = None;
+                            // Rebuild the draft from the newly targeted binding.
+                            match keyboard.get_action(pinned.unwrap(), row, col) {
+                                Some(crate::key_action::KeyAction::Qmk(code)) => {
+                                    self.editor.qmk_draft =
+                                        crate::keymap_editor::QmkDraft::from_keycode(code);
+                                }
+                                Some(crate::key_action::KeyAction::Zmk(behavior)) => {
+                                    self.editor.zmk_draft =
+                                        crate::keymap_editor::ZmkDraft::from_behavior(&behavior);
+                                }
+                                _ => {
+                                    self.editor.qmk_draft = Default::default();
+                                    self.editor.zmk_draft = Default::default();
+                                }
+                            }
                         }
                     }
                 }

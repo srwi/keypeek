@@ -119,7 +119,7 @@ impl OverlayApp {
         self.persist_settings();
     }
 
-    pub(super) fn persist_settings(&self) {
+    pub(crate) fn persist_settings(&self) {
         if let Err(e) = self.settings.active.save() {
             eprintln!("Failed to save settings: {e}");
         }

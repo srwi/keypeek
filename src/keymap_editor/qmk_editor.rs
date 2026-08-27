@@ -287,7 +287,12 @@ impl crate::overlay_window::OverlayApp {
                         KeyAction::Qmk(code) if !has_params(code) => Some(code as u32),
                         _ => None,
                     });
-                picker_grid(ui, &candidates, selected, |code| {
+                let salt = if draft.section == Section::Basic {
+                    "qmk_basic"
+                } else {
+                    "qmk_media"
+                };
+                picker_grid(ui, salt, &candidates, selected, |code| {
                     self.apply_qmk_write(keyboard, target, code as u16);
                 });
             }
@@ -420,9 +425,15 @@ impl crate::overlay_window::OverlayApp {
                 text: qmk_candidate_text(code),
             })
             .collect();
-        picker_grid(ui, &candidates, Some(draft.base_code as u32), |code| {
-            draft.base_code = code as u16;
-        });
+        picker_grid(
+            ui,
+            "qmk_base",
+            &candidates,
+            Some(draft.base_code as u32),
+            |code| {
+                draft.base_code = code as u16;
+            },
+        );
     }
 
     fn apply_qmk_write(&mut self, keyboard: &Keyboard, target: EditTarget, code: u16) {
