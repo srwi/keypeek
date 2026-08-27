@@ -12,28 +12,85 @@ use super::picker::{
 use super::zmk_catalog::{self, ZmkBehaviorKind};
 use super::{EditTarget, PendingKind};
 
-/// Which ZMK behaviors carry parameters (and so need an Apply button); the
-/// layer, parameterless, and command kinds apply on click from their key grids.
-fn needs_params(kind: ZmkBehaviorKind) -> bool {
-    use ZmkBehaviorKind::*;
-    matches!(kind, KeyPress | KeyToggle | StickyKey | ModTap)
+/// The editor's pages: how the left panel groups behavior kinds and which
+/// pane the central panel shows. [`Page::kinds`] is the single source for the
+/// groupings — the panel, the pane dispatch, and the Apply rule all derive
+/// from it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Page {
+    Keys,
+    Layers,
+    Mods,
+    Special,
+    Commands,
 }
 
-const KEY_LIST: &[ZmkBehaviorKind] = &[
-    ZmkBehaviorKind::KeyPress,
-    ZmkBehaviorKind::KeyToggle,
-    ZmkBehaviorKind::StickyKey,
-];
-const MOD_LIST: &[ZmkBehaviorKind] = &[ZmkBehaviorKind::ModTap];
-const COMMAND_LIST: &[ZmkBehaviorKind] = &[
-    ZmkBehaviorKind::Bluetooth,
-    ZmkBehaviorKind::OutputSelection,
-    ZmkBehaviorKind::Backlight,
-    ZmkBehaviorKind::Underglow,
-    ZmkBehaviorKind::MouseKeyPress,
-    ZmkBehaviorKind::MouseMove,
-    ZmkBehaviorKind::MouseScroll,
-];
+impl Page {
+    /// Panel order: one selectable entry per kind except the grouped pages.
+    const ALL: [Page; 5] = [
+        Page::Keys,
+        Page::Layers,
+        Page::Mods,
+        Page::Commands,
+        Page::Special,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            Page::Keys => "Keys",
+            Page::Layers => "Layers",
+            Page::Mods => "Mods",
+            Page::Special => "Special",
+            Page::Commands => "Commands",
+        }
+    }
+
+    /// The kinds sharing this page. For [`Page::Layers`] this is also the
+    /// grid-group order the layer page's `on_select` indexes into.
+    fn kinds(self) -> &'static [ZmkBehaviorKind] {
+        use ZmkBehaviorKind::*;
+        match self {
+            Page::Keys => &[KeyPress, KeyToggle, StickyKey],
+            Page::Layers => &[MomentaryLayer, ToggleLayer, ToLayer, StickyLayer, LayerTap],
+            Page::Mods => &[ModTap],
+            Page::Special => &[
+                Transparent,
+                NoneBehavior,
+                CapsWord,
+                KeyRepeat,
+                GraveEscape,
+                StudioUnlock,
+                Reset,
+                Bootloader,
+                SoftOff,
+            ],
+            Page::Commands => &[
+                Bluetooth,
+                OutputSelection,
+                Backlight,
+                Underglow,
+                MouseKeyPress,
+                MouseMove,
+                MouseScroll,
+            ],
+        }
+    }
+}
+
+/// The page a behavior kind is edited on; drives the left panel's selection
+/// highlight and the central pane dispatch.
+fn page_of(kind: ZmkBehaviorKind) -> Page {
+    Page::ALL
+        .into_iter()
+        .find(|page| page.kinds().contains(&kind))
+        .expect("every behavior kind belongs to a page")
+}
+
+/// Kinds staged in the draft get an Apply button; every other kind applies
+/// directly on click from its page's key grids.
+fn needs_params(kind: ZmkBehaviorKind) -> bool {
+    matches!(page_of(kind), Page::Keys | Page::Mods)
+}
 
 /// The editor's editable fields for ZMK, rebuilt on each retarget.
 #[derive(Clone)]
@@ -182,30 +239,23 @@ impl crate::overlay_window::OverlayApp {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.add_space(2.0);
                     ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
-                        ui.weak("Keys");
-                        for kind in KEY_LIST {
-                            ui.selectable_value(&mut draft.kind, *kind, kind.label());
-                        }
-                        ui.add_space(4.0);
-                        // All layer behaviors share one page of grouped keys.
-                        let response = ui.selectable_label(is_layer_kind(draft.kind), "Layers");
-                        if response.clicked() {
-                            draft.kind = ZmkBehaviorKind::MomentaryLayer;
-                        }
-                        ui.add_space(4.0);
-                        ui.weak("Mods");
-                        for kind in MOD_LIST {
-                            ui.selectable_value(&mut draft.kind, *kind, kind.label());
-                        }
-                        ui.add_space(4.0);
-                        ui.weak("Commands");
-                        for kind in COMMAND_LIST {
-                            ui.selectable_value(&mut draft.kind, *kind, kind.label());
-                        }
-                        ui.add_space(4.0);
-                        let response = ui.selectable_label(is_no_param(draft.kind), "Special");
-                        if response.clicked() {
-                            draft.kind = ZmkBehaviorKind::Transparent;
+                        for page in Page::ALL {
+                            // Staged kinds get one entry each; the grouped
+                            // pages share a single entry and apply from their
+                            // page's key grids.
+                            if matches!(page, Page::Keys | Page::Mods | Page::Commands) {
+                                ui.weak(page.label());
+                                for kind in page.kinds() {
+                                    ui.selectable_value(&mut draft.kind, *kind, kind.label());
+                                }
+                            } else {
+                                let response =
+                                    ui.selectable_label(page_of(draft.kind) == page, page.label());
+                                if response.clicked() {
+                                    draft.kind = page.kinds()[0];
+                                }
+                            }
+                            ui.add_space(4.0);
                         }
                     });
                 });
@@ -213,34 +263,20 @@ impl crate::overlay_window::OverlayApp {
 
         egui::CentralPanel::default().show_inside(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
-                match draft.kind {
-                    // Every parameterless behavior is a key here; clicking
-                    // applies it directly.
-                    ZmkBehaviorKind::Transparent
-                    | ZmkBehaviorKind::NoneBehavior
-                    | ZmkBehaviorKind::CapsWord
-                    | ZmkBehaviorKind::KeyRepeat
-                    | ZmkBehaviorKind::GraveEscape
-                    | ZmkBehaviorKind::StudioUnlock
-                    | ZmkBehaviorKind::Reset
-                    | ZmkBehaviorKind::Bootloader
-                    | ZmkBehaviorKind::SoftOff => {
+                match page_of(draft.kind) {
+                    Page::Special => {
+                        // Every parameterless behavior is a key here; clicking
+                        // applies it directly.
                         self.draw_special_grid(ui, keyboard, target);
                     }
-                    ZmkBehaviorKind::KeyPress
-                    | ZmkBehaviorKind::KeyToggle
-                    | ZmkBehaviorKind::StickyKey => {
+                    Page::Keys => {
                         self.draw_usage_picker(ui, draft, true);
                     }
-                    ZmkBehaviorKind::MomentaryLayer
-                    | ZmkBehaviorKind::ToggleLayer
-                    | ZmkBehaviorKind::ToLayer
-                    | ZmkBehaviorKind::StickyLayer
-                    | ZmkBehaviorKind::LayerTap => {
+                    Page::Layers => {
                         // One page of grouped layer keys; see draw_zmk_layer_page.
                         self.draw_zmk_layer_page(ui, keyboard, target, draft, &layer_infos);
                     }
-                    ZmkBehaviorKind::ModTap => {
+                    Page::Mods => {
                         ui.label("Hold modifier:");
                         let mod_style = self.paint_style(MOD_KEY_UNIT);
                         modifier_select_grid(
@@ -255,13 +291,7 @@ impl crate::overlay_window::OverlayApp {
                         ui.label("Tap key:");
                         self.draw_usage_picker(ui, draft, true);
                     }
-                    ZmkBehaviorKind::Bluetooth
-                    | ZmkBehaviorKind::OutputSelection
-                    | ZmkBehaviorKind::Backlight
-                    | ZmkBehaviorKind::Underglow
-                    | ZmkBehaviorKind::MouseKeyPress
-                    | ZmkBehaviorKind::MouseMove
-                    | ZmkBehaviorKind::MouseScroll => {
+                    Page::Commands => {
                         // Commands render as their own keys too; clicking
                         // applies directly.
                         self.draw_command_grid(ui, keyboard, target, draft);
@@ -339,11 +369,12 @@ impl crate::overlay_window::OverlayApp {
             .collect();
         let tap = HidUsage::from_parts(draft.usage.page(), draft.usage.id(), draft.modifiers);
         let style = self.paint_style(KEY_UNIT);
-        let groups = zmk_catalog::layer_groups(layer_infos, &layer_names, tap);
+        let kinds = Page::Layers.kinds();
+        let groups = zmk_catalog::layer_groups(kinds, layer_infos, &layer_names, tap);
 
         // Per-group highlight: the staged Layer-Tap key, or the key matching
         // the current binding.
-        let selected: Vec<Option<u32>> = zmk_catalog::LAYER_KINDS
+        let selected: Vec<Option<u32>> = kinds
             .iter()
             .zip(&groups)
             .map(|(kind, group)| {
@@ -363,7 +394,7 @@ impl crate::overlay_window::OverlayApp {
             .collect();
 
         candidate_groups_rows(ui, &groups, &selected, &style, |gi, candidate| {
-            let kind = zmk_catalog::LAYER_KINDS[gi];
+            let kind = kinds[gi];
             if let Some(behavior) = &candidate.behavior {
                 if kind == ZmkBehaviorKind::LayerTap {
                     // Selecting a Layer-Tap key only stages the layer; the
@@ -483,33 +514,6 @@ impl crate::overlay_window::OverlayApp {
         self.editor.pending_kind = Some(PendingKind::Set);
         self.editor.error = None;
     }
-}
-
-/// Whether `kind` is one of the parameterless behaviors shown in the Special
-/// pane's key grid.
-fn is_no_param(kind: ZmkBehaviorKind) -> bool {
-    use ZmkBehaviorKind::*;
-    matches!(
-        kind,
-        Transparent
-            | NoneBehavior
-            | CapsWord
-            | KeyRepeat
-            | GraveEscape
-            | StudioUnlock
-            | Reset
-            | Bootloader
-            | SoftOff
-    )
-}
-
-/// Whether `kind` is one of the layer behaviors sharing the Layers page.
-fn is_layer_kind(kind: ZmkBehaviorKind) -> bool {
-    use ZmkBehaviorKind::*;
-    matches!(
-        kind,
-        MomentaryLayer | ToggleLayer | ToLayer | StickyLayer | LayerTap
-    )
 }
 
 /// The layer a layer-ish behavior targets, if any.

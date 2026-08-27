@@ -102,25 +102,17 @@ pub fn special_candidates() -> &'static [Candidate] {
     })
 }
 
-/// Group order for the layer page: `layer_groups` builds one group per kind
-/// in this order, and the editor maps a clicked group index back to its kind.
-pub(super) const LAYER_KINDS: [ZmkBehaviorKind; 5] = [
-    ZmkBehaviorKind::MomentaryLayer,
-    ZmkBehaviorKind::ToggleLayer,
-    ZmkBehaviorKind::ToLayer,
-    ZmkBehaviorKind::StickyLayer,
-    ZmkBehaviorKind::LayerTap,
-];
-
-/// The layer page's groups: one candidate per layer for each layer behavior,
-/// rendered like the overlay paints the binding (layer name as the legend, the
-/// layer's own color). The Layer-Tap group's tap side comes from `tap`.
+/// The layer page's groups, one group per kind in `kinds` order: one
+/// candidate per layer, rendered like the overlay paints the binding (layer
+/// name as the legend, the layer's own color). The Layer-Tap group's tap side
+/// comes from `tap`. `kinds` must be layer behaviors only.
 pub fn layer_groups(
+    kinds: &[ZmkBehaviorKind],
     layer_infos: &[LayerInfo],
     layer_names: &[String],
     tap: HidUsage,
 ) -> Vec<CandidateGroup> {
-    LAYER_KINDS
+    kinds
         .iter()
         .map(|kind| CandidateGroup {
             name: kind.label(),
