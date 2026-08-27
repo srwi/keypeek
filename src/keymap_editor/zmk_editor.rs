@@ -7,7 +7,7 @@ use zmk_studio_api::{
     Behavior, HidUsage, HID_USAGE_KEYBOARD, MOD_LALT, MOD_LCTL, MOD_LGUI, MOD_LSFT,
 };
 
-use super::picker::picker_grid_rows;
+use super::picker::{picker_grid_rows, KEY_UNIT};
 use super::zmk_catalog;
 use super::{EditTarget, PendingKind};
 
@@ -358,214 +358,224 @@ impl crate::overlay_window::OverlayApp {
     ) {
         let layer_infos = keyboard.layer_infos();
 
-        egui::ComboBox::from_id_salt("zmk_behavior_combo")
-            .selected_text(draft.kind.label())
-            .show_ui(ui, |ui| {
-                ui.label("Keys");
-                for kind in KEY_LIST {
-                    ui.selectable_value(&mut draft.kind, *kind, kind.label());
-                }
-                ui.separator();
-                ui.label("Layers");
-                for kind in LAYER_LIST {
-                    ui.selectable_value(&mut draft.kind, *kind, kind.label());
-                }
-                ui.separator();
-                ui.label("Mods");
-                for kind in MOD_LIST {
-                    ui.selectable_value(&mut draft.kind, *kind, kind.label());
-                }
-                ui.separator();
-                ui.label("No parameters");
-                for kind in NO_PARAM_LIST {
-                    ui.selectable_value(&mut draft.kind, *kind, kind.label());
-                }
-                ui.separator();
-                ui.label("Commands");
-                for kind in COMMAND_LIST {
-                    ui.selectable_value(&mut draft.kind, *kind, kind.label());
-                }
-            });
-        ui.separator();
-
-        match draft.kind {
-            ZmkBehaviorKind::KeyPress | ZmkBehaviorKind::KeyToggle | ZmkBehaviorKind::StickyKey => {
-                self.draw_usage_picker(ui, draft, true);
-            }
-            ZmkBehaviorKind::MomentaryLayer
-            | ZmkBehaviorKind::ToggleLayer
-            | ZmkBehaviorKind::ToLayer
-            | ZmkBehaviorKind::StickyLayer => {
-                self.draw_layer_selector(ui, &layer_infos, &mut draft.layer_id);
-            }
-            ZmkBehaviorKind::LayerTap => {
-                self.draw_layer_selector(ui, &layer_infos, &mut draft.layer_id);
-                ui.label("Tap key:");
-                self.draw_usage_picker(ui, draft, true);
-            }
-            ZmkBehaviorKind::ModTap => {
-                ui.label("Hold modifier:");
-                egui::ComboBox::from_id_salt("hold_mod_combo")
-                    .selected_text(modifier_label(draft.hold_mod))
-                    .show_ui(ui, |ui| {
-                        for (id, name) in MODIFIER_KEYCODES {
-                            ui.selectable_value(
-                                &mut draft.hold_mod,
-                                HidUsage::from_parts(HID_USAGE_KEYBOARD, id, 0),
-                                name,
-                            );
+        // Two-pane layout: every behavior kind lives in the left panel under
+        // its group header, full-width selectable; the right pane holds the
+        // selected kind's parameter form. Each pane scrolls independently and
+        // fills the window instead of growing it.
+        egui::Panel::left("zmk_kinds")
+            .resizable(false)
+            .exact_size(110.0)
+            .show_inside(ui, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    ui.add_space(2.0);
+                    ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
+                        for (header, list) in [
+                            ("Keys", KEY_LIST),
+                            ("Layers", LAYER_LIST),
+                            ("Mods", MOD_LIST),
+                            ("No parameters", NO_PARAM_LIST),
+                            ("Commands", COMMAND_LIST),
+                        ] {
+                            ui.weak(header);
+                            for kind in list {
+                                ui.selectable_value(&mut draft.kind, *kind, kind.label());
+                            }
+                            ui.add_space(4.0);
                         }
                     });
-                ui.label("Tap key:");
-                self.draw_usage_picker(ui, draft, true);
-            }
-            ZmkBehaviorKind::Transparent
-            | ZmkBehaviorKind::NoneBehavior
-            | ZmkBehaviorKind::CapsWord
-            | ZmkBehaviorKind::KeyRepeat
-            | ZmkBehaviorKind::GraveEscape
-            | ZmkBehaviorKind::StudioUnlock
-            | ZmkBehaviorKind::Reset
-            | ZmkBehaviorKind::Bootloader
-            | ZmkBehaviorKind::SoftOff => {}
-            ZmkBehaviorKind::Bluetooth => {
-                ui.horizontal(|ui| {
-                    ui.label("Command");
-                    egui::ComboBox::from_id_salt("bt_command_combo")
-                        .selected_text(bt_command_label(draft.bt_command))
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut draft.bt_command, 0, "Clear");
-                            ui.selectable_value(&mut draft.bt_command, 1, "Next");
-                            ui.selectable_value(&mut draft.bt_command, 2, "Previous");
-                            ui.selectable_value(&mut draft.bt_command, 3, "Select");
-                            ui.selectable_value(&mut draft.bt_command, 4, "Clear All");
-                            ui.selectable_value(&mut draft.bt_command, 5, "Disconnect");
-                        });
                 });
-                if draft.bt_command == 3 || draft.bt_command == 5 {
-                    ui.horizontal(|ui| {
-                        ui.label("Profile");
-                        ui.add(egui::DragValue::new(&mut draft.bt_profile).range(0..=9));
-                    });
-                }
-            }
-            ZmkBehaviorKind::OutputSelection => {
-                ui.horizontal(|ui| {
-                    ui.label("Output");
-                    egui::ComboBox::from_id_salt("out_combo")
-                        .selected_text(output_label(draft.out_value))
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut draft.out_value, 0, "Toggle");
-                            ui.selectable_value(&mut draft.out_value, 1, "USB");
-                            ui.selectable_value(&mut draft.out_value, 2, "BLE");
-                            ui.selectable_value(&mut draft.out_value, 3, "None");
-                        });
-                });
-            }
-            ZmkBehaviorKind::Backlight => {
-                self.draw_command_selector(
-                    ui,
-                    "Command",
-                    &mut draft.bl_command,
-                    &[
-                        (0, "On"),
-                        (1, "Off"),
-                        (2, "Toggle"),
-                        (3, "Increase"),
-                        (4, "Decrease"),
-                        (5, "Cycle"),
-                        (6, "Set"),
-                    ],
-                );
-                if draft.bl_command == 6 {
-                    ui.horizontal(|ui| {
-                        ui.label("Level");
-                        ui.add(egui::DragValue::new(&mut draft.bl_value).range(0..=255));
-                    });
-                }
-            }
-            ZmkBehaviorKind::Underglow => {
-                self.draw_command_selector(
-                    ui,
-                    "Command",
-                    &mut draft.rgb_command,
-                    &[
-                        (0, "Toggle"),
-                        (1, "On"),
-                        (2, "Off"),
-                        (3, "Hue +"),
-                        (4, "Hue -"),
-                        (5, "Saturation +"),
-                        (6, "Saturation -"),
-                        (7, "Brightness +"),
-                        (8, "Brightness -"),
-                        (9, "Speed +"),
-                        (10, "Speed -"),
-                        (11, "Effect +"),
-                        (12, "Effect -"),
-                        (13, "Effect Set"),
-                        (14, "Color"),
-                    ],
-                );
-            }
-            ZmkBehaviorKind::MouseKeyPress => {
-                self.draw_command_selector(
-                    ui,
-                    "Button",
-                    &mut draft.mouse_button,
-                    &[
-                        (1, "Left"),
-                        (2, "Right"),
-                        (4, "Middle"),
-                        (8, "Mouse 4"),
-                        (16, "Mouse 5"),
-                    ],
-                );
-            }
-            ZmkBehaviorKind::MouseMove => {
-                self.draw_command_selector(
-                    ui,
-                    "Direction",
-                    &mut draft.mouse_direction,
-                    &[
-                        (0x0001_0000, "Up"),
-                        (0xFFFF_FFFF, "Down"),
-                        (0x0000_0001, "Right"),
-                        (0x0000_FFFF, "Left"),
-                    ],
-                );
-            }
-            ZmkBehaviorKind::MouseScroll => {
-                self.draw_command_selector(
-                    ui,
-                    "Direction",
-                    &mut draft.mouse_direction,
-                    &[
-                        (0x0000_0001, "Up"),
-                        (0x0000_FFFF, "Down"),
-                        (0x0001_0000, "Right"),
-                        (0xFFFF_FFFF, "Left"),
-                    ],
-                );
-            }
-        }
+            });
 
-        if needs_params(draft.kind) {
-            ui.add_space(8.0);
-            if ui.button("Apply").clicked() {
-                if let Some(behavior) = draft.to_behavior() {
-                    self.apply_zmk_write(keyboard, target, behavior);
+        egui::CentralPanel::default().show_inside(ui, |ui| {
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                match draft.kind {
+                    ZmkBehaviorKind::KeyPress
+                    | ZmkBehaviorKind::KeyToggle
+                    | ZmkBehaviorKind::StickyKey => {
+                        self.draw_usage_picker(ui, draft, true);
+                    }
+                    ZmkBehaviorKind::MomentaryLayer
+                    | ZmkBehaviorKind::ToggleLayer
+                    | ZmkBehaviorKind::ToLayer
+                    | ZmkBehaviorKind::StickyLayer => {
+                        self.draw_layer_selector(ui, &layer_infos, &mut draft.layer_id);
+                    }
+                    ZmkBehaviorKind::LayerTap => {
+                        self.draw_layer_selector(ui, &layer_infos, &mut draft.layer_id);
+                        ui.label("Tap key:");
+                        self.draw_usage_picker(ui, draft, true);
+                    }
+                    ZmkBehaviorKind::ModTap => {
+                        ui.label("Hold modifier:");
+                        egui::ComboBox::from_id_salt("hold_mod_combo")
+                            .selected_text(modifier_label(draft.hold_mod))
+                            .show_ui(ui, |ui| {
+                                for (id, name) in MODIFIER_KEYCODES {
+                                    ui.selectable_value(
+                                        &mut draft.hold_mod,
+                                        HidUsage::from_parts(HID_USAGE_KEYBOARD, id, 0),
+                                        name,
+                                    );
+                                }
+                            });
+                        ui.label("Tap key:");
+                        self.draw_usage_picker(ui, draft, true);
+                    }
+                    ZmkBehaviorKind::Transparent
+                    | ZmkBehaviorKind::NoneBehavior
+                    | ZmkBehaviorKind::CapsWord
+                    | ZmkBehaviorKind::KeyRepeat
+                    | ZmkBehaviorKind::GraveEscape
+                    | ZmkBehaviorKind::StudioUnlock
+                    | ZmkBehaviorKind::Reset
+                    | ZmkBehaviorKind::Bootloader
+                    | ZmkBehaviorKind::SoftOff => {}
+                    ZmkBehaviorKind::Bluetooth => {
+                        ui.horizontal(|ui| {
+                            ui.label("Command");
+                            egui::ComboBox::from_id_salt("bt_command_combo")
+                                .selected_text(bt_command_label(draft.bt_command))
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(&mut draft.bt_command, 0, "Clear");
+                                    ui.selectable_value(&mut draft.bt_command, 1, "Next");
+                                    ui.selectable_value(&mut draft.bt_command, 2, "Previous");
+                                    ui.selectable_value(&mut draft.bt_command, 3, "Select");
+                                    ui.selectable_value(&mut draft.bt_command, 4, "Clear All");
+                                    ui.selectable_value(&mut draft.bt_command, 5, "Disconnect");
+                                });
+                        });
+                        if draft.bt_command == 3 || draft.bt_command == 5 {
+                            ui.horizontal(|ui| {
+                                ui.label("Profile");
+                                ui.add(egui::DragValue::new(&mut draft.bt_profile).range(0..=9));
+                            });
+                        }
+                    }
+                    ZmkBehaviorKind::OutputSelection => {
+                        ui.horizontal(|ui| {
+                            ui.label("Output");
+                            egui::ComboBox::from_id_salt("out_combo")
+                                .selected_text(output_label(draft.out_value))
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(&mut draft.out_value, 0, "Toggle");
+                                    ui.selectable_value(&mut draft.out_value, 1, "USB");
+                                    ui.selectable_value(&mut draft.out_value, 2, "BLE");
+                                    ui.selectable_value(&mut draft.out_value, 3, "None");
+                                });
+                        });
+                    }
+                    ZmkBehaviorKind::Backlight => {
+                        self.draw_command_selector(
+                            ui,
+                            "Command",
+                            &mut draft.bl_command,
+                            &[
+                                (0, "On"),
+                                (1, "Off"),
+                                (2, "Toggle"),
+                                (3, "Increase"),
+                                (4, "Decrease"),
+                                (5, "Cycle"),
+                                (6, "Set"),
+                            ],
+                        );
+                        if draft.bl_command == 6 {
+                            ui.horizontal(|ui| {
+                                ui.label("Level");
+                                ui.add(egui::DragValue::new(&mut draft.bl_value).range(0..=255));
+                            });
+                        }
+                    }
+                    ZmkBehaviorKind::Underglow => {
+                        self.draw_command_selector(
+                            ui,
+                            "Command",
+                            &mut draft.rgb_command,
+                            &[
+                                (0, "Toggle"),
+                                (1, "On"),
+                                (2, "Off"),
+                                (3, "Hue +"),
+                                (4, "Hue -"),
+                                (5, "Saturation +"),
+                                (6, "Saturation -"),
+                                (7, "Brightness +"),
+                                (8, "Brightness -"),
+                                (9, "Speed +"),
+                                (10, "Speed -"),
+                                (11, "Effect +"),
+                                (12, "Effect -"),
+                                (13, "Effect Set"),
+                                (14, "Color"),
+                            ],
+                        );
+                    }
+                    ZmkBehaviorKind::MouseKeyPress => {
+                        self.draw_command_selector(
+                            ui,
+                            "Button",
+                            &mut draft.mouse_button,
+                            &[
+                                (1, "Left"),
+                                (2, "Right"),
+                                (4, "Middle"),
+                                (8, "Mouse 4"),
+                                (16, "Mouse 5"),
+                            ],
+                        );
+                    }
+                    ZmkBehaviorKind::MouseMove => {
+                        self.draw_command_selector(
+                            ui,
+                            "Direction",
+                            &mut draft.mouse_direction,
+                            &[
+                                (0x0001_0000, "Up"),
+                                (0xFFFF_FFFF, "Down"),
+                                (0x0000_0001, "Right"),
+                                (0x0000_FFFF, "Left"),
+                            ],
+                        );
+                    }
+                    ZmkBehaviorKind::MouseScroll => {
+                        self.draw_command_selector(
+                            ui,
+                            "Direction",
+                            &mut draft.mouse_direction,
+                            &[
+                                (0x0000_0001, "Up"),
+                                (0x0000_FFFF, "Down"),
+                                (0x0001_0000, "Right"),
+                                (0xFFFF_FFFF, "Left"),
+                            ],
+                        );
+                    }
                 }
-            }
-        } else if ui.button("Apply").clicked() {
-            if let Some(behavior) = draft.to_behavior() {
-                self.apply_zmk_write(keyboard, target, behavior);
-            }
-        }
+
+                if needs_params(draft.kind) {
+                    ui.add_space(8.0);
+                    if ui.button("Apply").clicked() {
+                        if let Some(behavior) = draft.to_behavior() {
+                            self.apply_zmk_write(keyboard, target, behavior);
+                        }
+                    }
+                } else if ui.button("Apply").clicked() {
+                    if let Some(behavior) = draft.to_behavior() {
+                        self.apply_zmk_write(keyboard, target, behavior);
+                    }
+                }
+            });
+        });
     }
 
     fn draw_usage_picker(&mut self, ui: &mut egui::Ui, draft: &mut ZmkDraft, with_mods: bool) {
-        // A compact modifier row above the picker.
+        // The usage-page categories stay as headers inside one shared scroll
+        // region; the key-shaped cells come from the shared picker grid.
+        let selected =
+            zmk_studio_api::HidUsage::from_parts(draft.usage.page(), draft.usage.id(), 0)
+                .to_hid_usage();
+        let style = self.paint_style(KEY_UNIT);
+
         if with_mods {
             ui.horizontal(|ui| {
                 let mut ctrl = draft.modifiers & MOD_LCTL != 0;
@@ -586,29 +596,23 @@ impl crate::overlay_window::OverlayApp {
             });
         }
 
-        let selected =
-            zmk_studio_api::HidUsage::from_parts(draft.usage.page(), draft.usage.id(), 0)
-                .to_hid_usage();
-
-        egui::ScrollArea::vertical()
-            .max_height(280.0)
-            .show(ui, |ui| {
-                for category in zmk_catalog::categories() {
-                    ui.label(category.name);
-                    picker_grid_rows(
-                        ui,
-                        category.name,
-                        &category.candidates,
-                        Some(selected),
-                        |code| {
-                            let usage = HidUsage::from_encoded(code);
-                            draft.usage =
-                                HidUsage::from_parts(usage.page(), usage.id(), draft.modifiers);
-                        },
-                    );
-                    ui.add_space(6.0);
-                }
-            });
+        // No inner scroll area: the surrounding editor pane already scrolls,
+        // so categories lay out flat inside it.
+        for category in zmk_catalog::categories() {
+            ui.label(category.name);
+            picker_grid_rows(
+                ui,
+                category.name,
+                &category.candidates,
+                Some(selected),
+                &style,
+                |code| {
+                    let usage = HidUsage::from_encoded(code);
+                    draft.usage = HidUsage::from_parts(usage.page(), usage.id(), draft.modifiers);
+                },
+            );
+            ui.add_space(6.0);
+        }
     }
 
     fn draw_layer_selector(

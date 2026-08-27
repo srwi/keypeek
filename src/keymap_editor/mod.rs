@@ -11,10 +11,14 @@ pub use qmk_editor::QmkDraft;
 pub use zmk_editor::ZmkDraft;
 
 use crate::key_action::KeyAction;
+use crate::key_paint::{self, KeyDisplay};
 use crate::keyboard::Keyboard;
 use crate::protocols::WriteSupport;
 use egui::Window;
 use std::sync::mpsc;
+
+/// Pixels per key-unit for the header's preview of the current assignment.
+const PREVIEW_KEY_UNIT: f32 = 68.0;
 
 /// Which key the editor window is currently targeting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,35 +76,13 @@ impl EditorState {
     }
 }
 
-/// Text describing a key's current assignment for the editor header: the
-/// resolved label(s) plus the raw firmware form.
-pub fn describe_action(action: &KeyAction, layer_names: &[String]) -> String {
-    let mut parts: Vec<String> = Vec::new();
-    if let Some(label) = action.resolve_label(layer_names) {
-        if !label.tap.full.is_empty() {
-            parts.push(label.tap.full.clone());
-        }
-        if let Some(symbol) = &label.symbol {
-            if !symbol.is_empty() {
-                parts.push(symbol.clone());
-            }
-        }
-        for strip in [&label.behavior, &label.argument] {
-            if let Some(strip) = strip {
-                if !strip.full.is_empty() {
-                    parts.push(strip.full.clone());
-                }
-            }
-        }
-    }
-
-    let raw = match action {
+/// The raw firmware form of a binding, shown under the header key: hex for
+/// QMK keycodes, the behavior's debug form for ZMK.
+pub fn raw_value_text(action: &KeyAction) -> String {
+    match action {
         KeyAction::Qmk(code) => format!("0x{code:04X}"),
         KeyAction::Zmk(behavior) => format!("{behavior:?}"),
-    };
-    parts.push(raw);
-
-    parts.join("  ")
+    }
 }
 
 impl crate::overlay_window::OverlayApp {
@@ -114,43 +96,70 @@ impl crate::overlay_window::OverlayApp {
             .iter()
             .map(|info| info.name.clone().unwrap_or_default())
             .collect();
-        let layer_label = keyboard
-            .layer_infos()
-            .get(target.layer_index)
-            .and_then(|info| info.name.clone())
-            .unwrap_or_else(|| format!("Layer {}", target.layer_index));
 
         self.poll_pending_write(ctx);
 
         let mut open = true;
+        // A fixed-ish, user-resizable window: panes scroll internally instead
+        // of growing the window to their content height.
         Window::new("Edit key")
             .open(&mut open)
-            .resizable(false)
-            .default_width(340.0)
-            .max_width(360.0)
-            .min_width(300.0)
+            .resizable(true)
+            .default_size(egui::vec2(480.0, 620.0))
+            .min_size(egui::vec2(440.0, 320.0))
             .show(ctx, |ui| {
-                ui.label(format!(
-                    "Layer {layer_label}  ·  key ({}, {})",
-                    target.row, target.col
-                ));
-                ui.add_space(4.0);
+                // Header: the current assignment rendered as the exact key it
+                // paints on the overlay, with its raw firmware value beneath.
+                let style = self.paint_style(PREVIEW_KEY_UNIT);
+                let action = keyboard.get_action(target.layer_index, target.row, target.col);
+                let layout_key = action
+                    .as_ref()
+                    .and_then(|a| a.resolve_label(&layer_names))
+                    .unwrap_or_default();
+                // Kind is taken from the layer-0 key at this position, matching
+                // the overlay's coloring rule for Modifier/Special darkening.
+                let kind = keyboard
+                    .get_key(0, target.row, target.col)
+                    .map(|k| k.kind)
+                    .unwrap_or(crate::layout_key::KeycodeKind::Basic);
+                // Colors follow the overlay rules; an unbound slot renders
+                // ghosted, like a pinned transparent binding.
+                let colors_for = |layer: u8| style.colors_for(layer, kind, false, false);
+                let colors = if action.is_none() {
+                    colors_for(layout_key.layer_ref.unwrap_or(target.layer_index as u8)).ghosted()
+                } else {
+                    colors_for(layout_key.layer_ref.unwrap_or(target.layer_index as u8))
+                };
 
-                match keyboard.get_action(target.layer_index, target.row, target.col) {
-                    Some(action) => {
-                        let text = describe_action(&action, &layer_names);
-                        ui.weak(format!("Current: {text}"));
-                    }
-                    None => {
-                        ui.weak("No binding at this key");
-                    }
-                }
+                let raw_text = match &action {
+                    Some(action) => raw_value_text(action),
+                    None => "No binding at this key".to_string(),
+                };
+
+                ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                    let (_, cell) = ui.allocate_exact_size(
+                        egui::vec2(PREVIEW_KEY_UNIT, PREVIEW_KEY_UNIT),
+                        egui::Sense::hover(),
+                    );
+                    key_paint::paint(
+                        ui,
+                        cell.rect,
+                        0.0,
+                        &KeyDisplay {
+                            key: &layout_key,
+                            colors,
+                            hovered: false,
+                            pressed: false,
+                            shift_held: false,
+                            ralt_held: false,
+                        },
+                        &style,
+                    );
+                    ui.weak(raw_text);
+                });
 
                 let write_support = keyboard.write_support();
-                match (
-                    write_support,
-                    keyboard.get_action(target.layer_index, target.row, target.col),
-                ) {
+                match (write_support, action.as_ref()) {
                     (WriteSupport::Immediate, Some(KeyAction::Qmk(_))) => {
                         ui.add_space(8.0);
                         ui.separator();
@@ -313,6 +322,7 @@ impl crate::overlay_window::OverlayApp {
         self.editor.error = None;
         self.editor.qmk_draft = Default::default();
         self.editor.zmk_draft = Default::default();
+        self.editor.zmk_dirty = false;
         self.editor.close_prompt = false;
     }
 }

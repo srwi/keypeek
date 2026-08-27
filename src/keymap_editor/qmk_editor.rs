@@ -7,7 +7,8 @@ use crate::keyboard::Keyboard;
 use crate::qmk_keycode_labels::constants::*;
 use crate::qmk_keycode_labels::get_layout_key;
 
-use super::picker::{picker_grid, qmk_candidate_text, Candidate};
+use super::picker::{picker_grid_rows, Candidate, KEY_UNIT};
+use super::qmk_catalog::qmk_candidate;
 use super::EditTarget;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -253,102 +254,109 @@ impl crate::overlay_window::OverlayApp {
         target: EditTarget,
         draft: &mut QmkDraft,
     ) {
-        egui::ComboBox::from_id_salt("qmk_section_combo")
-            .selected_text(draft.section.label())
-            .show_ui(ui, |ui| {
-                for section in Section::ALL {
-                    ui.selectable_value(&mut draft.section, section, section.label());
-                }
-            });
-        ui.separator();
-
-        match draft.section {
-            Section::Basic | Section::Media => {
-                let codes = super::qmk_catalog::categories()
-                    .into_iter()
-                    .find(|c| {
-                        (draft.section == Section::Basic && c.name == "Basic")
-                            || (draft.section == Section::Media && c.name == "Media")
-                    })
-                    .map(|c| c.codes)
-                    .unwrap_or_default();
-                let candidates: Vec<Candidate> = codes
-                    .iter()
-                    .map(|&code| Candidate {
-                        code: code as u32,
-                        text: qmk_candidate_text(code),
-                    })
-                    .collect();
-                let selected = self
-                    .editor
-                    .target
-                    .and_then(|t| keyboard.get_action(t.layer_index, t.row, t.col))
-                    .and_then(|a| match a {
-                        KeyAction::Qmk(code) if !has_params(code) => Some(code as u32),
-                        _ => None,
+        // Two-pane layout: the category list on the left drives whatever the
+        // right pane shows (a key grid for Basic/Media, parameter forms for
+        // Layers/Mods/Any). Each pane scrolls independently and fills the
+        // window instead of growing it.
+        egui::Panel::left("qmk_sections")
+            .resizable(false)
+            .exact_size(100.0)
+            .show_inside(ui, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    ui.add_space(2.0);
+                    ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
+                        for section in Section::ALL {
+                            ui.selectable_value(&mut draft.section, section, section.label());
+                        }
                     });
-                let salt = if draft.section == Section::Basic {
-                    "qmk_basic"
-                } else {
-                    "qmk_media"
-                };
-                picker_grid(ui, salt, &candidates, selected, |code| {
-                    self.apply_qmk_write(keyboard, target, code as u16);
                 });
-            }
-            Section::Layers => {
-                ui.horizontal(|ui| {
-                    ui.label("Kind");
-                    egui::ComboBox::from_id_salt("layer_kind_combo")
-                        .selected_text(draft.layer_kind.label())
-                        .show_ui(ui, |ui| {
-                            for kind in LayerKind::ALL {
-                                ui.selectable_value(&mut draft.layer_kind, kind, kind.label());
-                            }
+            });
+
+        egui::CentralPanel::default().show_inside(ui, |ui| {
+            egui::ScrollArea::vertical().show(ui, |ui| match draft.section {
+                Section::Basic | Section::Media => {
+                    let codes = super::qmk_catalog::categories()
+                        .into_iter()
+                        .find(|c| {
+                            (draft.section == Section::Basic && c.name == "Basic")
+                                || (draft.section == Section::Media && c.name == "Media")
+                        })
+                        .map(|c| c.codes)
+                        .unwrap_or_default();
+                    let candidates: Vec<Candidate> =
+                        codes.iter().map(|&code| qmk_candidate(code)).collect();
+                    let selected = self
+                        .editor
+                        .target
+                        .and_then(|t| keyboard.get_action(t.layer_index, t.row, t.col))
+                        .and_then(|a| match a {
+                            KeyAction::Qmk(code) if !has_params(code) => Some(code as u32),
+                            _ => None,
                         });
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Layer");
-                    ui.add(egui::DragValue::new(&mut draft.layer).range(0..=31));
-                });
-                if ui.button("Apply").clicked() {
-                    if let Some(code) = encode_layer(draft.layer_kind, draft.layer) {
-                        self.apply_qmk_write(keyboard, target, code);
-                    }
+                    let salt = if draft.section == Section::Basic {
+                        "qmk_basic"
+                    } else {
+                        "qmk_media"
+                    };
+                    let style = self.paint_style(KEY_UNIT);
+                    picker_grid_rows(ui, salt, &candidates, selected, &style, |code| {
+                        self.apply_qmk_write(keyboard, target, code as u16);
+                    });
                 }
-            }
-            Section::Mods => self.draw_mods_section(ui, keyboard, target, draft),
-            Section::Any => {
-                ui.horizontal(|ui| {
-                    ui.label("0x");
-                    let mut text = draft.hex.clone();
-                    let response = ui.add(
-                        egui::TextEdit::singleline(&mut text)
-                            .desired_width(80.0)
-                            .char_limit(4),
-                    );
-                    if response.changed() {
-                        text.retain(|c| c.is_ascii_hexdigit());
-                        draft.hex = text;
-                    }
-                });
-                let code = u16::from_str_radix(&draft.hex, 16);
-                match code {
-                    Ok(code) => {
-                        let label = get_layout_key(code)
-                            .map(|k| k.tap.full.clone())
-                            .unwrap_or_else(|| format!("0x{code:04X}"));
-                        ui.weak(format!("Preview: {label}"));
-                        if ui.button("Apply").clicked() {
+                Section::Layers => {
+                    ui.horizontal(|ui| {
+                        ui.label("Kind");
+                        egui::ComboBox::from_id_salt("layer_kind_combo")
+                            .selected_text(draft.layer_kind.label())
+                            .show_ui(ui, |ui| {
+                                for kind in LayerKind::ALL {
+                                    ui.selectable_value(&mut draft.layer_kind, kind, kind.label());
+                                }
+                            });
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Layer");
+                        ui.add(egui::DragValue::new(&mut draft.layer).range(0..=31));
+                    });
+                    if ui.button("Apply").clicked() {
+                        if let Some(code) = encode_layer(draft.layer_kind, draft.layer) {
                             self.apply_qmk_write(keyboard, target, code);
                         }
                     }
-                    Err(_) => {
-                        ui.weak("Enter a 1–4 digit hex keycode");
+                }
+                Section::Mods => self.draw_mods_section(ui, keyboard, target, draft),
+                Section::Any => {
+                    ui.horizontal(|ui| {
+                        ui.label("0x");
+                        let mut text = draft.hex.clone();
+                        let response = ui.add(
+                            egui::TextEdit::singleline(&mut text)
+                                .desired_width(80.0)
+                                .char_limit(4),
+                        );
+                        if response.changed() {
+                            text.retain(|c| c.is_ascii_hexdigit());
+                            draft.hex = text;
+                        }
+                    });
+                    let code = u16::from_str_radix(&draft.hex, 16);
+                    match code {
+                        Ok(code) => {
+                            let label = get_layout_key(code)
+                                .map(|k| k.tap.full.clone())
+                                .unwrap_or_else(|| format!("0x{code:04X}"));
+                            ui.weak(format!("Preview: {label}"));
+                            if ui.button("Apply").clicked() {
+                                self.apply_qmk_write(keyboard, target, code);
+                            }
+                        }
+                        Err(_) => {
+                            ui.weak("Enter a 1–4 digit hex keycode");
+                        }
                     }
                 }
-            }
-        }
+            });
+        });
     }
 
     fn draw_mods_section(
@@ -420,16 +428,15 @@ impl crate::overlay_window::OverlayApp {
     fn draw_base_picker(&mut self, ui: &mut egui::Ui, draft: &mut QmkDraft) {
         let candidates: Vec<Candidate> = (0x00u16..=0xFF)
             .filter(|&code| get_layout_key(code).is_some())
-            .map(|code| Candidate {
-                code: code as u32,
-                text: qmk_candidate_text(code),
-            })
+            .map(qmk_candidate)
             .collect();
-        picker_grid(
+        let style = self.paint_style(KEY_UNIT);
+        picker_grid_rows(
             ui,
             "qmk_base",
             &candidates,
             Some(draft.base_code as u32),
+            &style,
             |code| {
                 draft.base_code = code as u16;
             },

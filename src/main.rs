@@ -3,6 +3,7 @@ mod connection;
 mod device_discovery;
 mod key_action;
 mod key_matrix;
+mod key_paint;
 mod keyboard;
 mod keymap_editor;
 mod layout_key;

@@ -8,21 +8,6 @@ use egui_file_dialog::FileDialog;
 use std::sync::Arc;
 use std::time::Instant;
 
-pub struct LabelGalleys {
-    pub symbol: Option<std::sync::Arc<egui::Galley>>,
-    pub text: Option<std::sync::Arc<egui::Galley>>,
-    pub behavior: Option<std::sync::Arc<egui::Galley>>,
-    pub argument: Option<std::sync::Arc<egui::Galley>>,
-}
-
-/// Resolved colors for painting a single key, derived from its layer, kind, and state.
-pub struct KeyColors {
-    pub fill: egui::Color32,
-    pub border: egui::Color32,
-    pub border_thickness: f32,
-    pub font: egui::Color32,
-}
-
 pub enum AppConnectionState {
     Disconnected,
     /// Shared so the overlay can draw and the editor can write through the same

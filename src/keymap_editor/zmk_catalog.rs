@@ -6,7 +6,6 @@
 use crate::key_action::KeyAction;
 use std::sync::OnceLock;
 use zmk_studio_api::{Behavior, HidUsage, Keycode};
-
 pub const HID_USAGE_KEYBOARD: u16 = 0x07;
 pub const HID_USAGE_CONSUMER: u16 = 0x0C;
 
@@ -32,10 +31,7 @@ fn build_categories() -> Vec<Category> {
             continue;
         };
         let page = HidUsage::from_encoded(encoded).page();
-        let candidate = super::picker::Candidate {
-            code: encoded,
-            text: keycode_button_text(encoded),
-        };
+        let candidate = keycode_candidate(encoded);
         match page {
             HID_USAGE_KEYBOARD => keyboard.push(candidate),
             HID_USAGE_CONSUMER => consumer.push(candidate),
@@ -54,16 +50,23 @@ fn build_categories() -> Vec<Category> {
     ]
 }
 
-/// The button text for a ZMK keycode: resolves the key press label.
-pub fn keycode_button_text(encoded: u32) -> String {
+/// The candidate for a ZMK keycode: the fully resolved `LayoutKey` from the
+/// key-press behavior, falling back to a hex label for unknown usages.
+pub fn keycode_candidate(encoded: u32) -> super::picker::Candidate {
     let usage = HidUsage::from_encoded(encoded);
     let action = KeyAction::Zmk(Behavior::KeyPress(usage));
-    match action.resolve_label(&[]) {
-        Some(key) if !key.tap.full.is_empty() => key.tap.full.clone(),
-        Some(key) => key
-            .symbol
-            .clone()
-            .unwrap_or_else(|| format!("0x{:02X}", usage.id())),
-        None => format!("0x{:02X}", usage.id()),
-    }
+    let key = match action.resolve_label(&[]) {
+        Some(key) if !key.tap.full.is_empty() => key,
+        Some(mut key) => {
+            if key.symbol.is_none() && key.tap.is_empty() {
+                key.symbol = Some(format!("0x{:02X}", usage.id()));
+            }
+            key
+        }
+        None => crate::layout_key::LayoutKey {
+            tap: crate::layout_key::Label::new(format!("0x{:02X}", usage.id())),
+            ..Default::default()
+        },
+    };
+    super::picker::Candidate::new(encoded, key)
 }

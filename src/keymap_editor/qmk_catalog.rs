@@ -4,6 +4,10 @@
 //! `get_basic_layout_key` labels, so the categories enumerate those ranges
 //! rather than hand-maintaining hundreds of entries.
 
+use super::picker::Candidate;
+use crate::layout_key::{Label, LayoutKey};
+use crate::qmk_keycode_labels::get_layout_key;
+use qmk_via_api::keycodes::Keycode;
 use std::ops::RangeInclusive;
 
 /// A named group of keycodes shown together in a picker.
@@ -33,6 +37,41 @@ pub fn categories() -> Vec<Category> {
             codes: MEDIA_RANGE.collect(),
         },
     ]
+}
+
+/// The candidate for a QMK keycode: the fully resolved `LayoutKey`, with
+/// explicit stand-ins for `KC_TRANSPARENT` and `KC_NO`, whose raw labels are
+/// unusable as key legends.
+pub fn qmk_candidate(code: u16) -> Candidate {
+    if code == Keycode::KC_TRANSPARENT as u16 {
+        return Candidate {
+            code: code as u32,
+            key: LayoutKey {
+                tap: Label::with_short("Trans", egui_phosphor::regular::CARET_DOWN),
+                ..Default::default()
+            },
+            transparent: true,
+        };
+    }
+    if code == Keycode::KC_NO as u16 {
+        return Candidate::new(
+            code as u32,
+            LayoutKey {
+                tap: Label::new("None"),
+                ..Default::default()
+            },
+        );
+    }
+    match get_layout_key(code) {
+        Some(key) => Candidate::new(code as u32, key),
+        None => Candidate::new(
+            code as u32,
+            LayoutKey {
+                tap: Label::new(format!("0x{code:04X}")),
+                ..Default::default()
+            },
+        ),
+    }
 }
 
 #[cfg(test)]

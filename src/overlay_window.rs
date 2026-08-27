@@ -144,6 +144,12 @@ impl OverlayApp {
         }
     }
 
+    /// A [`KeyPaintStyle`] tuned for the given unit size (pixels per key-unit):
+    /// `active.size`-scaled keys on the overlay, miniature ones in pickers.
+    pub(crate) fn paint_style(&self, unit: f32) -> crate::key_paint::KeyPaintStyle {
+        crate::key_paint::KeyPaintStyle::from_settings(&self.settings.active).with_unit(unit)
+    }
+
     pub fn ui(&mut self, ctx: &egui::Context, host: &mut dyn OverlayHost) {
         if self.settings_requested.swap(false, Ordering::Relaxed) {
             self.ui.settings_visible = true;

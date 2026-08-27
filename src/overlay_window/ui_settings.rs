@@ -7,9 +7,9 @@ impl OverlayApp {
     /// The color button that ends every theme row, right-aligned in the row.
     fn theme_color_button(ui: &mut egui::Ui, color: &mut ThemeColor) {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let mut display_color = Self::to_egui_color(*color);
+            let mut display_color = crate::key_paint::to_egui_color(*color);
             if ui.color_edit_button_srgba(&mut display_color).changed() {
-                *color = Self::from_egui_color(display_color);
+                *color = crate::key_paint::from_egui_color(display_color);
             }
         });
     }

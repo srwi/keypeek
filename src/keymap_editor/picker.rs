@@ -1,91 +1,101 @@
 //! A scrollable grid of key-shaped buttons shared by the QMK and ZMK editors.
+//! The cells are painted by [`crate::key_paint`], so each candidate looks
+//! exactly like it will on the live overlay.
+
+use crate::key_paint::{self, KeyDisplay, KeyPaintStyle};
+use crate::layout_key::LayoutKey;
+
+/// Pixels per key-unit in picker grids; a miniature overlay key.
+pub const KEY_UNIT: f32 = 51.0;
+/// Gap between grid cells, matching the old button-grid rhythm.
+const GAP: f32 = 6.0;
 
 /// One selectable candidate in a picker grid.
 pub struct Candidate {
     /// The firmware value the candidate writes.
     pub code: u32,
-    /// The button text (the resolved label, already special-cased where the
-    /// raw label is unusable as button text).
-    pub text: String,
+    /// The fully resolved key: labels, symbol, and kind (for coloring).
+    pub key: LayoutKey,
+    /// Rendered dimmed like an unset overlay slot (QMK `KC_TRANSPARENT`).
+    pub transparent: bool,
 }
 
-/// A scrollable grid of small buttons, one per candidate. The currently
-/// assigned `selected` code is highlighted. Clicking a button invokes
-/// `on_select` with the candidate's code.
-pub fn picker_grid(
-    ui: &mut egui::Ui,
-    id_salt: &str,
-    candidates: &[Candidate],
-    selected: Option<u32>,
-    on_select: impl FnMut(u32),
-) {
-    egui::ScrollArea::vertical()
-        .max_height(280.0)
-        .show(ui, |ui| {
-            picker_grid_rows(ui, id_salt, candidates, selected, on_select);
-        });
+impl Candidate {
+    pub fn new(code: u32, key: LayoutKey) -> Self {
+        Self {
+            code,
+            key,
+            transparent: false,
+        }
+    }
 }
 
-/// The grid inside `picker_grid`, without its own scroll area (for embedding
-/// inside an outer scroll region). `id_salt` must be unique per grid in the
-/// same window so egui does not report duplicate widget ids.
+/// A scrollable grid of miniature keys, one per candidate. The currently
+/// assigned `selected` code is highlighted with the overlay's pressed look.
+/// Clicking a key invokes `on_select` with the candidate's code.
+///
+/// No scroll area of its own: embed inside the pane that owns scrolling.
 pub fn picker_grid_rows(
     ui: &mut egui::Ui,
     id_salt: &str,
     candidates: &[Candidate],
     selected: Option<u32>,
+    style: &KeyPaintStyle,
     mut on_select: impl FnMut(u32),
 ) {
-    let button_size = egui::vec2(
-        ui.spacing().interact_size.y * 2.4,
-        ui.spacing().interact_size.y,
-    );
-    let spacing = ui.spacing().item_spacing.x;
-    let cols = ((ui.available_width() + spacing) / (button_size.x + spacing))
+    let cols = ((ui.available_width() + GAP) / (KEY_UNIT + GAP))
         .floor()
         .max(1.0) as usize;
+    let rows = candidates.len().div_ceil(cols);
+    let grid_width =
+        (cols as f32 * KEY_UNIT + (cols.saturating_sub(1)) as f32 * GAP).min(ui.available_width());
+    let total_height = rows as f32 * KEY_UNIT + (rows.saturating_sub(1)) as f32 * GAP;
 
-    egui::Grid::new(ui.id().with(id_salt))
-        .spacing([spacing, 6.0])
-        .show(ui, |ui| {
-            for (i, candidate) in candidates.iter().enumerate() {
-                let is_selected = selected == Some(candidate.code);
-                let button = ui.add_sized(
-                    button_size,
-                    egui::Button::new(egui::RichText::new(&candidate.text).small().strong())
-                        .selected(is_selected),
-                );
-                if button.clicked() {
-                    on_select(candidate.code);
-                }
-                if (i + 1) % cols == 0 {
-                    ui.end_row();
-                }
-            }
-            if candidates.len() % cols != 0 {
-                ui.end_row();
-            }
-        });
-}
+    let (_, space_rect) = ui.allocate_exact_size(
+        egui::vec2(grid_width.max(KEY_UNIT), total_height),
+        egui::Sense::hover(),
+    );
+    let origin = space_rect.rect.min;
 
-/// The button text for a QMK keycode: `KC_TRANSPARENT` resolves to no label
-/// and `KC_NO` to an empty one, so both get explicit text.
-pub fn qmk_candidate_text(code: u16) -> String {
-    use crate::qmk_keycode_labels::get_layout_key;
-    use qmk_via_api::keycodes::Keycode;
+    for (i, candidate) in candidates.iter().enumerate() {
+        let cell = egui::Rect::from_min_size(
+            origin
+                + egui::vec2(
+                    (i % cols) as f32 * (KEY_UNIT + GAP),
+                    (i / cols) as f32 * (KEY_UNIT + GAP),
+                ),
+            egui::vec2(KEY_UNIT, KEY_UNIT),
+        );
+        let response = ui.interact(
+            cell,
+            ui.id().with((id_salt, "cell", i, candidate.code)),
+            egui::Sense::click(),
+        );
 
-    if code == Keycode::KC_TRANSPARENT as u16 {
-        return "\u{25bd} Trans".to_string();
-    }
-    if code == Keycode::KC_NO as u16 {
-        return "None".to_string();
-    }
-    match get_layout_key(code) {
-        Some(key) if !key.tap.full.is_empty() => key.tap.full.clone(),
-        Some(key) => key
-            .symbol
-            .clone()
-            .unwrap_or_else(|| format!("0x{code:04X}")),
-        None => format!("0x{code:04X}"),
+        // Selected uses the overlay's pressed treatment; transparent bindings
+        // render ghosted, like unset slots on the overlay.
+        let pressed = selected == Some(candidate.code);
+        let colors = style
+            .colors_for(0, candidate.key.kind, false, pressed)
+            .ghosted_if(candidate.transparent);
+
+        key_paint::paint(
+            ui,
+            cell,
+            0.0,
+            &KeyDisplay {
+                key: &candidate.key,
+                colors,
+                hovered: response.hovered(),
+                pressed,
+                shift_held: false,
+                ralt_held: false,
+            },
+            style,
+        );
+
+        if response.clicked() {
+            on_select(candidate.code);
+        }
     }
 }
