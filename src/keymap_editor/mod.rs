@@ -126,6 +126,9 @@ impl crate::overlay_window::OverlayApp {
         Window::new("Edit key")
             .open(&mut open)
             .resizable(false)
+            .default_width(340.0)
+            .max_width(360.0)
+            .min_width(300.0)
             .show(ctx, |ui| {
                 ui.label(format!(
                     "Layer {layer_label}  ·  key ({}, {})",
