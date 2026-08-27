@@ -111,8 +111,6 @@ impl ModMode {
 #[derive(Clone)]
 pub struct QmkDraft {
     pub section: Section,
-    pub layer_kind: LayerKind,
-    pub layer: usize,
     pub mod_mode: ModMode,
     pub mods: u16,
     pub right: bool,
@@ -125,8 +123,6 @@ impl Default for QmkDraft {
     fn default() -> Self {
         Self {
             section: Section::Basic,
-            layer_kind: LayerKind::Mo,
-            layer: 0,
             mod_mode: ModMode::Combo,
             mods: 0,
             right: false,
@@ -200,8 +196,6 @@ fn decode(code: u16) -> QmkDraft {
     for kind in LayerKind::ALL {
         if kind.range().contains(&code) {
             draft.section = Section::Layers;
-            draft.layer_kind = kind;
-            draft.layer = (code - kind.range().start) as usize;
             return draft;
         }
     }
@@ -511,7 +505,6 @@ mod tests {
             assert_eq!(code, expected_start + layer as u16);
             let mut draft = QmkDraft::default();
             draft.section = Section::Layers;
-            draft.layer_kind = kind;
             assert_round_trips(draft, code);
         }
         assert!(encode_layer(LayerKind::Mo, 32).is_none());

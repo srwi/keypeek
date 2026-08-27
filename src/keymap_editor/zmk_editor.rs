@@ -12,7 +12,7 @@ use super::picker::{
 use super::zmk_catalog;
 use super::{EditTarget, PendingKind};
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ZmkBehaviorKind {
     KeyPress,
     KeyToggle,
@@ -110,14 +110,9 @@ pub struct ZmkDraft {
     pub hold_mod: HidUsage,
     /// Layer a layer behavior or layer-tap targets (the stable layer id).
     pub layer_id: u32,
-    pub bt_command: u32,
-    pub bt_profile: u32,
-    pub out_value: u32,
-    pub bl_command: u32,
+    /// Backlight `Set` level: a value that is part of the binding rather than
+    /// a choice between keys, so it stays staged in the draft.
     pub bl_value: u32,
-    pub rgb_command: u32,
-    pub mouse_button: u32,
-    pub mouse_direction: u32,
 }
 
 impl Default for ZmkDraft {
@@ -128,14 +123,7 @@ impl Default for ZmkDraft {
             modifiers: 0,
             hold_mod: HidUsage::from_parts(HID_USAGE_KEYBOARD, 0xE1, 0),
             layer_id: 0,
-            bt_command: 3,
-            bt_profile: 0,
-            out_value: 1,
-            bl_command: 0,
             bl_value: 0,
-            rgb_command: 0,
-            mouse_button: 1,
-            mouse_direction: 0,
         }
     }
 }
@@ -198,36 +186,16 @@ impl ZmkDraft {
             Behavior::Reset => K::Reset,
             Behavior::Bootloader => K::Bootloader,
             Behavior::SoftOff => K::SoftOff,
-            Behavior::Bluetooth { command, value } => {
-                draft.bt_command = *command;
-                draft.bt_profile = *value;
-                K::Bluetooth
-            }
-            Behavior::OutputSelection { value } => {
-                draft.out_value = *value;
-                K::OutputSelection
-            }
-            Behavior::Backlight { command, value } => {
-                draft.bl_command = *command;
+            Behavior::Bluetooth { .. } => K::Bluetooth,
+            Behavior::OutputSelection { .. } => K::OutputSelection,
+            Behavior::Backlight { value, .. } => {
                 draft.bl_value = *value;
                 K::Backlight
             }
-            Behavior::Underglow { command, .. } => {
-                draft.rgb_command = *command;
-                K::Underglow
-            }
-            Behavior::MouseKeyPress { value } => {
-                draft.mouse_button = *value;
-                K::MouseKeyPress
-            }
-            Behavior::MouseMove { value } => {
-                draft.mouse_direction = *value;
-                K::MouseMove
-            }
-            Behavior::MouseScroll { value } => {
-                draft.mouse_direction = *value;
-                K::MouseScroll
-            }
+            Behavior::Underglow { .. } => K::Underglow,
+            Behavior::MouseKeyPress { .. } => K::MouseKeyPress,
+            Behavior::MouseMove { .. } => K::MouseMove,
+            Behavior::MouseScroll { .. } => K::MouseScroll,
             Behavior::Custom { .. } | Behavior::Unknown { .. } | Behavior::ExternalPower { .. } => {
                 K::KeyPress
             }
@@ -235,69 +203,22 @@ impl ZmkDraft {
         draft
     }
 
-    /// Builds the `Behavior` the draft currently describes.
-    pub fn to_behavior(&self) -> Option<Behavior> {
+    /// Builds the `Behavior` the draft currently describes. Only the staged
+    /// kinds (`needs_params`) encode from the draft; every other kind applies
+    /// directly on click from its page's key grids.
+    pub fn to_behavior(&self) -> Behavior {
         use ZmkBehaviorKind as K;
-        let usage = |d: &ZmkDraft| HidUsage::from_parts(d.usage.page(), d.usage.id(), d.modifiers);
-        let result = match self.kind {
-            K::KeyPress => Behavior::KeyPress(usage(self)),
-            K::KeyToggle => Behavior::KeyToggle(usage(self)),
-            K::StickyKey => Behavior::StickyKey(usage(self)),
-            K::MomentaryLayer => Behavior::MomentaryLayer {
-                layer_id: self.layer_id,
-            },
-            K::ToggleLayer => Behavior::ToggleLayer {
-                layer_id: self.layer_id,
-            },
-            K::ToLayer => Behavior::ToLayer {
-                layer_id: self.layer_id,
-            },
-            K::StickyLayer => Behavior::StickyLayer {
-                layer_id: self.layer_id,
-            },
-            K::LayerTap => Behavior::LayerTap {
-                layer_id: self.layer_id,
-                tap: usage(self),
-            },
+        let usage = HidUsage::from_parts(self.usage.page(), self.usage.id(), self.modifiers);
+        match self.kind {
+            K::KeyPress => Behavior::KeyPress(usage),
+            K::KeyToggle => Behavior::KeyToggle(usage),
+            K::StickyKey => Behavior::StickyKey(usage),
             K::ModTap => Behavior::ModTap {
                 hold: self.hold_mod,
-                tap: usage(self),
+                tap: usage,
             },
-            K::Transparent => Behavior::Transparent,
-            K::NoneBehavior => Behavior::None,
-            K::CapsWord => Behavior::CapsWord,
-            K::KeyRepeat => Behavior::KeyRepeat,
-            K::GraveEscape => Behavior::GraveEscape,
-            K::StudioUnlock => Behavior::StudioUnlock,
-            K::Reset => Behavior::Reset,
-            K::Bootloader => Behavior::Bootloader,
-            K::SoftOff => Behavior::SoftOff,
-            K::Bluetooth => Behavior::Bluetooth {
-                command: self.bt_command,
-                value: self.bt_profile,
-            },
-            K::OutputSelection => Behavior::OutputSelection {
-                value: self.out_value,
-            },
-            K::Backlight => Behavior::Backlight {
-                command: self.bl_command,
-                value: self.bl_value,
-            },
-            K::Underglow => Behavior::Underglow {
-                command: self.rgb_command,
-                value: 0,
-            },
-            K::MouseKeyPress => Behavior::MouseKeyPress {
-                value: self.mouse_button,
-            },
-            K::MouseMove => Behavior::MouseMove {
-                value: self.mouse_direction,
-            },
-            K::MouseScroll => Behavior::MouseScroll {
-                value: self.mouse_direction,
-            },
-        };
-        Some(result)
+            _ => unreachable!("only staged kinds encode from the draft"),
+        }
     }
 }
 
@@ -412,9 +333,7 @@ impl crate::overlay_window::OverlayApp {
                 if needs_params(draft.kind) {
                     ui.add_space(8.0);
                     if ui.button("Apply").clicked() {
-                        if let Some(behavior) = draft.to_behavior() {
-                            self.apply_zmk_write(keyboard, target, behavior);
-                        }
+                        self.apply_zmk_write(keyboard, target, draft.to_behavior());
                     }
                 }
             });
@@ -674,7 +593,7 @@ mod tests {
 
     fn round_trip(behavior: Behavior) {
         let draft = ZmkDraft::from_behavior(&behavior);
-        let rebuilt = draft.to_behavior().expect("draft should encode");
+        let rebuilt = draft.to_behavior();
         assert_eq!(
             rebuilt, behavior,
             "behavior should survive a draft round trip"
@@ -691,19 +610,7 @@ mod tests {
     }
 
     #[test]
-    fn layer_behaviors_round_trip() {
-        round_trip(Behavior::MomentaryLayer { layer_id: 2 });
-        round_trip(Behavior::ToggleLayer { layer_id: 0 });
-        round_trip(Behavior::ToLayer { layer_id: 3 });
-        round_trip(Behavior::StickyLayer { layer_id: 1 });
-    }
-
-    #[test]
-    fn layer_tap_and_mod_tap_round_trip() {
-        round_trip(Behavior::LayerTap {
-            layer_id: 1,
-            tap: HidUsage::from_parts(HID_USAGE_KEYBOARD, 0x1C, 0),
-        });
+    fn mod_tap_round_trips() {
         round_trip(Behavior::ModTap {
             hold: HidUsage::from_parts(HID_USAGE_KEYBOARD, 0xE1, 0),
             tap: HidUsage::from_parts(HID_USAGE_KEYBOARD, 0x04, 0),
@@ -711,54 +618,39 @@ mod tests {
     }
 
     #[test]
-    fn parameterless_behaviors_round_trip() {
-        for behavior in [
-            Behavior::Transparent,
-            Behavior::None,
-            Behavior::CapsWord,
-            Behavior::KeyRepeat,
-            Behavior::GraveEscape,
-            Behavior::StudioUnlock,
-            Behavior::Reset,
-            Behavior::Bootloader,
-            Behavior::SoftOff,
-        ] {
-            round_trip(behavior);
-        }
-    }
-
-    #[test]
-    fn command_behaviors_round_trip() {
-        round_trip(Behavior::Bluetooth {
-            command: 3,
-            value: 2,
-        });
-        round_trip(Behavior::OutputSelection { value: 1 });
-        round_trip(Behavior::Backlight {
-            command: 6,
-            value: 3,
-        });
-        round_trip(Behavior::Underglow {
-            command: 7,
-            value: 0,
-        });
-        round_trip(Behavior::MouseKeyPress { value: 1 });
-        round_trip(Behavior::MouseMove { value: 0x0001_0000 });
-        round_trip(Behavior::MouseScroll { value: 0x0000_0001 });
-    }
-
-    #[test]
-    fn layer_parameter_uses_the_stable_layer_id() {
-        // Stage 0 recorded ids == indices on the test board; the dropdown
-        // writes `LayerInfo::id`, and the draft carries it verbatim.
-        let draft = ZmkDraft {
-            kind: ZmkBehaviorKind::MomentaryLayer,
-            layer_id: 4,
-            ..Default::default()
-        };
+    fn retarget_opens_the_matching_page() {
+        use ZmkBehaviorKind as K;
+        let kind_of = |behavior: Behavior| ZmkDraft::from_behavior(&behavior).kind;
+        // Layer and command kinds apply from their page's grids, so the draft
+        // only records which page to open on retarget.
         assert_eq!(
-            draft.to_behavior(),
-            Some(Behavior::MomentaryLayer { layer_id: 4 })
+            kind_of(Behavior::MomentaryLayer { layer_id: 2 }),
+            K::MomentaryLayer
         );
+        assert_eq!(kind_of(Behavior::ToLayer { layer_id: 3 }), K::ToLayer);
+        assert_eq!(kind_of(Behavior::Transparent), K::Transparent);
+        assert_eq!(kind_of(Behavior::CapsWord), K::CapsWord);
+        assert_eq!(
+            kind_of(Behavior::Bluetooth {
+                command: 3,
+                value: 2
+            }),
+            K::Bluetooth
+        );
+        assert_eq!(kind_of(Behavior::MouseScroll { value: 1 }), K::MouseScroll);
+    }
+
+    #[test]
+    fn layer_tap_stages_layer_and_tap_side() {
+        // The layer page stages a Layer-Tap's layer; the tap picker below
+        // applies the finished binding from the draft.
+        let draft = ZmkDraft::from_behavior(&Behavior::LayerTap {
+            layer_id: 3,
+            tap: HidUsage::from_parts(HID_USAGE_KEYBOARD, 0x1C, MOD_LSFT),
+        });
+        assert_eq!(draft.kind, ZmkBehaviorKind::LayerTap);
+        assert_eq!(draft.layer_id, 3);
+        assert_eq!(draft.usage.id(), 0x1C);
+        assert_eq!(draft.modifiers, MOD_LSFT);
     }
 }
