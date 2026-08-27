@@ -341,12 +341,17 @@ impl crate::overlay_window::OverlayApp {
         // No inner scroll area: the surrounding editor pane already scrolls,
         // so categories lay out flat inside it.
         let categories = zmk_catalog::categories();
-        let selected = vec![Some(selected); categories.len()];
-        candidate_groups_rows(ui, categories, &selected, &style, |_, candidate| {
-            let usage = HidUsage::from_encoded(candidate.code);
-            draft.usage = HidUsage::from_parts(usage.page(), usage.id(), draft.modifiers);
-            picked = true;
-        });
+        candidate_groups_rows(
+            ui,
+            categories,
+            |_| Some(selected),
+            &style,
+            |_, candidate| {
+                let usage = HidUsage::from_encoded(candidate.code);
+                draft.usage = HidUsage::from_parts(usage.page(), usage.id(), draft.modifiers);
+                picked = true;
+            },
+        );
         picked
     }
 
@@ -374,26 +379,23 @@ impl crate::overlay_window::OverlayApp {
 
         // Per-group highlight: the staged Layer-Tap key, or the key matching
         // the current binding.
-        let selected: Vec<Option<u32>> = kinds
-            .iter()
-            .zip(&groups)
-            .map(|(kind, group)| {
-                if *kind == ZmkBehaviorKind::LayerTap {
-                    if draft.kind == ZmkBehaviorKind::LayerTap {
-                        layer_infos
-                            .iter()
-                            .position(|info| info.id == draft.layer_id)
-                            .map(|i| i as u32)
-                    } else {
-                        None
-                    }
-                } else {
-                    self.selected_behavior_code(keyboard, target, &group.candidates)
-                }
-            })
-            .collect();
+        let staged_layer = if draft.kind == ZmkBehaviorKind::LayerTap {
+            layer_infos
+                .iter()
+                .position(|info| info.id == draft.layer_id)
+                .map(|i| i as u32)
+        } else {
+            None
+        };
+        let selected = |gi: usize| {
+            if kinds[gi] == ZmkBehaviorKind::LayerTap {
+                staged_layer
+            } else {
+                selected_behavior_code(keyboard, target, &groups[gi].candidates)
+            }
+        };
 
-        candidate_groups_rows(ui, &groups, &selected, &style, |gi, candidate| {
+        candidate_groups_rows(ui, &groups, selected, &style, |gi, candidate| {
             let kind = kinds[gi];
             if let Some(behavior) = &candidate.behavior {
                 if kind == ZmkBehaviorKind::LayerTap {
@@ -433,7 +435,7 @@ impl crate::overlay_window::OverlayApp {
     /// The parameterless behaviors as one key grid; clicking applies directly.
     fn draw_special_grid(&mut self, ui: &mut egui::Ui, keyboard: &Keyboard, target: EditTarget) {
         let candidates = zmk_catalog::special_candidates();
-        let selected = self.selected_behavior_code(keyboard, target, candidates);
+        let selected = selected_behavior_code(keyboard, target, candidates);
         let style = self.paint_style(KEY_UNIT);
         picker_grid_rows(
             ui,
@@ -467,7 +469,7 @@ impl crate::overlay_window::OverlayApp {
             ui.add_space(4.0);
         }
         let candidates = zmk_catalog::command_candidates(draft.kind, draft.bl_value);
-        let selected = self.selected_behavior_code(keyboard, target, &candidates);
+        let selected = selected_behavior_code(keyboard, target, &candidates);
         let style = self.paint_style(KEY_UNIT);
         picker_grid_rows(
             ui,
@@ -481,23 +483,6 @@ impl crate::overlay_window::OverlayApp {
                 }
             },
         );
-    }
-
-    /// The candidate matching the target's current binding, for the pressed
-    /// highlight in behavior grids.
-    fn selected_behavior_code(
-        &self,
-        keyboard: &Keyboard,
-        target: EditTarget,
-        candidates: &[Candidate],
-    ) -> Option<u32> {
-        match keyboard.get_action(target.layer_index, target.row, target.col) {
-            Some(KeyAction::Zmk(behavior)) => candidates
-                .iter()
-                .find(|candidate| candidate.behavior.as_ref() == Some(&behavior))
-                .map(|candidate| candidate.code),
-            _ => None,
-        }
     }
 
     fn apply_zmk_write(&mut self, keyboard: &Keyboard, target: EditTarget, behavior: Behavior) {
@@ -524,6 +509,22 @@ fn behavior_layer_id(behavior: &Behavior) -> Option<u32> {
         | Behavior::ToLayer { layer_id }
         | Behavior::StickyLayer { layer_id }
         | Behavior::LayerTap { layer_id, .. } => Some(*layer_id),
+        _ => None,
+    }
+}
+
+/// The candidate matching the target's current binding, for the pressed
+/// highlight in behavior grids.
+fn selected_behavior_code(
+    keyboard: &Keyboard,
+    target: EditTarget,
+    candidates: &[Candidate],
+) -> Option<u32> {
+    match keyboard.get_action(target.layer_index, target.row, target.col) {
+        Some(KeyAction::Zmk(behavior)) => candidates
+            .iter()
+            .find(|candidate| candidate.behavior.as_ref() == Some(&behavior))
+            .map(|candidate| candidate.code),
         _ => None,
     }
 }

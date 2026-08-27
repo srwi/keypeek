@@ -123,23 +123,24 @@ pub struct CandidateGroup {
 }
 
 /// Titled groups of key grids, one after another — the layout shared by the
-/// usage picker and both editors' layer pages. `selected` runs parallel to
-/// `groups` (groups highlight differently, e.g. a staged selection), and
-/// `on_select` receives the group index with the clicked candidate.
+/// usage picker and both editors' layer pages. `selected(gi)` is the
+/// highlighted code within group `gi` (groups highlight differently, e.g. a
+/// staged selection), and `on_select` receives the group index with the
+/// clicked candidate.
 pub fn candidate_groups_rows(
     ui: &mut egui::Ui,
     groups: &[CandidateGroup],
-    selected: &[Option<u32>],
+    selected: impl Fn(usize) -> Option<u32>,
     style: &KeyPaintStyle,
     mut on_select: impl FnMut(usize, &Candidate),
 ) {
-    for (gi, (group, selected)) in groups.iter().zip(selected).enumerate() {
+    for (gi, group) in groups.iter().enumerate() {
         ui.label(group.name);
         picker_grid_rows(
             ui,
             group.name,
             &group.candidates,
-            *selected,
+            selected(gi),
             style,
             |candidate| on_select(gi, candidate),
         );

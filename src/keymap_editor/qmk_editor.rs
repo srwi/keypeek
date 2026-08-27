@@ -300,11 +300,16 @@ impl crate::overlay_window::OverlayApp {
             Some(KeyAction::Qmk(code)) if is_layer_code(code) => Some(code as u32),
             _ => None,
         };
-        let selected = vec![selected_code; groups.len()];
         let style = self.paint_style(KEY_UNIT);
-        candidate_groups_rows(ui, &groups, &selected, &style, |_, candidate| {
-            self.apply_qmk_write(keyboard, target, candidate.code as u16);
-        });
+        candidate_groups_rows(
+            ui,
+            &groups,
+            |_| selected_code,
+            &style,
+            |_, candidate| {
+                self.apply_qmk_write(keyboard, target, candidate.code as u16);
+            },
+        );
     }
 
     fn draw_mods_section(
