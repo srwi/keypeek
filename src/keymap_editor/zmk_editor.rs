@@ -7,7 +7,6 @@ use zmk_studio_api::{Behavior, HidUsage, HID_USAGE_KEYBOARD, MOD_LSFT};
 
 use super::picker::{
     candidate_groups_rows, modifier_toggle_grid, picker_grid_rows, Candidate, KEY_UNIT,
-    MOD_KEY_UNIT,
 };
 use super::zmk_catalog::{self, ZmkBehaviorKind};
 use super::EditTarget;
@@ -110,6 +109,10 @@ pub struct ZmkDraft {
     /// Backlight `Set` level: a value that is part of the binding rather than
     /// a choice between keys, so it stays staged in the draft.
     pub bl_value: u32,
+    /// Whether a Backlight `Set` binding is being staged, which reveals the
+    /// level control and an Apply button. Every other backlight command is a
+    /// plain key in the grid and applies directly.
+    pub bl_set_staged: bool,
 }
 
 impl Default for ZmkDraft {
@@ -121,6 +124,7 @@ impl Default for ZmkDraft {
             hold_mods: MOD_LSFT,
             layer_id: 0,
             bl_value: 0,
+            bl_set_staged: false,
         }
     }
 }
@@ -185,8 +189,11 @@ impl ZmkDraft {
             Behavior::SoftOff => K::SoftOff,
             Behavior::Bluetooth { .. } => K::Bluetooth,
             Behavior::OutputSelection { .. } => K::OutputSelection,
-            Behavior::Backlight { value, .. } => {
+            Behavior::Backlight { command, value } => {
                 draft.bl_value = *value;
+                // A `Set` binding re-opens with its level control, so the
+                // value can be tweaked and re-applied directly.
+                draft.bl_set_staged = *command == zmk_catalog::BACKLIGHT_SET_COMMAND;
                 K::Backlight
             }
             Behavior::Underglow { .. } => K::Underglow,
@@ -279,13 +286,20 @@ impl crate::overlay_window::OverlayApp {
                     if matches!(page, Page::Keys | Page::Mods | Page::Commands) {
                         ui.weak(page.label());
                         for kind in page.kinds() {
-                            ui.selectable_value(&mut draft.kind, *kind, kind.label());
+                            let response =
+                                ui.selectable_value(&mut draft.kind, *kind, kind.label());
+                            // Switching behavior kinds leaves any staged
+                            // Backlight Set behind.
+                            if response.changed() {
+                                draft.bl_set_staged = false;
+                            }
                         }
                     } else {
                         let response =
                             ui.selectable_label(page_of(draft.kind) == page, page.label());
                         if response.clicked() {
                             draft.kind = page.kinds()[0];
+                            draft.bl_set_staged = false;
                         }
                     }
                     ui.add_space(4.0);
@@ -307,7 +321,7 @@ impl crate::overlay_window::OverlayApp {
                     }
                     Page::Mods => {
                         ui.label("Hold modifiers:");
-                        let mod_style = self.paint_style(MOD_KEY_UNIT);
+                        let mod_style = self.paint_style(KEY_UNIT);
                         modifier_toggle_grid(
                             ui,
                             "zmk_hold_mod",
@@ -354,7 +368,7 @@ impl crate::overlay_window::OverlayApp {
         let mut picked = false;
 
         if with_mods {
-            let mod_style = self.paint_style(MOD_KEY_UNIT);
+            let mod_style = self.paint_style(KEY_UNIT);
             modifier_toggle_grid(ui, "zmk_mods", draft.modifiers, &mod_style, |mask| {
                 draft.modifiers ^= mask;
             });
@@ -457,8 +471,9 @@ impl crate::overlay_window::OverlayApp {
     }
 
     /// The Special and Commands pages as key grids; clicking applies directly.
-    /// Backlight's `Set` keeps a level DragValue, since its value is part of
-    /// the binding rather than a choice between keys.
+    /// The exception is Backlight `Set`, whose level is part of the binding:
+    /// clicking it stages the binding and reveals a level control with an
+    /// Apply button, so the spinner is only ever shown for that one key.
     fn draw_direct_grid(
         &mut self,
         ui: &mut egui::Ui,
@@ -466,7 +481,8 @@ impl crate::overlay_window::OverlayApp {
         target: EditTarget,
         draft: &mut ZmkDraft,
     ) {
-        if draft.kind == ZmkBehaviorKind::Backlight {
+        let staging_set = draft.kind == ZmkBehaviorKind::Backlight && draft.bl_set_staged;
+        if staging_set {
             ui.horizontal(|ui| {
                 ui.weak("Set level");
                 ui.add(egui::DragValue::new(&mut draft.bl_value).range(0..=255));
@@ -488,10 +504,38 @@ impl crate::overlay_window::OverlayApp {
                 .as_ref(),
             &style,
             |candidate| {
+                if is_backlight_set(&candidate.binding) {
+                    draft.bl_set_staged = true;
+                    return;
+                }
+                draft.bl_set_staged = false;
                 self.apply_write(keyboard, target, candidate.binding.clone());
             },
         );
+
+        if staging_set {
+            ui.add_space(8.0);
+            if ui.button("Apply").clicked() {
+                let behavior = Behavior::Backlight {
+                    command: zmk_catalog::BACKLIGHT_SET_COMMAND,
+                    value: draft.bl_value,
+                };
+                self.apply_write(keyboard, target, KeyAction::Zmk(behavior));
+            }
+        }
     }
+}
+
+/// Whether a binding is the Backlight `Set` command, the one command whose
+/// value is part of the binding.
+fn is_backlight_set(binding: &KeyAction) -> bool {
+    matches!(
+        binding,
+        KeyAction::Zmk(Behavior::Backlight {
+            command: zmk_catalog::BACKLIGHT_SET_COMMAND,
+            ..
+        })
+    )
 }
 
 /// The layer a layer-ish behavior targets, if any.

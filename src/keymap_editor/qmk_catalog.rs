@@ -110,6 +110,24 @@ pub fn layer_groups(layer_count: usize) -> Vec<CandidateGroup> {
         .collect()
 }
 
+/// The Layer-Tap page's layer radio: one plain layer key per real layer,
+/// rendered like the layer page's keys. Each candidate's binding is the full
+/// `LT(layer, tap)` keycode for the draft's current tap key, so the editor can
+/// highlight the staged layer and stage a new one from the same grid.
+pub fn layer_tap_group(layer_count: usize, tap_code: u16) -> CandidateGroup {
+    CandidateGroup {
+        name: "Layer",
+        candidates: (0..layer_count.min(16))
+            .filter(|_| tap_code <= 0xFF)
+            .filter_map(|layer| {
+                let visual = qmk_candidate(encode_layer(LayerKind::Mo, layer)?).key;
+                let lt_code = QK_LAYER_TAP.start + ((layer as u16) << 8) + tap_code;
+                Some(Candidate::new(KeyAction::Qmk(lt_code), visual))
+            })
+            .collect(),
+    }
+}
+
 /// The candidate for a QMK keycode: the fully resolved `LayoutKey`, with
 /// explicit stand-ins for `KC_TRANSPARENT` and `KC_NO`, whose raw labels are
 /// unusable as key legends.

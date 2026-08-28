@@ -1,6 +1,7 @@
-//! QMK/VIA editor content: sections for basic/media pickers, layer keys,
-//! modifier combos, and a raw-hex "Any" fallback. Writes apply immediately
-//! (VIA behavior — no save button).
+//! QMK/VIA editor content: left-panel sections for the basic/media pickers,
+//! layer keys, the four modifier encodings (combo, one-shot, mod-tap,
+//! layer-tap), and a raw-hex "Any" fallback. Writes apply immediately (VIA
+//! behavior — no save button).
 
 use crate::key_action::KeyAction;
 use crate::keyboard::Keyboard;
@@ -8,26 +9,39 @@ use crate::qmk_keycode_labels::constants::*;
 use crate::qmk_keycode_labels::get_layout_key;
 
 use super::picker::{
-    candidate_groups_rows, modifier_toggle_row, picker_grid_rows, Candidate, KEY_UNIT, MOD_KEY_UNIT,
+    candidate_groups_rows, modifier_toggle_row, picker_grid_rows, Candidate, Hand, KEY_UNIT,
 };
 use super::qmk_catalog::{qmk_candidate, LayerKind};
 use super::EditTarget;
 
+/// The editor's left-panel sections, one entry each. The four modifier
+/// encodings are separate sections rather than a dropdown mode, so each is
+/// reachable in one click; the section itself selects the encoding.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Section {
     Basic,
     Media,
     Layers,
-    Mods,
+    /// `(mods << 8) | kc` — `LSFT(kc)`-style modified keycodes.
+    Combo,
+    /// `OSM(mods)`.
+    OneShot,
+    /// `MT(mods, kc)`.
+    ModTap,
+    /// `LT(layer, kc)`.
+    LayerTap,
     Any,
 }
 
 impl Section {
-    const ALL: [Section; 5] = [
+    const ALL: [Section; 8] = [
         Section::Basic,
         Section::Media,
         Section::Layers,
-        Section::Mods,
+        Section::Combo,
+        Section::OneShot,
+        Section::ModTap,
+        Section::LayerTap,
         Section::Any,
     ];
     fn label(&self) -> &'static str {
@@ -35,33 +49,11 @@ impl Section {
             Section::Basic => "Basic",
             Section::Media => "Media",
             Section::Layers => "Layers",
-            Section::Mods => "Mods",
+            Section::Combo => "Mod Combo",
+            Section::OneShot => "One-Shot Mod",
+            Section::ModTap => "Mod-Tap",
+            Section::LayerTap => "Layer-Tap",
             Section::Any => "Any",
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum ModMode {
-    Combo,
-    OneShot,
-    ModTap,
-    LayerTap,
-}
-
-impl ModMode {
-    const ALL: [ModMode; 4] = [
-        ModMode::Combo,
-        ModMode::OneShot,
-        ModMode::ModTap,
-        ModMode::LayerTap,
-    ];
-    fn label(&self) -> &'static str {
-        match self {
-            ModMode::Combo => "LSFT(kc) combo",
-            ModMode::OneShot => "One-shot mod",
-            ModMode::ModTap => "MT(mod, kc)",
-            ModMode::LayerTap => "LT(layer, kc)",
         }
     }
 }
@@ -70,7 +62,6 @@ impl ModMode {
 #[derive(Clone)]
 pub struct QmkDraft {
     pub section: Section,
-    pub mod_mode: ModMode,
     pub mods: u16,
     pub right: bool,
     pub base_code: u16,
@@ -82,7 +73,6 @@ impl Default for QmkDraft {
     fn default() -> Self {
         Self {
             section: Section::Basic,
-            mod_mode: ModMode::Combo,
             mods: 0,
             right: false,
             base_code: 0,
@@ -151,8 +141,7 @@ fn decode(code: u16) -> QmkDraft {
     }
 
     if QK_MODS.contains(&code) {
-        draft.section = Section::Mods;
-        draft.mod_mode = ModMode::Combo;
+        draft.section = Section::Combo;
         draft.mods = (code >> 8) & 0x0F;
         draft.right = (code >> 8) & MOD_RIGHT_FLAG != 0;
         draft.base_code = code & 0xFF;
@@ -161,8 +150,7 @@ fn decode(code: u16) -> QmkDraft {
     if QK_MOD_TAP.contains(&code) {
         let remainder = code - QK_MOD_TAP.start;
         let mod_value = (remainder >> 8) & 0x1F;
-        draft.section = Section::Mods;
-        draft.mod_mode = ModMode::ModTap;
+        draft.section = Section::ModTap;
         draft.mods = mod_value & 0x0F;
         draft.right = mod_value & MOD_RIGHT_FLAG != 0;
         draft.base_code = remainder & 0xFF;
@@ -170,16 +158,14 @@ fn decode(code: u16) -> QmkDraft {
     }
     if QK_ONE_SHOT_MOD.contains(&code) {
         let mod_value = (code - QK_ONE_SHOT_MOD.start) & 0x1F;
-        draft.section = Section::Mods;
-        draft.mod_mode = ModMode::OneShot;
+        draft.section = Section::OneShot;
         draft.mods = mod_value & 0x0F;
         draft.right = mod_value & MOD_RIGHT_FLAG != 0;
         return draft;
     }
     if QK_LAYER_TAP.contains(&code) {
         let remainder = code - QK_LAYER_TAP.start;
-        draft.section = Section::Mods;
-        draft.mod_mode = ModMode::LayerTap;
+        draft.section = Section::LayerTap;
         draft.mod_tap_layer = (remainder >> 8) as usize;
         draft.base_code = remainder & 0xFF;
         return draft;
@@ -202,7 +188,7 @@ impl crate::overlay_window::OverlayApp {
     ) {
         // Two-pane layout: the category list on the left drives whatever the
         // right pane shows (a key grid for Basic/Media, parameter forms for
-        // Layers/Mods/Any).
+        // the modifier sections, Layers, and Any).
         super::editor_panes(
             ui,
             "qmk_sections",
@@ -238,7 +224,9 @@ impl crate::overlay_window::OverlayApp {
                     // draw_qmk_layer_page.
                     self.draw_qmk_layer_page(ui, keyboard, target);
                 }
-                Section::Mods => self.draw_mods_section(ui, keyboard, target, draft),
+                Section::Combo | Section::OneShot | Section::ModTap | Section::LayerTap => {
+                    self.draw_qmk_mods_page(ui, keyboard, target, draft)
+                }
                 Section::Any => {
                     ui.horizontal(|ui| {
                         ui.label("0x");
@@ -293,67 +281,94 @@ impl crate::overlay_window::OverlayApp {
         );
     }
 
-    fn draw_mods_section(
+    /// The four modifier sections share one page body: modifier toggles plus
+    /// hand selection for the three mod-carrying encodings, a layer radio for
+    /// Layer-Tap, and the tap/base key picker where the encoding takes one.
+    /// Everything stages into the draft and applies through the button below.
+    fn draw_qmk_mods_page(
         &mut self,
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
         target: EditTarget,
         draft: &mut QmkDraft,
     ) {
-        egui::ComboBox::from_id_salt("mod_mode_combo")
-            .selected_text(draft.mod_mode.label())
-            .show_ui(ui, |ui| {
-                for mode in ModMode::ALL {
-                    ui.selectable_value(&mut draft.mod_mode, mode, mode.label());
-                }
-            });
-
         // Modifier toggles look like the overlay's modifier keys; selected bits
-        // use the pressed look, matching the selected picker cell.
-        let mod_style = self.paint_style(MOD_KEY_UNIT);
-        ui.horizontal(|ui| {
-            modifier_toggle_row(ui, "qmk_mods", draft.mods, &mod_style, |mask| {
-                draft.mods ^= mask;
-            });
-            if draft.mod_mode == ModMode::Combo || draft.mod_mode == ModMode::ModTap {
-                ui.weak("Hand");
-                if ui
-                    .add(egui::Button::new("L").small().selected(!draft.right))
-                    .clicked()
-                {
-                    draft.right = false;
-                }
-                if ui
-                    .add(egui::Button::new("R").small().selected(draft.right))
-                    .on_hover_text("Right-hand modifiers (RCTL, RSFT, RALT, RGUI)")
-                    .clicked()
-                {
-                    draft.right = true;
-                }
+        // use the pressed look, matching the selected picker cell. Each chip's
+        // bottom strip carries the currently selected hand, so the chips always
+        // show which hand variant they would encode.
+        let hand = if draft.right { Hand::Right } else { Hand::Left };
+        match draft.section {
+            Section::LayerTap => {
+                // The layer radio from the layer page, one key per real layer;
+                // clicking stages the layer, the tap picker below completes
+                // the binding.
+                let group = super::qmk_catalog::layer_tap_group(
+                    keyboard.layer_infos().len(),
+                    draft.base_code,
+                );
+                let staged = KeyAction::Qmk(
+                    QK_LAYER_TAP.start
+                        + ((draft.mod_tap_layer.min(15) as u16) << 8)
+                        + draft.base_code,
+                );
+                let style = self.paint_style(KEY_UNIT);
+                picker_grid_rows(
+                    ui,
+                    "qmk_lt_layer",
+                    &group.candidates,
+                    Some(&staged),
+                    &style,
+                    |candidate| {
+                        if let KeyAction::Qmk(code) = &candidate.binding {
+                            draft.mod_tap_layer = ((code - QK_LAYER_TAP.start) >> 8) as usize;
+                        }
+                    },
+                );
             }
-        });
-
-        match draft.mod_mode {
-            ModMode::Combo | ModMode::ModTap => {
-                ui.label("Tap/base key (8-bit basic only):");
-                self.draw_base_picker(ui, draft);
-            }
-            ModMode::LayerTap => {
+            _ => {
+                let mod_style = self.paint_style(KEY_UNIT);
                 ui.horizontal(|ui| {
-                    ui.label("Layer (0–15)");
-                    ui.add(egui::DragValue::new(&mut draft.mod_tap_layer).range(0..=15));
+                    modifier_toggle_row(ui, "qmk_mods", draft.mods, hand, &mod_style, |mask| {
+                        draft.mods ^= mask;
+                    });
+                    ui.weak("Hand");
+                    if ui
+                        .add(egui::Button::new("L").small().selected(!draft.right))
+                        .clicked()
+                    {
+                        draft.right = false;
+                    }
+                    if ui
+                        .add(egui::Button::new("R").small().selected(draft.right))
+                        .on_hover_text("Right-hand modifiers (RCTL, RSFT, RALT, RGUI)")
+                        .clicked()
+                    {
+                        draft.right = true;
+                    }
                 });
+            }
+        }
+
+        match draft.section {
+            Section::LayerTap => {
                 ui.label("Tap key (8-bit basic only):");
                 self.draw_base_picker(ui, draft);
             }
-            ModMode::OneShot => {}
+            Section::Combo | Section::ModTap => {
+                ui.label("Tap/base key (8-bit basic only):");
+                self.draw_base_picker(ui, draft);
+            }
+            Section::OneShot => {}
+            // Only the four modifier sections reach this page.
+            _ => {}
         }
 
-        let code = match draft.mod_mode {
-            ModMode::Combo => encode_combo(draft.mod_value(), draft.base_code),
-            ModMode::OneShot => encode_one_shot_mod(draft.mod_value()),
-            ModMode::ModTap => encode_mod_tap(draft.mod_value(), draft.base_code),
-            ModMode::LayerTap => encode_layer_tap(draft.mod_tap_layer, draft.base_code),
+        let code = match draft.section {
+            Section::Combo => encode_combo(draft.mod_value(), draft.base_code),
+            Section::OneShot => encode_one_shot_mod(draft.mod_value()),
+            Section::ModTap => encode_mod_tap(draft.mod_value(), draft.base_code),
+            Section::LayerTap => encode_layer_tap(draft.mod_tap_layer, draft.base_code),
+            _ => None,
         };
 
         if ui.button("Apply").clicked() {
@@ -426,8 +441,7 @@ mod tests {
         let code = encode_combo(MOD_LSFT, 0x2A).unwrap(); // LSFT(Backspace)
         assert_eq!(code, (MOD_LSFT << 8) | 0x2A);
         let mut draft = QmkDraft::default();
-        draft.section = Section::Mods;
-        draft.mod_mode = ModMode::Combo;
+        draft.section = Section::Combo;
         assert_round_trips(draft, code);
         assert_eq!(decode(code).base_code, 0x2A);
         assert!(decode(code).mods & MOD_LSFT != 0);
@@ -443,8 +457,7 @@ mod tests {
         let code = encode_one_shot_mod(MOD_LCTL | MOD_LSFT).unwrap();
         assert_eq!(code, QK_ONE_SHOT_MOD.start + (MOD_LCTL | MOD_LSFT));
         let mut draft = QmkDraft::default();
-        draft.section = Section::Mods;
-        draft.mod_mode = ModMode::OneShot;
+        draft.section = Section::OneShot;
         assert_round_trips(draft, code);
         assert_eq!(decode(code).mods, MOD_LCTL | MOD_LSFT);
         assert!(encode_one_shot_mod(0).is_none());
@@ -454,8 +467,7 @@ mod tests {
     fn mod_tap_round_trips() {
         let code = encode_mod_tap(MOD_LSFT | MOD_LALT, 0x04).unwrap(); // MT(LSFT|LALT, A)
         let mut draft = QmkDraft::default();
-        draft.section = Section::Mods;
-        draft.mod_mode = ModMode::ModTap;
+        draft.section = Section::ModTap;
         assert_round_trips(draft, code);
         assert_eq!(decode(code).base_code, 0x04);
         assert_eq!(decode(code).mods, MOD_LSFT | MOD_LALT);
@@ -467,8 +479,7 @@ mod tests {
     fn layer_tap_round_trips() {
         let code = encode_layer_tap(2, 0x1C).unwrap(); // LT(2, Enter)
         let mut draft = QmkDraft::default();
-        draft.section = Section::Mods;
-        draft.mod_mode = ModMode::LayerTap;
+        draft.section = Section::LayerTap;
         assert_round_trips(draft, code);
         assert_eq!(decode(code).mod_tap_layer, 2);
         assert_eq!(decode(code).base_code, 0x1C);

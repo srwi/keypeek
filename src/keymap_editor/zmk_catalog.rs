@@ -12,6 +12,10 @@ use zmk_studio_api::{Behavior, HidUsage, Keycode};
 pub const HID_USAGE_KEYBOARD: u16 = 0x07;
 pub const HID_USAGE_CONSUMER: u16 = 0x0C;
 
+/// Backlight command id whose `value` is the brightness level — the one
+/// backlight binding with a parameter, staged in the editor draft.
+pub const BACKLIGHT_SET_COMMAND: u32 = 6;
+
 use super::picker::{Candidate, CandidateGroup};
 
 /// The ZMK behavior kinds the editor can assign, one label each. The draft's
@@ -166,7 +170,7 @@ pub fn command_candidates(kind: ZmkBehaviorKind, backlight_level: u32) -> Vec<Ca
                 .map(|command| Behavior::Backlight { command, value: 0 })
                 .collect();
             list.push(Behavior::Backlight {
-                command: 6,
+                command: BACKLIGHT_SET_COMMAND,
                 value: backlight_level,
             });
             list

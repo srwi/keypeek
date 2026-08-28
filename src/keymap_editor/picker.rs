@@ -5,12 +5,10 @@
 
 use crate::key_action::KeyAction;
 use crate::key_paint::{self, KeyDisplay, KeyPaintStyle};
-use crate::layout_key::{modifier_symbols, KeycodeKind, LayoutKey};
+use crate::layout_key::{modifier_symbols, KeycodeKind, Label, LayoutKey};
 
 /// Pixels per key-unit in picker grids; a miniature overlay key.
 pub const KEY_UNIT: f32 = 51.0;
-/// Pixels per key-unit for the modifier toggle keys.
-pub const MOD_KEY_UNIT: f32 = 40.0;
 /// Gap between grid cells, matching the old button-grid rhythm.
 const GAP: f32 = 6.0;
 
@@ -175,18 +173,46 @@ fn key_chip(
     response
 }
 
-/// The four left modifiers as key-shaped toggle chips, sharing the overlay's
-/// modifier look: the same platform glyphs (`modifier_symbols`) and the same
-/// darkened modifier colors. Selected bits use the pressed treatment, matching
-/// how the selected cell is highlighted in the picker grids.
+/// Which hand variant a modifier chip stands for. Rendered as a tag in the
+/// chip's bottom argument strip rather than a separate row label, so chip rows
+/// align with the pane's left edge.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Hand {
+    Left,
+    Right,
+}
+
+impl Hand {
+    fn tag(self) -> Label {
+        match self {
+            Hand::Left => Label::with_short("Left", "L"),
+            Hand::Right => Label::with_short("Right", "R"),
+        }
+    }
+}
+
+/// A modifier chip key: the shared modifier glyph/name with an optional hand
+/// tag in the bottom argument strip.
+fn modifier_chip_key(name: &modifier_symbols::ModName, hand: Option<Hand>) -> LayoutKey {
+    let mut key = modifier_symbols::modifier_key(name, 0);
+    key.argument = hand.map(Hand::tag);
+    key
+}
+
+/// The four QMK modifier types as key-shaped toggle chips, sharing the
+/// overlay's modifier look: the same platform glyphs (`modifier_symbols`) and
+/// the same darkened modifier colors. Selected bits use the pressed treatment,
+/// matching how the selected cell is highlighted in the picker grids. Each
+/// chip is tagged with the currently selected hand in its bottom strip, since
+/// QMK's encoding applies one hand to the whole set.
 ///
-/// `mods` is the low modifier nibble in HID bit order (Ctrl 0x01 … Gui 0x08) —
-/// the same values QMK and ZMK drafts store. `on_toggle` receives the clicked
-/// bit so the caller can flip it.
+/// `mods` is the low modifier nibble in HID bit order (Ctrl 0x01 … Gui 0x08).
+/// `on_toggle` receives the clicked bit so the caller can flip it.
 pub fn modifier_toggle_row(
     ui: &mut egui::Ui,
     id_salt: &str,
     mods: u16,
+    hand: Hand,
     style: &KeyPaintStyle,
     mut on_toggle: impl FnMut(u16),
 ) {
@@ -201,18 +227,17 @@ pub fn modifier_toggle_row(
 
     // One allocated row rect with per-cell interact rects, like the grids.
     let cells = defs.len() as f32;
-    let row_width = cells * MOD_KEY_UNIT + (cells - 1.0) * GAP;
+    let row_width = cells * KEY_UNIT + (cells - 1.0) * GAP;
     let (_, space_rect) =
-        ui.allocate_exact_size(egui::vec2(row_width, MOD_KEY_UNIT), egui::Sense::hover());
+        ui.allocate_exact_size(egui::vec2(row_width, KEY_UNIT), egui::Sense::hover());
     let origin = space_rect.rect.min;
 
     for (i, (mask, name)) in defs.iter().enumerate() {
         let cell = egui::Rect::from_min_size(
-            origin + egui::vec2(i as f32 * (MOD_KEY_UNIT + GAP), 0.0),
-            egui::vec2(MOD_KEY_UNIT, MOD_KEY_UNIT),
+            origin + egui::vec2(i as f32 * (KEY_UNIT + GAP), 0.0),
+            egui::vec2(KEY_UNIT, KEY_UNIT),
         );
-        // mod_mask stays 0: these are toggle chips, not live-mod keys.
-        let key = modifier_symbols::modifier_key(name, 0);
+        let key = modifier_chip_key(name, Some(hand));
         let response = key_chip(
             ui,
             cell,
@@ -232,7 +257,8 @@ pub fn modifier_toggle_row(
 /// right hand), freely combinable — unlike the single-hand [`modifier_toggle_row`],
 /// this matches binding formats that store each modifier bit independently
 /// (ZMK's usage modifier byte, LCTL 0x01 … RGUI 0x80). `mods` is that full
-/// mask; `on_toggle` receives the clicked bit.
+/// mask; `on_toggle` receives the clicked bit. Each chip is tagged with its
+/// hand in the bottom argument strip, so no row labels are needed.
 pub fn modifier_toggle_grid(
     ui: &mut egui::Ui,
     id_salt: &str,
@@ -244,17 +270,13 @@ pub fn modifier_toggle_grid(
 
     let names = [&MOD_CTRL, &MOD_SHIFT, &MOD_ALT, &MOD_GUI];
     let full_names = ["Control", "Shift", "Alt", "GUI"];
-    for (row, hand) in [(0u8, "L"), (1, "R")] {
+    for (row, hand) in [(0u8, Hand::Left), (1, Hand::Right)] {
         ui.horizontal(|ui| {
-            ui.weak(hand);
             for (i, name) in names.iter().enumerate() {
                 let mask = 1 << (row * 4 + i as u8);
-                // mod_mask stays 0: these are toggle chips, not live-mod keys.
-                let key = modifier_symbols::modifier_key(name, 0);
-                let (_, cell) = ui.allocate_exact_size(
-                    egui::vec2(MOD_KEY_UNIT, MOD_KEY_UNIT),
-                    egui::Sense::hover(),
-                );
+                let key = modifier_chip_key(name, Some(hand));
+                let (_, cell) =
+                    ui.allocate_exact_size(egui::vec2(KEY_UNIT, KEY_UNIT), egui::Sense::hover());
                 let response = key_chip(
                     ui,
                     cell.rect,
@@ -267,9 +289,9 @@ pub fn modifier_toggle_grid(
                     on_toggle(mask);
                 }
                 response.on_hover_text(format!(
-                    "{} {hand} modifier",
-                    if row == 0 { "Left" } else { "Right" },
-                    hand = full_names[i]
+                    "{} {full} modifier",
+                    if hand == Hand::Left { "Left" } else { "Right" },
+                    full = full_names[i]
                 ));
             }
         });
