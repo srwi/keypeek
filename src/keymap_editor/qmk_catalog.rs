@@ -11,12 +11,7 @@ use crate::qmk_keycode_labels::constants::*;
 use crate::qmk_keycode_labels::get_layout_key;
 use qmk_via_api::keycodes::Keycode;
 use std::ops::RangeInclusive;
-
-/// A named group of keycodes shown together in a picker.
-pub struct Category {
-    pub name: &'static str,
-    pub codes: Vec<u16>,
-}
+use std::sync::OnceLock;
 
 /// Consumer/media keycodes (audio, transport, brightness, application launch).
 const MEDIA_RANGE: RangeInclusive<u16> = 0xA8..=0xC2;
@@ -24,21 +19,26 @@ const MEDIA_RANGE: RangeInclusive<u16> = 0xA8..=0xC2;
 /// Dedicated modifier keys (`LCTL`…`RGUI`).
 const MODIFIER_RANGE: RangeInclusive<u16> = 0xE0..=0xE7;
 
-pub fn categories() -> Vec<Category> {
-    let mut basic: Vec<u16> = (0x00..=0xA7).collect();
-    // Mouse cursor/button/wheel keycodes sit in their own sub-range.
-    basic.extend(0xCD..=0xDF);
-    basic.extend(MODIFIER_RANGE);
-    vec![
-        Category {
-            name: "Basic",
-            codes: basic,
-        },
-        Category {
-            name: "Media",
-            codes: MEDIA_RANGE.collect(),
-        },
-    ]
+/// The Basic and Media groups as ready-made candidates, built once: resolving
+/// every label per frame would be wasted work in the editor.
+pub fn categories() -> &'static [CandidateGroup] {
+    static CATEGORIES: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
+    CATEGORIES.get_or_init(|| {
+        let mut basic: Vec<u16> = (0x00..=0xA7).collect();
+        // Mouse cursor/button/wheel keycodes sit in their own sub-range.
+        basic.extend(0xCD..=0xDF);
+        basic.extend(MODIFIER_RANGE);
+        vec![
+            CandidateGroup {
+                name: "Basic",
+                candidates: basic.iter().map(|&code| qmk_candidate(code)).collect(),
+            },
+            CandidateGroup {
+                name: "Media",
+                candidates: MEDIA_RANGE.map(qmk_candidate).collect(),
+            },
+        ]
+    })
 }
 
 /// The QMK layer keycode kinds offered on the layer page, with their keycode
@@ -156,7 +156,14 @@ mod tests {
     /// catalogued code should be a real keycode with a label.
     #[test]
     fn catalog_covers_all_labeled_basic_keycodes() {
-        let all: Vec<u16> = categories().into_iter().flat_map(|c| c.codes).collect();
+        let all: Vec<u16> = categories()
+            .iter()
+            .flat_map(|group| &group.candidates)
+            .filter_map(|candidate| match &candidate.binding {
+                KeyAction::Qmk(code) => Some(*code),
+                _ => None,
+            })
+            .collect();
 
         for code in 0x00u16..0x0100 {
             if Keycode::try_from(code).is_ok() && get_layout_key(code).is_some() {

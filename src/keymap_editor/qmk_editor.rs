@@ -215,26 +215,15 @@ impl crate::overlay_window::OverlayApp {
             },
             |ui, draft| match draft.section {
                 Section::Basic | Section::Media => {
-                    let codes = super::qmk_catalog::categories()
-                        .into_iter()
-                        .find(|c| {
-                            (draft.section == Section::Basic && c.name == "Basic")
-                                || (draft.section == Section::Media && c.name == "Media")
-                        })
-                        .map(|c| c.codes)
-                        .unwrap_or_default();
-                    let candidates: Vec<Candidate> =
-                        codes.iter().map(|&code| qmk_candidate(code)).collect();
-                    let salt = if draft.section == Section::Basic {
-                        "qmk_basic"
-                    } else {
-                        "qmk_media"
-                    };
+                    let group = super::qmk_catalog::categories()
+                        .iter()
+                        .find(|g| g.name == draft.section.label())
+                        .expect("a candidate group per keycode section");
                     let style = self.paint_style(KEY_UNIT);
                     picker_grid_rows(
                         ui,
-                        salt,
-                        &candidates,
+                        group.name,
+                        &group.candidates,
                         keyboard
                             .get_action(target.layer_index, target.row, target.col)
                             .as_ref(),
