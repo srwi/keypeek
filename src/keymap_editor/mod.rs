@@ -85,6 +85,37 @@ pub fn raw_value_text(action: &KeyAction) -> String {
     }
 }
 
+/// The editor's two-pane layout, shared by the QMK and ZMK editors: a
+/// fixed-width, non-resizable left list of entries and a scrolling central
+/// pane, both filling the window instead of growing it. `state` is the draft
+/// both panes edit; `left` runs first, since the central pane reads what it
+/// selects.
+fn editor_panes<D>(
+    ui: &mut egui::Ui,
+    left_id: &str,
+    left_width: f32,
+    state: &mut D,
+    left: impl FnOnce(&mut egui::Ui, &mut D),
+    central: impl FnOnce(&mut egui::Ui, &mut D),
+) {
+    let left_id = egui::Id::new(left_id);
+    egui::Panel::left(left_id)
+        .resizable(false)
+        .exact_size(left_width)
+        .show_inside(ui, |ui| {
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.add_space(2.0);
+                ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
+                    left(ui, state);
+                });
+            });
+        });
+
+    egui::CentralPanel::default().show_inside(ui, |ui| {
+        egui::ScrollArea::vertical().show(ui, |ui| central(ui, state));
+    });
+}
+
 impl crate::overlay_window::OverlayApp {
     /// Draws the persistent "Edit key" window for the current target.
     pub(super) fn draw_editor_window(&mut self, ctx: &egui::Context, keyboard: &Keyboard) {

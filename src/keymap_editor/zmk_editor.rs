@@ -228,41 +228,34 @@ impl crate::overlay_window::OverlayApp {
         let layer_infos = keyboard.layer_infos();
 
         // Two-pane layout: every behavior kind lives in the left panel under
-        // its group header, full-width selectable; the right pane holds the
-        // selected kind's parameter form. Each pane scrolls independently and
-        // fills the window instead of growing it. The parameterless behaviors
-        // share one "Special" entry whose pane is a key grid.
-        egui::Panel::left("zmk_kinds")
-            .resizable(false)
-            .exact_size(110.0)
-            .show_inside(ui, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.add_space(2.0);
-                    ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
-                        for page in Page::ALL {
-                            // Staged kinds get one entry each; the grouped
-                            // pages share a single entry and apply from their
-                            // page's key grids.
-                            if matches!(page, Page::Keys | Page::Mods | Page::Commands) {
-                                ui.weak(page.label());
-                                for kind in page.kinds() {
-                                    ui.selectable_value(&mut draft.kind, *kind, kind.label());
-                                }
-                            } else {
-                                let response =
-                                    ui.selectable_label(page_of(draft.kind) == page, page.label());
-                                if response.clicked() {
-                                    draft.kind = page.kinds()[0];
-                                }
-                            }
-                            ui.add_space(4.0);
+        // its group header; the right pane holds the selected page. The
+        // parameterless behaviors share one "Special" entry whose pane is a
+        // key grid.
+        super::editor_panes(
+            ui,
+            "zmk_kinds",
+            110.0,
+            draft,
+            |ui, draft| {
+                for page in Page::ALL {
+                    // Staged kinds get one entry each; the grouped pages share
+                    // a single entry and apply from their page's key grids.
+                    if matches!(page, Page::Keys | Page::Mods | Page::Commands) {
+                        ui.weak(page.label());
+                        for kind in page.kinds() {
+                            ui.selectable_value(&mut draft.kind, *kind, kind.label());
                         }
-                    });
-                });
-            });
-
-        egui::CentralPanel::default().show_inside(ui, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
+                    } else {
+                        let response =
+                            ui.selectable_label(page_of(draft.kind) == page, page.label());
+                        if response.clicked() {
+                            draft.kind = page.kinds()[0];
+                        }
+                    }
+                    ui.add_space(4.0);
+                }
+            },
+            |ui, draft| {
                 match page_of(draft.kind) {
                     Page::Special => {
                         // Every parameterless behavior is a key here; clicking
@@ -304,8 +297,8 @@ impl crate::overlay_window::OverlayApp {
                         self.apply_write(keyboard, target, KeyAction::Zmk(draft.to_behavior()));
                     }
                 }
-            });
-        });
+            },
+        );
     }
 
     /// The usage-page key grid (with optional modifier toggles). Stages the

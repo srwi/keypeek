@@ -202,24 +202,18 @@ impl crate::overlay_window::OverlayApp {
     ) {
         // Two-pane layout: the category list on the left drives whatever the
         // right pane shows (a key grid for Basic/Media, parameter forms for
-        // Layers/Mods/Any). Each pane scrolls independently and fills the
-        // window instead of growing it.
-        egui::Panel::left("qmk_sections")
-            .resizable(false)
-            .exact_size(100.0)
-            .show_inside(ui, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.add_space(2.0);
-                    ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
-                        for section in Section::ALL {
-                            ui.selectable_value(&mut draft.section, section, section.label());
-                        }
-                    });
-                });
-            });
-
-        egui::CentralPanel::default().show_inside(ui, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| match draft.section {
+        // Layers/Mods/Any).
+        super::editor_panes(
+            ui,
+            "qmk_sections",
+            100.0,
+            draft,
+            |ui, draft| {
+                for section in Section::ALL {
+                    ui.selectable_value(&mut draft.section, section, section.label());
+                }
+            },
+            |ui, draft| match draft.section {
                 Section::Basic | Section::Media => {
                     let codes = super::qmk_catalog::categories()
                         .into_iter()
@@ -286,8 +280,8 @@ impl crate::overlay_window::OverlayApp {
                         }
                     }
                 }
-            });
-        });
+            },
+        );
     }
 
     /// The layer page: every layer keycode kind as one key per real layer,
