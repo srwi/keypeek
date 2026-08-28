@@ -3,9 +3,9 @@
 //! by [`crate::key_paint`], so each key looks exactly like it will on the live
 //! overlay.
 
+use crate::key_action::KeyAction;
 use crate::key_paint::{self, KeyDisplay, KeyPaintStyle};
 use crate::layout_key::{modifier_symbols, KeycodeKind, LayoutKey};
-use zmk_studio_api::Behavior;
 
 /// Pixels per key-unit in picker grids; a miniature overlay key.
 pub const KEY_UNIT: f32 = 51.0;
@@ -14,41 +14,39 @@ pub const MOD_KEY_UNIT: f32 = 40.0;
 /// Gap between grid cells, matching the old button-grid rhythm.
 const GAP: f32 = 6.0;
 
-/// One selectable candidate in a picker grid.
+/// One selectable candidate in a picker grid: the binding it stands for,
+/// painted as the key it renders like on the overlay.
 pub struct Candidate {
-    /// The firmware value the candidate writes.
-    pub code: u32,
+    /// The firmware binding the candidate writes. Click-to-apply grids write
+    /// it directly; staging pickers extract their parameter from it.
+    pub binding: KeyAction,
     /// The fully resolved key: labels, symbol, and kind (for coloring).
     pub key: LayoutKey,
-    /// Rendered dimmed like an unset overlay slot (QMK `KC_TRANSPARENT`).
+    /// Rendered dimmed like an unset overlay slot (QMK `KC_TRANSPARENT` / ZMK
+    /// `Transparent`).
     pub transparent: bool,
-    /// ZMK only: the behavior this candidate writes when clicked; `None` for
-    /// QMK keycode candidates and ZMK usage candidates.
-    pub behavior: Option<Behavior>,
 }
 
 impl Candidate {
-    pub fn new(code: u32, key: LayoutKey) -> Self {
+    pub fn new(binding: KeyAction, key: LayoutKey) -> Self {
         Self {
-            code,
+            binding,
             key,
             transparent: false,
-            behavior: None,
         }
     }
 }
 
 /// A scrollable grid of miniature keys, one per candidate. The currently
-/// assigned `selected` code is highlighted with the overlay's pressed look.
-/// Clicking a key invokes `on_select` with the whole candidate, so callers can
-/// apply either its `code` or its `behavior`.
+/// assigned `selected` binding is highlighted with the overlay's pressed look.
+/// Clicking a key invokes `on_select` with the whole candidate.
 ///
 /// No scroll area of its own: embed inside the pane that owns scrolling.
 pub fn picker_grid_rows(
     ui: &mut egui::Ui,
     id_salt: &str,
     candidates: &[Candidate],
-    selected: Option<u32>,
+    selected: Option<&KeyAction>,
     style: &KeyPaintStyle,
     mut on_select: impl FnMut(&Candidate),
 ) {
@@ -77,14 +75,14 @@ pub fn picker_grid_rows(
         );
         let response = ui.interact(
             cell,
-            ui.id().with((id_salt, "cell", i, candidate.code)),
+            ui.id().with((id_salt, "cell", i)),
             egui::Sense::click(),
         );
 
         // Selected uses the overlay's pressed treatment; transparent bindings
         // render ghosted, like unset slots on the overlay. Layer keys take
         // their target layer's fill, matching the overlay's coloring rule.
-        let pressed = selected == Some(candidate.code);
+        let pressed = selected == Some(&candidate.binding);
         let colors = style
             .colors_for(
                 candidate.key.layer_ref.unwrap_or(0),
@@ -123,14 +121,14 @@ pub struct CandidateGroup {
 }
 
 /// Titled groups of key grids, one after another — the layout shared by the
-/// usage picker and both editors' layer pages. `selected(gi)` is the
-/// highlighted code within group `gi` (groups highlight differently, e.g. a
-/// staged selection), and `on_select` receives the group index with the
-/// clicked candidate.
+/// usage picker and both editors' layer pages. `selected(gi)` is the binding
+/// highlighted within group `gi` (groups highlight differently, e.g. a staged
+/// selection), and `on_select` receives the group index with the clicked
+/// candidate.
 pub fn candidate_groups_rows(
     ui: &mut egui::Ui,
     groups: &[CandidateGroup],
-    selected: impl Fn(usize) -> Option<u32>,
+    selected: impl Fn(usize) -> Option<KeyAction>,
     style: &KeyPaintStyle,
     mut on_select: impl FnMut(usize, &Candidate),
 ) {
@@ -140,7 +138,7 @@ pub fn candidate_groups_rows(
             ui,
             group.name,
             &group.candidates,
-            selected(gi),
+            selected(gi).as_ref(),
             style,
             |candidate| on_select(gi, candidate),
         );

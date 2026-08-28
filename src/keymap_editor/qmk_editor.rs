@@ -231,23 +231,24 @@ impl crate::overlay_window::OverlayApp {
                         .unwrap_or_default();
                     let candidates: Vec<Candidate> =
                         codes.iter().map(|&code| qmk_candidate(code)).collect();
-                    let selected = self
-                        .editor
-                        .target
-                        .and_then(|t| keyboard.get_action(t.layer_index, t.row, t.col))
-                        .and_then(|a| match a {
-                            KeyAction::Qmk(code) if !has_params(code) => Some(code as u32),
-                            _ => None,
-                        });
                     let salt = if draft.section == Section::Basic {
                         "qmk_basic"
                     } else {
                         "qmk_media"
                     };
                     let style = self.paint_style(KEY_UNIT);
-                    picker_grid_rows(ui, salt, &candidates, selected, &style, |candidate| {
-                        self.apply_write(keyboard, target, KeyAction::Qmk(candidate.code as u16));
-                    });
+                    picker_grid_rows(
+                        ui,
+                        salt,
+                        &candidates,
+                        keyboard
+                            .get_action(target.layer_index, target.row, target.col)
+                            .as_ref(),
+                        &style,
+                        |candidate| {
+                            self.apply_write(keyboard, target, candidate.binding.clone());
+                        },
+                    );
                 }
                 Section::Layers => {
                     // One page of grouped layer keys, one per real layer; see
@@ -296,18 +297,15 @@ impl crate::overlay_window::OverlayApp {
     fn draw_qmk_layer_page(&mut self, ui: &mut egui::Ui, keyboard: &Keyboard, target: EditTarget) {
         let layer_count = keyboard.layer_infos().len();
         let groups = super::qmk_catalog::layer_groups(layer_count);
-        let selected_code = match keyboard.get_action(target.layer_index, target.row, target.col) {
-            Some(KeyAction::Qmk(code)) if is_layer_code(code) => Some(code as u32),
-            _ => None,
-        };
+        let selected = keyboard.get_action(target.layer_index, target.row, target.col);
         let style = self.paint_style(KEY_UNIT);
         candidate_groups_rows(
             ui,
             &groups,
-            |_| selected_code,
+            |_| selected.clone(),
             &style,
             |_, candidate| {
-                self.apply_write(keyboard, target, KeyAction::Qmk(candidate.code as u16));
+                self.apply_write(keyboard, target, candidate.binding.clone());
             },
         );
     }
@@ -387,33 +385,21 @@ impl crate::overlay_window::OverlayApp {
             .filter(|&code| get_layout_key(code).is_some())
             .map(qmk_candidate)
             .collect();
+        let selected = KeyAction::Qmk(draft.base_code);
         let style = self.paint_style(KEY_UNIT);
         picker_grid_rows(
             ui,
             "qmk_base",
             &candidates,
-            Some(draft.base_code as u32),
+            Some(&selected),
             &style,
             |candidate| {
-                draft.base_code = candidate.code as u16;
+                if let KeyAction::Qmk(code) = &candidate.binding {
+                    draft.base_code = *code;
+                }
             },
         );
     }
-}
-
-/// Whether a keycode is a layer-switch key from the layer page's groups.
-fn is_layer_code(code: u16) -> bool {
-    LayerKind::ALL.iter().any(|k| k.range().contains(&code))
-}
-
-/// Whether a keycode carries parameters (layer/mod logic) and so is better
-/// edited in its dedicated section than highlighted in the plain picker.
-fn has_params(code: u16) -> bool {
-    QK_MODS.contains(&code)
-        || QK_MOD_TAP.contains(&code)
-        || QK_LAYER_TAP.contains(&code)
-        || QK_ONE_SHOT_MOD.contains(&code)
-        || is_layer_code(code)
 }
 
 #[cfg(test)]

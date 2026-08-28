@@ -5,6 +5,7 @@
 //! rather than hand-maintaining hundreds of entries.
 
 use super::picker::{Candidate, CandidateGroup};
+use crate::key_action::KeyAction;
 use crate::layout_key::{Label, LayoutKey};
 use crate::qmk_keycode_labels::constants::*;
 use crate::qmk_keycode_labels::get_layout_key;
@@ -113,20 +114,20 @@ pub fn layer_groups(layer_count: usize) -> Vec<CandidateGroup> {
 /// explicit stand-ins for `KC_TRANSPARENT` and `KC_NO`, whose raw labels are
 /// unusable as key legends.
 pub fn qmk_candidate(code: u16) -> Candidate {
+    let binding = KeyAction::Qmk(code);
     if code == Keycode::KC_TRANSPARENT as u16 {
         return Candidate {
-            code: code as u32,
+            binding,
             key: LayoutKey {
                 tap: Label::with_short("Trans", egui_phosphor::regular::CARET_DOWN),
                 ..Default::default()
             },
             transparent: true,
-            behavior: None,
         };
     }
     if code == Keycode::KC_NO as u16 {
         return Candidate::new(
-            code as u32,
+            binding,
             LayoutKey {
                 tap: Label::new("None"),
                 ..Default::default()
@@ -134,9 +135,9 @@ pub fn qmk_candidate(code: u16) -> Candidate {
         );
     }
     match get_layout_key(code) {
-        Some(key) => Candidate::new(code as u32, key),
+        Some(key) => Candidate::new(binding, key),
         None => Candidate::new(
-            code as u32,
+            binding,
             LayoutKey {
                 tap: Label::new(format!("0x{code:04X}")),
                 ..Default::default()

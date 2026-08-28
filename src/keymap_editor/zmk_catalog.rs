@@ -96,8 +96,7 @@ pub fn special_candidates() -> &'static [Candidate] {
         ];
         behaviors
             .into_iter()
-            .enumerate()
-            .map(|(i, behavior)| behavior_candidate(i as u32, &behavior, &[]))
+            .map(|behavior| behavior_candidate(&behavior, &[]))
             .collect()
     })
 }
@@ -118,8 +117,7 @@ pub fn layer_groups(
             name: kind.label(),
             candidates: layer_infos
                 .iter()
-                .enumerate()
-                .map(|(i, info)| {
+                .map(|info| {
                     let behavior = match kind {
                         ZmkBehaviorKind::MomentaryLayer => {
                             Behavior::MomentaryLayer { layer_id: info.id }
@@ -133,7 +131,7 @@ pub fn layer_groups(
                         },
                         _ => unreachable!("layer page kinds only"),
                     };
-                    behavior_candidate(i as u32, &behavior, layer_names)
+                    behavior_candidate(&behavior, layer_names)
                 })
                 .collect(),
         })
@@ -193,8 +191,7 @@ pub fn command_candidates(kind: ZmkBehaviorKind, backlight_level: u32) -> Vec<Ca
     };
     behaviors
         .into_iter()
-        .enumerate()
-        .map(|(i, behavior)| behavior_candidate(i as u32, &behavior, &[]))
+        .map(|behavior| behavior_candidate(&behavior, &[]))
         .collect()
 }
 
@@ -202,13 +199,12 @@ pub fn command_candidates(kind: ZmkBehaviorKind, backlight_level: u32) -> Vec<Ca
 /// the overlay paints the binding. `Transparent` has no key of its own — it
 /// falls through — so it renders as a ghosted empty slot. `layer_names`
 /// resolves layer references for the legends.
-fn behavior_candidate(code: u32, behavior: &Behavior, layer_names: &[String]) -> Candidate {
+fn behavior_candidate(behavior: &Behavior, layer_names: &[String]) -> Candidate {
     let key = behavior_to_layout_key(behavior, layer_names).unwrap_or_default();
     Candidate {
-        code,
+        binding: KeyAction::Zmk(behavior.clone()),
         key,
         transparent: *behavior == Behavior::Transparent,
-        behavior: Some(behavior.clone()),
     }
 }
 
@@ -264,5 +260,5 @@ pub fn keycode_candidate(encoded: u32) -> Candidate {
             ..Default::default()
         },
     };
-    Candidate::new(encoded, key)
+    Candidate::new(action, key)
 }
