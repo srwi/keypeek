@@ -6,8 +6,8 @@ use crate::keyboard::Keyboard;
 use zmk_studio_api::{Behavior, HidUsage, HID_USAGE_KEYBOARD};
 
 use super::picker::{
-    candidate_groups_rows, modifier_select_grid, modifier_toggle_row, picker_grid_rows, KEY_UNIT,
-    MOD_KEY_UNIT,
+    candidate_groups_rows, modifier_select_grid, modifier_toggle_row, picker_grid_rows, Candidate,
+    KEY_UNIT, MOD_KEY_UNIT,
 };
 use super::zmk_catalog::{self, ZmkBehaviorKind};
 use super::EditTarget;
@@ -257,10 +257,10 @@ impl crate::overlay_window::OverlayApp {
             },
             |ui, draft| {
                 match page_of(draft.kind) {
-                    Page::Special => {
-                        // Every parameterless behavior is a key here; clicking
-                        // applies it directly.
-                        self.draw_special_grid(ui, keyboard, target);
+                    Page::Special | Page::Commands => {
+                        // Every parameterless behavior and command option is a
+                        // key here; clicking applies it directly.
+                        self.draw_direct_grid(ui, keyboard, target, draft);
                     }
                     Page::Keys => {
                         self.draw_usage_picker(ui, draft, true);
@@ -283,11 +283,6 @@ impl crate::overlay_window::OverlayApp {
                         );
                         ui.label("Tap key:");
                         self.draw_usage_picker(ui, draft, true);
-                    }
-                    Page::Commands => {
-                        // Commands render as their own keys too; clicking
-                        // applies directly.
-                        self.draw_command_grid(ui, keyboard, target, draft);
                     }
                 }
 
@@ -425,28 +420,10 @@ impl crate::overlay_window::OverlayApp {
         }
     }
 
-    /// The parameterless behaviors as one key grid; clicking applies directly.
-    fn draw_special_grid(&mut self, ui: &mut egui::Ui, keyboard: &Keyboard, target: EditTarget) {
-        let candidates = zmk_catalog::special_candidates();
-        let style = self.paint_style(KEY_UNIT);
-        picker_grid_rows(
-            ui,
-            "zmk_special",
-            candidates,
-            keyboard
-                .get_action(target.layer_index, target.row, target.col)
-                .as_ref(),
-            &style,
-            |candidate| {
-                self.apply_write(keyboard, target, candidate.binding.clone());
-            },
-        );
-    }
-
-    /// One command kind's options as a key grid; clicking applies directly.
+    /// The Special and Commands pages as key grids; clicking applies directly.
     /// Backlight's `Set` keeps a level DragValue, since its value is part of
     /// the binding rather than a choice between keys.
-    fn draw_command_grid(
+    fn draw_direct_grid(
         &mut self,
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
@@ -460,12 +437,16 @@ impl crate::overlay_window::OverlayApp {
             });
             ui.add_space(4.0);
         }
-        let candidates = zmk_catalog::command_candidates(draft.kind, draft.bl_value);
+        let candidates: &[Candidate] = if page_of(draft.kind) == Page::Special {
+            zmk_catalog::special_candidates()
+        } else {
+            &zmk_catalog::command_candidates(draft.kind, draft.bl_value)
+        };
         let style = self.paint_style(KEY_UNIT);
         picker_grid_rows(
             ui,
             draft.kind.label(),
-            &candidates,
+            candidates,
             keyboard
                 .get_action(target.layer_index, target.row, target.col)
                 .as_ref(),
