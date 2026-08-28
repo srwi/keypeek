@@ -228,26 +228,28 @@ pub fn modifier_toggle_row(
     }
 }
 
-/// The eight HID modifiers as two key-shaped radio chip rows (left hand, right
-/// hand), one hand per row like the modifier toggle row. `selected` and
-/// `on_select` use the HID usage ids 0xE0–0xE7, matching `HidUsage` ids.
-pub fn modifier_select_grid(
+/// The eight HID modifier bits as two key-shaped toggle chip rows (left hand,
+/// right hand), freely combinable — unlike the single-hand [`modifier_toggle_row`],
+/// this matches binding formats that store each modifier bit independently
+/// (ZMK's usage modifier byte, LCTL 0x01 … RGUI 0x80). `mods` is that full
+/// mask; `on_toggle` receives the clicked bit.
+pub fn modifier_toggle_grid(
     ui: &mut egui::Ui,
     id_salt: &str,
-    selected: Option<u16>,
+    mods: u8,
     style: &KeyPaintStyle,
-    mut on_select: impl FnMut(u16),
+    mut on_toggle: impl FnMut(u8),
 ) {
     use modifier_symbols::{MOD_ALT, MOD_CTRL, MOD_GUI, MOD_SHIFT};
 
     let names = [&MOD_CTRL, &MOD_SHIFT, &MOD_ALT, &MOD_GUI];
     let full_names = ["Control", "Shift", "Alt", "GUI"];
-    for (row, hand) in [(0u16, "L"), (1, "R")] {
+    for (row, hand) in [(0u8, "L"), (1, "R")] {
         ui.horizontal(|ui| {
             ui.weak(hand);
             for (i, name) in names.iter().enumerate() {
-                let id = 0xE0 + row * 4 + i as u16;
-                // mod_mask stays 0: these are selection chips, not live-mod keys.
+                let mask = 1 << (row * 4 + i as u8);
+                // mod_mask stays 0: these are toggle chips, not live-mod keys.
                 let key = modifier_symbols::modifier_key(name, 0);
                 let (_, cell) = ui.allocate_exact_size(
                     egui::vec2(MOD_KEY_UNIT, MOD_KEY_UNIT),
@@ -256,13 +258,13 @@ pub fn modifier_select_grid(
                 let response = key_chip(
                     ui,
                     cell.rect,
-                    ui.id().with((id_salt, "mod", id)),
+                    ui.id().with((id_salt, "mod", mask)),
                     &key,
-                    selected == Some(id),
+                    mods & mask != 0,
                     style,
                 );
                 if response.clicked() {
-                    on_select(id);
+                    on_toggle(mask);
                 }
                 response.on_hover_text(format!(
                     "{} {hand} modifier",

@@ -3,11 +3,11 @@
 
 use crate::key_action::KeyAction;
 use crate::keyboard::Keyboard;
-use zmk_studio_api::{Behavior, HidUsage, HID_USAGE_KEYBOARD};
+use zmk_studio_api::{Behavior, HidUsage, HID_USAGE_KEYBOARD, MOD_LSFT};
 
 use super::picker::{
-    candidate_groups_rows, modifier_select_grid, modifier_toggle_row, picker_grid_rows, Candidate,
-    KEY_UNIT, MOD_KEY_UNIT,
+    candidate_groups_rows, modifier_toggle_grid, picker_grid_rows, Candidate, KEY_UNIT,
+    MOD_KEY_UNIT,
 };
 use super::zmk_catalog::{self, ZmkBehaviorKind};
 use super::EditTarget;
@@ -101,8 +101,10 @@ pub struct ZmkDraft {
     pub usage: HidUsage,
     /// Keyboard modifiers OR'd onto `usage` for a key press.
     pub modifiers: u8,
-    /// Hold modifier usage for a Mod-Tap.
-    pub hold_mod: HidUsage,
+    /// Held modifier mask for a Mod-Tap, in HID bit order (LCTL 0x01 …
+    /// RGUI 0x80). Any combination of the eight is expressible: ZMK applies
+    /// each bit as its own HID modifier, mixed hands included.
+    pub hold_mods: u8,
     /// Layer a layer behavior or layer-tap targets (the stable layer id).
     pub layer_id: u32,
     /// Backlight `Set` level: a value that is part of the binding rather than
@@ -116,7 +118,7 @@ impl Default for ZmkDraft {
             kind: ZmkBehaviorKind::KeyPress,
             usage: HidUsage::from_parts(HID_USAGE_KEYBOARD, 0x04, 0),
             modifiers: 0,
-            hold_mod: HidUsage::from_parts(HID_USAGE_KEYBOARD, 0xE1, 0),
+            hold_mods: MOD_LSFT,
             layer_id: 0,
             bl_value: 0,
         }
@@ -167,7 +169,7 @@ impl ZmkDraft {
                 K::LayerTap
             }
             Behavior::ModTap { hold, tap } => {
-                draft.hold_mod = hold.base();
+                draft.hold_mods = hold_mod_mask(hold);
                 draft.usage = tap.base();
                 draft.modifiers = tap.modifiers();
                 K::ModTap
@@ -209,11 +211,45 @@ impl ZmkDraft {
             K::KeyToggle => Behavior::KeyToggle(usage),
             K::StickyKey => Behavior::StickyKey(usage),
             K::ModTap => Behavior::ModTap {
-                hold: self.hold_mod,
+                hold: hold_usage(self.hold_mods),
                 tap: usage,
             },
             _ => unreachable!("only staged kinds encode from the draft"),
         }
+    }
+}
+
+/// The held-modifier mask of a Mod-Tap hold side. Holds written as a modifier
+/// *usage* (`&mt LSHIFT A` encodes LEFT_SHIFT, usage 0xE0–0xE7) map to their
+/// HID bit; holds written as a masked usage (`&mt LC(RS(X)) X` puts the whole
+/// mask in the usage's modifier byte) carry that mask directly. Anything else
+/// (a non-modifier hold, which the UI cannot represent) shows no selection.
+fn hold_mod_mask(hold: &HidUsage) -> u8 {
+    if hold.modifiers() != 0 {
+        return hold.modifiers();
+    }
+    // HID keyboard modifier usages are the contiguous block 0xE0–0xE7, in the
+    // same order as the mask bits.
+    if (0xE0..=0xE7).contains(&hold.id()) {
+        1 << (hold.id() - 0xE0)
+    } else {
+        0
+    }
+}
+
+/// Builds the Mod-Tap hold usage from the selected mask. A single modifier
+/// keeps the bare modifier-usage form (`&mt LSHIFT A`), the canonical shape
+/// firmware writes for plain mod-taps; any other selection encodes the full
+/// HID mask in the usage's modifier byte (`&mt LC(RS(X)) X` style).
+fn hold_usage(hold_mods: u8) -> HidUsage {
+    if hold_mods.count_ones() == 1 {
+        HidUsage::from_parts(
+            HID_USAGE_KEYBOARD,
+            0xE0 + hold_mods.trailing_zeros() as u16,
+            0,
+        )
+    } else {
+        HidUsage::from_parts(HID_USAGE_KEYBOARD, 0, hold_mods)
     }
 }
 
@@ -270,15 +306,15 @@ impl crate::overlay_window::OverlayApp {
                         self.draw_zmk_layer_page(ui, keyboard, target, draft, &layer_infos);
                     }
                     Page::Mods => {
-                        ui.label("Hold modifier:");
+                        ui.label("Hold modifiers:");
                         let mod_style = self.paint_style(MOD_KEY_UNIT);
-                        modifier_select_grid(
+                        modifier_toggle_grid(
                             ui,
                             "zmk_hold_mod",
-                            Some(draft.hold_mod.id()),
+                            draft.hold_mods,
                             &mod_style,
-                            |id| {
-                                draft.hold_mod = HidUsage::from_parts(HID_USAGE_KEYBOARD, id, 0);
+                            |mask| {
+                                draft.hold_mods ^= mask;
                             },
                         );
                         ui.label("Tap key:");
@@ -288,7 +324,13 @@ impl crate::overlay_window::OverlayApp {
 
                 if needs_params(draft.kind) {
                     ui.add_space(8.0);
-                    if ui.button("Apply").clicked() {
+                    // A Mod-Tap without a hold modifier has nothing to do on
+                    // hold, so it can't be applied.
+                    let ready = draft.kind != ZmkBehaviorKind::ModTap || draft.hold_mods != 0;
+                    if !ready {
+                        ui.weak("Select at least one hold modifier.");
+                    }
+                    if ui.add_enabled(ready, egui::Button::new("Apply")).clicked() {
                         self.apply_write(keyboard, target, KeyAction::Zmk(draft.to_behavior()));
                     }
                 }
@@ -313,15 +355,9 @@ impl crate::overlay_window::OverlayApp {
 
         if with_mods {
             let mod_style = self.paint_style(MOD_KEY_UNIT);
-            modifier_toggle_row(
-                ui,
-                "zmk_mods",
-                u16::from(draft.modifiers),
-                &mod_style,
-                |mask| {
-                    draft.modifiers ^= mask as u8;
-                },
-            );
+            modifier_toggle_grid(ui, "zmk_mods", draft.modifiers, &mod_style, |mask| {
+                draft.modifiers ^= mask;
+            });
         }
 
         // No inner scroll area: the surrounding editor pane already scrolls,
@@ -473,7 +509,7 @@ fn behavior_layer_id(behavior: &Behavior) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zmk_studio_api::MOD_LSFT;
+    use zmk_studio_api::{MOD_LCTL, MOD_RALT, MOD_RSFT};
 
     fn round_trip(behavior: Behavior) {
         let draft = ZmkDraft::from_behavior(&behavior);
@@ -499,6 +535,37 @@ mod tests {
             hold: HidUsage::from_parts(HID_USAGE_KEYBOARD, 0xE1, 0),
             tap: HidUsage::from_parts(HID_USAGE_KEYBOARD, 0x04, 0),
         });
+    }
+
+    #[test]
+    fn mod_tap_masked_hold_round_trips() {
+        // `&mt LC(RS(A)) A`-style holds: the whole mask rides in the usage's
+        // modifier byte, mixed hands included.
+        let behavior = Behavior::ModTap {
+            hold: HidUsage::from_parts(HID_USAGE_KEYBOARD, 0, MOD_LCTL | MOD_RSFT),
+            tap: HidUsage::from_parts(HID_USAGE_KEYBOARD, 0x04, 0),
+        };
+        let draft = ZmkDraft::from_behavior(&behavior);
+        assert_eq!(draft.hold_mods, MOD_LCTL | MOD_RSFT);
+        assert_eq!(draft.to_behavior(), behavior);
+    }
+
+    #[test]
+    fn single_mod_hold_stays_a_modifier_usage() {
+        // One selected bit encodes back as the bare modifier usage the
+        // firmware writes for plain mod-taps, not as a masked usage.
+        let draft = ZmkDraft {
+            kind: ZmkBehaviorKind::ModTap,
+            hold_mods: MOD_RALT,
+            ..Default::default()
+        };
+        match draft.to_behavior() {
+            Behavior::ModTap { hold, .. } => {
+                assert_eq!(hold.id(), 0xE6);
+                assert_eq!(hold.modifiers(), 0);
+            }
+            _ => unreachable!("ModTap draft must encode a ModTap"),
+        }
     }
 
     #[test]
