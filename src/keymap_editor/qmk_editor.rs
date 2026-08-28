@@ -246,7 +246,7 @@ impl crate::overlay_window::OverlayApp {
                     };
                     let style = self.paint_style(KEY_UNIT);
                     picker_grid_rows(ui, salt, &candidates, selected, &style, |candidate| {
-                        self.apply_qmk_write(keyboard, target, candidate.code as u16);
+                        self.apply_write(keyboard, target, KeyAction::Qmk(candidate.code as u16));
                     });
                 }
                 Section::Layers => {
@@ -277,7 +277,7 @@ impl crate::overlay_window::OverlayApp {
                                 .unwrap_or_else(|| format!("0x{code:04X}"));
                             ui.weak(format!("Preview: {label}"));
                             if ui.button("Apply").clicked() {
-                                self.apply_qmk_write(keyboard, target, code);
+                                self.apply_write(keyboard, target, KeyAction::Qmk(code));
                             }
                         }
                         Err(_) => {
@@ -307,7 +307,7 @@ impl crate::overlay_window::OverlayApp {
             |_| selected_code,
             &style,
             |_, candidate| {
-                self.apply_qmk_write(keyboard, target, candidate.code as u16);
+                self.apply_write(keyboard, target, KeyAction::Qmk(candidate.code as u16));
             },
         );
     }
@@ -377,7 +377,7 @@ impl crate::overlay_window::OverlayApp {
 
         if ui.button("Apply").clicked() {
             if let Some(code) = code {
-                self.apply_qmk_write(keyboard, target, code);
+                self.apply_write(keyboard, target, KeyAction::Qmk(code));
             }
         }
     }
@@ -398,20 +398,6 @@ impl crate::overlay_window::OverlayApp {
                 draft.base_code = candidate.code as u16;
             },
         );
-    }
-
-    fn apply_qmk_write(&mut self, keyboard: &Keyboard, target: EditTarget, code: u16) {
-        if self.editor.pending.is_some() {
-            return;
-        }
-        let receiver = keyboard.set_key(
-            target.layer_index,
-            target.row,
-            target.col,
-            KeyAction::Qmk(code),
-        );
-        self.editor.pending = Some(receiver);
-        self.editor.error = None;
     }
 }
 

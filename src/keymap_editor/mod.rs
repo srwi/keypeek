@@ -228,6 +228,22 @@ impl crate::overlay_window::OverlayApp {
         self.editor.error = None;
     }
 
+    /// Starts writing a finished binding to the target key, unless one is
+    /// already in flight. ZMK writes are session changes tracked by the save
+    /// bar; QMK writes go straight to the device.
+    fn apply_write(&mut self, keyboard: &Keyboard, target: EditTarget, action: KeyAction) {
+        if self.editor.pending.is_some() {
+            return;
+        }
+        let is_session = matches!(action, KeyAction::Zmk(_));
+        let receiver = keyboard.set_key(target.layer_index, target.row, target.col, action);
+        self.editor.pending = Some(receiver);
+        if is_session {
+            self.editor.pending_kind = Some(PendingKind::Set);
+        }
+        self.editor.error = None;
+    }
+
     /// Polls an in-flight write once per frame, repainting while it is pending.
     fn poll_pending_write(&mut self, ctx: &egui::Context) {
         let Some(receiver) = &self.editor.pending else {

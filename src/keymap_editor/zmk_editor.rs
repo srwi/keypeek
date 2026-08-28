@@ -10,7 +10,7 @@ use super::picker::{
     KEY_UNIT, MOD_KEY_UNIT,
 };
 use super::zmk_catalog::{self, ZmkBehaviorKind};
-use super::{EditTarget, PendingKind};
+use super::EditTarget;
 
 /// The editor's pages: how the left panel groups behavior kinds and which
 /// pane the central panel shows. [`Page::kinds`] is the single source for the
@@ -301,7 +301,7 @@ impl crate::overlay_window::OverlayApp {
                 if needs_params(draft.kind) {
                     ui.add_space(8.0);
                     if ui.button("Apply").clicked() {
-                        self.apply_zmk_write(keyboard, target, draft.to_behavior());
+                        self.apply_write(keyboard, target, KeyAction::Zmk(draft.to_behavior()));
                     }
                 }
             });
@@ -410,7 +410,7 @@ impl crate::overlay_window::OverlayApp {
                     if let Some(layer_id) = behavior_layer_id(behavior) {
                         draft.layer_id = layer_id;
                     }
-                    self.apply_zmk_write(keyboard, target, behavior.clone());
+                    self.apply_write(keyboard, target, KeyAction::Zmk(behavior.clone()));
                 }
             }
         });
@@ -420,13 +420,13 @@ impl crate::overlay_window::OverlayApp {
             if self.draw_usage_picker(ui, draft, true) {
                 let tap =
                     HidUsage::from_parts(draft.usage.page(), draft.usage.id(), draft.modifiers);
-                self.apply_zmk_write(
+                self.apply_write(
                     keyboard,
                     target,
-                    Behavior::LayerTap {
+                    KeyAction::Zmk(Behavior::LayerTap {
                         layer_id: draft.layer_id,
                         tap,
-                    },
+                    }),
                 );
             }
         }
@@ -445,7 +445,7 @@ impl crate::overlay_window::OverlayApp {
             &style,
             |candidate| {
                 if let Some(behavior) = &candidate.behavior {
-                    self.apply_zmk_write(keyboard, target, behavior.clone());
+                    self.apply_write(keyboard, target, KeyAction::Zmk(behavior.clone()));
                 }
             },
         );
@@ -479,25 +479,10 @@ impl crate::overlay_window::OverlayApp {
             &style,
             |candidate| {
                 if let Some(behavior) = &candidate.behavior {
-                    self.apply_zmk_write(keyboard, target, behavior.clone());
+                    self.apply_write(keyboard, target, KeyAction::Zmk(behavior.clone()));
                 }
             },
         );
-    }
-
-    fn apply_zmk_write(&mut self, keyboard: &Keyboard, target: EditTarget, behavior: Behavior) {
-        if self.editor.pending.is_some() {
-            return;
-        }
-        let receiver = keyboard.set_key(
-            target.layer_index,
-            target.row,
-            target.col,
-            KeyAction::Zmk(behavior),
-        );
-        self.editor.pending = Some(receiver);
-        self.editor.pending_kind = Some(PendingKind::Set);
-        self.editor.error = None;
     }
 }
 
