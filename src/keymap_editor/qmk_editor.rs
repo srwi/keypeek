@@ -9,11 +9,11 @@ use crate::qmk_keycode_labels::constants::*;
 use crate::qmk_keycode_labels::get_layout_key;
 
 use super::picker::{
-    framed_candidate_groups_rows, modifier_toggle_row, picker_grid_rows, titled_group, Candidate,
-    Hand, KEY_UNIT,
+    framed_candidate_groups_rows, modifier_toggle_row, picker_grid_rows, Candidate, Hand, KEY_UNIT,
 };
 use super::qmk_catalog::{qmk_candidate, LayerKind};
 use super::EditTarget;
+use crate::ui_widgets::titled_group;
 
 /// The editor's left-panel sections, one entry each. The four modifier
 /// encodings are separate sections rather than a dropdown mode, so each is

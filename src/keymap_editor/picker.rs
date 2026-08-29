@@ -145,8 +145,9 @@ pub fn candidate_groups_rows(
 }
 
 /// [`candidate_groups_rows`] with every group framed in its own
-/// [`titled_group`] outline — the layout for pages whose groups are distinct
-/// keycode kinds (the layer pages and the direct-apply command grids).
+/// [`crate::ui_widgets::titled_group`] outline — the layout for pages whose
+/// groups are distinct keycode kinds (the layer pages and the direct-apply
+/// command grids).
 pub fn framed_candidate_groups_rows(
     ui: &mut egui::Ui,
     groups: &[CandidateGroup],
@@ -155,7 +156,7 @@ pub fn framed_candidate_groups_rows(
     mut on_select: impl FnMut(usize, &Candidate),
 ) {
     for (gi, group) in groups.iter().enumerate() {
-        titled_group(ui, group.name, |ui| {
+        crate::ui_widgets::titled_group(ui, group.name, |ui| {
             picker_grid_rows(
                 ui,
                 group.name,
@@ -166,50 +167,6 @@ pub fn framed_candidate_groups_rows(
             );
         });
     }
-}
-
-/// A fieldset-style boundary around the controls for one distinct binding
-/// argument: a stroked frame spanning the pane width, with `title` embedded
-/// in its top border the way an HTML fieldset renders its legend. Arguments
-/// that are tightly coupled (one firmware parameter) share one group; each
-/// distinct parameter gets its own.
-pub fn titled_group<R>(
-    ui: &mut egui::Ui,
-    title: &str,
-    add_contents: impl FnOnce(&mut egui::Ui) -> R,
-) -> R {
-    let title_height = ui.text_style_height(&egui::TextStyle::Small);
-    // Half the title strip rises above the top border; reserve room for it.
-    ui.add_space(title_height / 2.0 + 2.0);
-
-    let frame = egui::Frame::group(ui.style()).inner_margin(egui::Margin::symmetric(10, 8));
-    let ret = frame.show(ui, |ui| {
-        ui.set_min_width(ui.available_width());
-        add_contents(ui)
-    });
-    let frame_rect = ret.response.rect;
-
-    // Paint the title over the top border, masking the border line behind it
-    // with the window background so the line appears to break around the text.
-    let painter = ui.painter();
-    let text_color = ui.visuals().weak_text_color();
-    let galley = painter.layout_no_wrap(
-        title.to_owned(),
-        egui::TextStyle::Small.resolve(ui.style()),
-        text_color,
-    );
-    let title_min = egui::pos2(
-        frame_rect.left() + 8.0,
-        frame_rect.top() - title_height / 2.0,
-    );
-    let mask_rect = egui::Rect::from_min_size(
-        title_min - egui::vec2(2.0, 0.0),
-        galley.size() + egui::vec2(4.0, 0.0),
-    );
-    painter.rect_filled(mask_rect, 0.0, ui.visuals().window_fill());
-    painter.galley(title_min, galley, text_color);
-
-    ret.inner
 }
 
 /// Paint one key-shaped chip and handle its click. `selected` uses the pressed

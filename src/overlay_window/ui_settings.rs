@@ -1,6 +1,7 @@
 use super::state::AppConnectionState;
 use super::OverlayApp;
 use crate::settings::{LayerMask, LegendMode, Settings, ThemeColor, ThemeSettings, WindowPosition};
+use crate::ui_widgets::titled_group;
 use egui::Window;
 
 impl OverlayApp {
@@ -100,9 +101,7 @@ impl OverlayApp {
             .collapsible(false)
             .resizable(false)
             .show(ctx, |ui| {
-                ui.group(|ui| {
-                    ui.heading("Connection");
-                    ui.add_space(8.0);
+                titled_group(ui, "Connection", |ui| {
                     let control_spacing = ui.spacing().item_spacing.x;
                     const RIGHT_COLUMN_WIDTH: f32 = 100.0;
 
@@ -205,12 +204,7 @@ impl OverlayApp {
                         });
                 });
 
-                ui.add_space(10.0);
-
-                ui.group(|ui| {
-                    ui.heading("Overlay Appearance");
-                    ui.add_space(8.0);
-
+                titled_group(ui, "Overlay Appearance", |ui| {
                     egui::Grid::new("appearance_grid")
                         .num_columns(2)
                         .striped(true)
@@ -334,12 +328,7 @@ impl OverlayApp {
                         });
                 });
 
-                ui.add_space(10.0);
-
-                ui.group(|ui| {
-                    ui.heading("Theme");
-                    ui.add_space(8.0);
-
+                titled_group(ui, "Theme", |ui| {
                     const LAYER_LABELS: [&str; ThemeSettings::OTHER_LAYERS as usize] = [
                         "Layer 0", "Layer 1", "Layer 2", "Layer 3", "Layer 4", "Layer 5",
                     ];

@@ -7,10 +7,11 @@ use zmk_studio_api::{Behavior, HidUsage, HID_USAGE_KEYBOARD, MOD_LSFT};
 
 use super::picker::{
     candidate_groups_rows, framed_candidate_groups_rows, modifier_toggle_grid, picker_grid_rows,
-    titled_group, Candidate, KEY_UNIT,
+    Candidate, KEY_UNIT,
 };
 use super::zmk_catalog::{self, ZmkBehaviorKind};
 use super::EditTarget;
+use crate::ui_widgets::titled_group;
 
 /// The editor's pages: how the left panel groups behavior kinds and which
 /// pane the central panel shows. [`Page::kinds`] is the single source for the

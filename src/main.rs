@@ -15,6 +15,7 @@ mod qmk_keycode_labels;
 mod settings;
 mod tray;
 mod ui_wake;
+mod ui_widgets;
 mod zmk_keycode_labels;
 
 use device_discovery::discover_devices;
