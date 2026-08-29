@@ -3,15 +3,13 @@ use super::zmk_rpc::{self, ZmkData, ZmkStudioSession, ZmkTransport};
 use super::{Key, KeyboardDefinition, KeyboardLayout, KeyboardProtocol, Reopener, WriteSupport};
 use crate::key_action::{KeyAction, KeymapSnapshot, LayerInfo};
 use hidapi::{HidApi, HidDevice};
+use std::collections::HashSet;
 use std::error::Error;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use zmk_studio_api::ResolvedLayer;
+use zmk_studio_api::{BehaviorRole, ClientError, ResolvedLayer};
 
 const ZMK_USAGE_PAGE: u16 = 0xff60;
-
-use std::collections::HashSet;
-use zmk_studio_api::BehaviorRole;
 
 struct ZmkLayout {
     definition: KeyboardDefinition,
@@ -72,10 +70,10 @@ impl ZmkProtocol {
     }
 
     /// Runs `write` against the edit session, opening it if needed (BLE opens
-    /// are slow, so `open_edit_session` usually runs first). Any failed
-    /// operation drops the session so the next write starts from a fresh
-    /// connection — a device that locked or drifted mid-session is handled by
-    /// reconnecting.
+    /// are slow, so `open_edit_session` usually runs first). Transport or
+    /// communication failures drop the session so the next write reconnects,
+    /// while application-level validation errors (such as an unsupported keycode)
+    /// keep the session intact.
     fn with_session<T>(
         &mut self,
         write: impl FnOnce(&mut ZmkStudioSession) -> Result<T, Box<dyn Error>>,
@@ -84,8 +82,10 @@ impl ZmkProtocol {
             self.session = Some(ZmkStudioSession::open(&self.transport)?);
         }
         let result = write(self.session.as_mut().unwrap());
-        if result.is_err() {
-            self.session = None;
+        if let Err(ref err) = result {
+            if should_drop_session(err.as_ref()) {
+                self.session = None;
+            }
         }
         result
     }
@@ -100,6 +100,31 @@ impl ZmkProtocol {
         {
             *cell = Some(action);
         }
+    }
+}
+
+/// Returns whether an RPC write error is fatal to the transport session.
+/// Recoverable validation rejections from the firmware (e.g. invalid parameter
+/// for a keycode not supported by this keyboard) keep the session open so the
+/// next write does not pay the slow reconnection and catalog fetch penalty.
+fn should_drop_session(err: &(dyn Error + 'static)) -> bool {
+    if let Some(client_err) = err.downcast_ref::<ClientError>() {
+        match client_err {
+            ClientError::SetLayerBindingFailed(_)
+            | ClientError::SaveChangesFailed(_)
+            | ClientError::SetActivePhysicalLayoutFailed(_)
+            | ClientError::MoveLayerFailed(_)
+            | ClientError::AddLayerFailed(_)
+            | ClientError::RemoveLayerFailed(_)
+            | ClientError::RestoreLayerFailed(_)
+            | ClientError::SetLayerPropsFailed(_)
+            | ClientError::InvalidLayerOrPosition { .. }
+            | ClientError::MissingBehaviorRole(_)
+            | ClientError::BehaviorIdOutOfRange { .. } => false,
+            _ => true,
+        }
+    } else {
+        true
     }
 }
 
