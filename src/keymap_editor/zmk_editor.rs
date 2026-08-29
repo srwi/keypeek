@@ -6,7 +6,8 @@ use crate::keyboard::Keyboard;
 use zmk_studio_api::{Behavior, HidUsage, HID_USAGE_KEYBOARD, MOD_LSFT};
 
 use super::picker::{
-    candidate_groups_rows, modifier_toggle_grid, picker_grid_rows, Candidate, KEY_UNIT,
+    candidate_groups_rows, framed_candidate_groups_rows, modifier_toggle_grid, picker_grid_rows,
+    titled_group, Candidate, KEY_UNIT,
 };
 use super::zmk_catalog::{self, ZmkBehaviorKind};
 use super::EditTarget;
@@ -313,26 +314,36 @@ impl crate::overlay_window::OverlayApp {
                         self.draw_direct_grid(ui, keyboard, target, draft);
                     }
                     Page::Keys => {
-                        self.draw_usage_picker(ui, draft, true);
+                        // One argument, one group: the usage's modifier toggles
+                        // and key grid are tightly coupled, so they share the
+                        // boundary.
+                        titled_group(ui, "Key", |ui| {
+                            self.draw_usage_picker(ui, draft, true);
+                        });
                     }
                     Page::Layers => {
                         // One page of grouped layer keys; see draw_zmk_layer_page.
                         self.draw_zmk_layer_page(ui, keyboard, target, draft, &layer_infos);
                     }
                     Page::Mods => {
-                        ui.label("Hold modifiers:");
+                        // Two distinct arguments, two groups: the hold-side
+                        // modifier mask, and the tap-side usage (whose own
+                        // modifier toggles stay inside the tap group).
                         let mod_style = self.paint_style(KEY_UNIT);
-                        modifier_toggle_grid(
-                            ui,
-                            "zmk_hold_mod",
-                            draft.hold_mods,
-                            &mod_style,
-                            |mask| {
-                                draft.hold_mods ^= mask;
-                            },
-                        );
-                        ui.label("Tap key:");
-                        self.draw_usage_picker(ui, draft, true);
+                        titled_group(ui, "Hold modifiers", |ui| {
+                            modifier_toggle_grid(
+                                ui,
+                                "zmk_hold_mod",
+                                draft.hold_mods,
+                                &mod_style,
+                                |mask| {
+                                    draft.hold_mods ^= mask;
+                                },
+                            );
+                        });
+                        titled_group(ui, "Tap key", |ui| {
+                            self.draw_usage_picker(ui, draft, true);
+                        });
                     }
                 }
 
@@ -393,10 +404,10 @@ impl crate::overlay_window::OverlayApp {
         picked
     }
 
-    /// The ZMK layer page: every layer behavior as one key per layer, grouped
-    /// by behavior like the usage picker's categories. Momentary/Toggle/To/
-    /// Sticky apply on click. Picking a Layer-Tap key only stages the layer and
-    /// reveals the tap-key picker below; picking a tap key then applies the
+    /// The ZMK layer page: every layer behavior as one framed group of one key
+    /// per layer, one outline per behavior kind. Momentary/Toggle/To/Sticky
+    /// apply on click. Picking a Layer-Tap key only stages the layer and
+    /// reveals the tap-key group below; picking a tap key then applies the
     /// finished binding.
     fn draw_zmk_layer_page(
         &mut self,
@@ -433,7 +444,7 @@ impl crate::overlay_window::OverlayApp {
             }
         };
 
-        candidate_groups_rows(ui, &groups, selected, &style, |gi, candidate| {
+        framed_candidate_groups_rows(ui, &groups, selected, &style, |gi, candidate| {
             let kind = kinds[gi];
             if let KeyAction::Zmk(behavior) = &candidate.binding {
                 if kind == ZmkBehaviorKind::LayerTap {
@@ -454,8 +465,10 @@ impl crate::overlay_window::OverlayApp {
         });
 
         if draft.kind == ZmkBehaviorKind::LayerTap {
-            ui.label("Tap key:");
-            if self.draw_usage_picker(ui, draft, true) {
+            // The staged tap side is one distinct argument: usage + its
+            // modifier toggles share the group.
+            let picked = titled_group(ui, "Tap key", |ui| self.draw_usage_picker(ui, draft, true));
+            if picked {
                 let tap =
                     HidUsage::from_parts(draft.usage.page(), draft.usage.id(), draft.modifiers);
                 self.apply_write(
@@ -471,9 +484,11 @@ impl crate::overlay_window::OverlayApp {
     }
 
     /// The Special and Commands pages as key grids; clicking applies directly.
-    /// The exception is Backlight `Set`, whose level is part of the binding:
-    /// clicking it stages the binding and reveals a level control with an
-    /// Apply button, so the spinner is only ever shown for that one key.
+    /// The whole grid sits in one outline — one for the shared Special entry,
+    /// one per selected command kind. The exception is Backlight `Set`, whose
+    /// level is part of the binding: clicking it stages the binding and
+    /// reveals a Level group below the grid with an Apply button, so the
+    /// spinner is only ever shown for that one key.
     fn draw_direct_grid(
         &mut self,
         ui: &mut egui::Ui,
@@ -482,38 +497,44 @@ impl crate::overlay_window::OverlayApp {
         draft: &mut ZmkDraft,
     ) {
         let staging_set = draft.kind == ZmkBehaviorKind::Backlight && draft.bl_set_staged;
-        if staging_set {
-            ui.horizontal(|ui| {
-                ui.weak("Set level");
-                ui.add(egui::DragValue::new(&mut draft.bl_value).range(0..=255));
-            });
-            ui.add_space(4.0);
-        }
-        let candidates: &[Candidate] = if page_of(draft.kind) == Page::Special {
+        let is_special = page_of(draft.kind) == Page::Special;
+        let candidates: &[Candidate] = if is_special {
             zmk_catalog::special_candidates()
         } else {
             &zmk_catalog::command_candidates(draft.kind, draft.bl_value)
         };
+        let grid_title = if is_special {
+            "Special"
+        } else {
+            draft.kind.label()
+        };
         let style = self.paint_style(KEY_UNIT);
-        picker_grid_rows(
-            ui,
-            draft.kind.label(),
-            candidates,
-            keyboard
-                .get_action(target.layer_index, target.row, target.col)
-                .as_ref(),
-            &style,
-            |candidate| {
-                if is_backlight_set(&candidate.binding) {
-                    draft.bl_set_staged = true;
-                    return;
-                }
-                draft.bl_set_staged = false;
-                self.apply_write(keyboard, target, candidate.binding.clone());
-            },
-        );
+        titled_group(ui, grid_title, |ui| {
+            picker_grid_rows(
+                ui,
+                draft.kind.label(),
+                candidates,
+                keyboard
+                    .get_action(target.layer_index, target.row, target.col)
+                    .as_ref(),
+                &style,
+                |candidate| {
+                    if is_backlight_set(&candidate.binding) {
+                        draft.bl_set_staged = true;
+                        return;
+                    }
+                    draft.bl_set_staged = false;
+                    self.apply_write(keyboard, target, candidate.binding.clone());
+                },
+            );
+        });
 
         if staging_set {
+            // The level is the one command argument that is part of the
+            // binding, so it gets its own group below the key grid.
+            titled_group(ui, "Level", |ui| {
+                ui.add(egui::DragValue::new(&mut draft.bl_value).range(0..=255));
+            });
             ui.add_space(8.0);
             if ui.button("Apply").clicked() {
                 let behavior = Behavior::Backlight {

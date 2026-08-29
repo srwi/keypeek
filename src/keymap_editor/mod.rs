@@ -99,9 +99,12 @@ fn editor_panes<D>(
     central: impl FnOnce(&mut egui::Ui, &mut D),
 ) {
     let left_id = egui::Id::new(left_id);
+    // No separator line between the panes: the central pane's group outlines
+    // carry the visual separation.
     egui::Panel::left(left_id)
         .resizable(false)
         .exact_size(left_width)
+        .show_separator_line(false)
         .show_inside(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.add_space(2.0);
