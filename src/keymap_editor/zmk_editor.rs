@@ -55,7 +55,7 @@ impl Page {
             Page::Mods => &[ModTap],
             Page::Special => &[
                 Transparent,
-                NoneBehavior,
+                None,
                 CapsWord,
                 KeyRepeat,
                 GraveEscape,
@@ -74,6 +74,16 @@ impl Page {
                 MouseScroll,
             ],
         }
+    }
+
+    fn supported_kinds(self, keyboard: &Keyboard) -> Vec<ZmkBehaviorKind> {
+        self.kinds()
+            .iter()
+            .copied()
+            .filter(|k| {
+                keyboard.is_action_supported(&KeyAction::Zmk(zmk_catalog::sample_behavior(*k)))
+            })
+            .collect()
     }
 }
 
@@ -133,78 +143,39 @@ impl Default for ZmkDraft {
 impl ZmkDraft {
     /// Pre-fills the draft from an existing ZMK behavior.
     pub fn from_behavior(behavior: &Behavior) -> Self {
-        let mut draft = ZmkDraft::default();
-        use ZmkBehaviorKind as K;
-        draft.kind = match behavior {
-            Behavior::KeyPress(usage) => {
+        let mut draft = ZmkDraft {
+            kind: behavior.role().unwrap_or(ZmkBehaviorKind::KeyPress),
+            ..Default::default()
+        };
+        match behavior {
+            Behavior::KeyPress(usage) | Behavior::KeyToggle(usage) | Behavior::StickyKey(usage) => {
                 draft.usage = usage.base();
                 draft.modifiers = usage.modifiers();
-                K::KeyPress
             }
-            Behavior::KeyToggle(usage) => {
-                draft.usage = usage.base();
-                draft.modifiers = usage.modifiers();
-                K::KeyToggle
-            }
-            Behavior::StickyKey(usage) => {
-                draft.usage = usage.base();
-                draft.modifiers = usage.modifiers();
-                K::StickyKey
-            }
-            Behavior::MomentaryLayer { layer_id } => {
+            Behavior::MomentaryLayer { layer_id }
+            | Behavior::ToggleLayer { layer_id }
+            | Behavior::ToLayer { layer_id }
+            | Behavior::StickyLayer { layer_id } => {
                 draft.layer_id = *layer_id;
-                K::MomentaryLayer
-            }
-            Behavior::ToggleLayer { layer_id } => {
-                draft.layer_id = *layer_id;
-                K::ToggleLayer
-            }
-            Behavior::ToLayer { layer_id } => {
-                draft.layer_id = *layer_id;
-                K::ToLayer
-            }
-            Behavior::StickyLayer { layer_id } => {
-                draft.layer_id = *layer_id;
-                K::StickyLayer
             }
             Behavior::LayerTap { layer_id, tap } => {
                 draft.layer_id = *layer_id;
                 draft.usage = tap.base();
                 draft.modifiers = tap.modifiers();
-                K::LayerTap
             }
             Behavior::ModTap { hold, tap } => {
                 draft.hold_mods = hold_mod_mask(hold);
                 draft.usage = tap.base();
                 draft.modifiers = tap.modifiers();
-                K::ModTap
             }
-            Behavior::Transparent => K::Transparent,
-            Behavior::None => K::NoneBehavior,
-            Behavior::CapsWord => K::CapsWord,
-            Behavior::KeyRepeat => K::KeyRepeat,
-            Behavior::GraveEscape => K::GraveEscape,
-            Behavior::StudioUnlock => K::StudioUnlock,
-            Behavior::Reset => K::Reset,
-            Behavior::Bootloader => K::Bootloader,
-            Behavior::SoftOff => K::SoftOff,
-            Behavior::Bluetooth { .. } => K::Bluetooth,
-            Behavior::OutputSelection { .. } => K::OutputSelection,
             Behavior::Backlight { command, value } => {
                 draft.bl_value = *value;
                 // A `Set` binding re-opens with its level control, so the
                 // value can be tweaked and re-applied directly.
                 draft.bl_set_staged = *command == zmk_catalog::BACKLIGHT_SET_COMMAND;
-                K::Backlight
             }
-            Behavior::Underglow { .. } => K::Underglow,
-            Behavior::MouseKeyPress { .. } => K::MouseKeyPress,
-            Behavior::MouseMove { .. } => K::MouseMove,
-            Behavior::MouseScroll { .. } => K::MouseScroll,
-            Behavior::Custom { .. } | Behavior::Unknown { .. } | Behavior::ExternalPower { .. } => {
-                K::KeyPress
-            }
-        };
+            _ => {}
+        }
         draft
     }
 
@@ -321,6 +292,16 @@ impl crate::overlay_window::OverlayApp {
     ) {
         let layer_infos = keyboard.layer_infos();
 
+        // If the current draft kind is not supported on this keyboard, switch to the first supported one.
+        if !keyboard.is_action_supported(&KeyAction::Zmk(zmk_catalog::sample_behavior(draft.kind))) {
+            draft.kind = Page::ALL
+                .iter()
+                .find_map(|page| page.supported_kinds(keyboard).into_iter().next())
+                .unwrap_or(ZmkBehaviorKind::KeyPress);
+            draft.bl_set_staged = false;
+            draft.touched = false;
+        }
+
         // Two-pane layout: every behavior kind lives in the left panel under
         // its group header; the right pane holds the selected page. The
         // parameterless behaviors share one "Special" entry whose pane is a
@@ -332,13 +313,15 @@ impl crate::overlay_window::OverlayApp {
             draft,
             |ui, draft| {
                 for page in Page::ALL {
-                    // Staged kinds get one entry each; the grouped pages share
-                    // a single entry and apply from their page's key grids.
+                    let kinds = page.supported_kinds(keyboard);
+                    if kinds.is_empty() {
+                        continue;
+                    }
                     if matches!(page, Page::Keys | Page::Mods | Page::Commands) {
                         ui.weak(page.label());
-                        for kind in page.kinds() {
+                        for kind in kinds {
                             let response =
-                                ui.selectable_value(&mut draft.kind, *kind, kind.label());
+                                ui.selectable_value(&mut draft.kind, kind, kind.label());
                             // Switching behavior kinds leaves any staged
                             // Backlight Set behind and starts a fresh
                             // selection.
@@ -351,7 +334,7 @@ impl crate::overlay_window::OverlayApp {
                         let response =
                             ui.selectable_label(page_of(draft.kind) == page, page.label());
                         if response.clicked() {
-                            draft.kind = page.kinds()[0];
+                            draft.kind = kinds[0];
                             draft.bl_set_staged = false;
                             draft.touched = false;
                         }
@@ -471,8 +454,8 @@ impl crate::overlay_window::OverlayApp {
             .collect();
         let tap = HidUsage::from_parts(draft.usage.page(), draft.usage.id(), draft.modifiers);
         let style = self.paint_style(KEY_UNIT);
-        let kinds = Page::Layers.kinds();
-        let groups = zmk_catalog::layer_groups(kinds, layer_infos, &layer_names, tap);
+        let kinds = Page::Layers.supported_kinds(keyboard);
+        let groups = zmk_catalog::layer_groups(&kinds, layer_infos, &layer_names, tap);
 
         // Per-group highlight: the staged Layer-Tap key, or the key matching
         // the current binding.
@@ -538,10 +521,14 @@ impl crate::overlay_window::OverlayApp {
     ) {
         let staging_set = draft.kind == ZmkBehaviorKind::Backlight && draft.bl_set_staged;
         let is_special = page_of(draft.kind) == Page::Special;
-        let candidates: &[Candidate] = if is_special {
-            zmk_catalog::special_candidates()
+        let candidates: Vec<Candidate> = if is_special {
+            Page::Special
+                .supported_kinds(keyboard)
+                .into_iter()
+                .map(|kind| zmk_catalog::behavior_candidate(&zmk_catalog::sample_behavior(kind), &[]))
+                .collect()
         } else {
-            &zmk_catalog::command_candidates(draft.kind, draft.bl_value)
+            zmk_catalog::command_candidates(draft.kind, draft.bl_value)
         };
         let grid_title = if is_special {
             "Special"
@@ -553,7 +540,7 @@ impl crate::overlay_window::OverlayApp {
             picker_grid_rows(
                 ui,
                 draft.kind.label(),
-                candidates,
+                &candidates,
                 keyboard
                     .get_action(target.layer_index, target.row, target.col)
                     .as_ref(),

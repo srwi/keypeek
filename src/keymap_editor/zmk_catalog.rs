@@ -18,91 +18,53 @@ pub const BACKLIGHT_SET_COMMAND: u32 = 6;
 
 use super::picker::{Candidate, CandidateGroup};
 
-/// The ZMK behavior kinds the editor can assign, one label each. The draft's
-/// selected kind drives which editor page is shown.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ZmkBehaviorKind {
-    KeyPress,
-    KeyToggle,
-    StickyKey,
-    MomentaryLayer,
-    ToggleLayer,
-    ToLayer,
-    StickyLayer,
-    LayerTap,
-    ModTap,
-    Transparent,
-    NoneBehavior,
-    CapsWord,
-    KeyRepeat,
-    GraveEscape,
-    StudioUnlock,
-    Reset,
-    Bootloader,
-    SoftOff,
-    Bluetooth,
-    OutputSelection,
-    Backlight,
-    Underglow,
-    MouseKeyPress,
-    MouseMove,
-    MouseScroll,
-}
+pub use zmk_studio_api::BehaviorRole as ZmkBehaviorKind;
 
-impl ZmkBehaviorKind {
-    pub(super) fn label(&self) -> &'static str {
-        use ZmkBehaviorKind::*;
-        match self {
-            KeyPress => "Key Press",
-            KeyToggle => "Key Toggle",
-            StickyKey => "Sticky Key",
-            MomentaryLayer => "Momentary Layer",
-            ToggleLayer => "Toggle Layer",
-            ToLayer => "To Layer",
-            StickyLayer => "Sticky Layer",
-            LayerTap => "Layer-Tap",
-            ModTap => "Mod-Tap",
-            Transparent => "Transparent",
-            NoneBehavior => "None",
-            CapsWord => "Caps Word",
-            KeyRepeat => "Key Repeat",
-            GraveEscape => "Grave Escape",
-            StudioUnlock => "Studio Unlock",
-            Reset => "Reset",
-            Bootloader => "Bootloader",
-            SoftOff => "Soft Off",
-            Bluetooth => "Bluetooth",
-            OutputSelection => "Output Selection",
-            Backlight => "Backlight",
-            Underglow => "Underglow",
-            MouseKeyPress => "Mouse Key",
-            MouseMove => "Mouse Move",
-            MouseScroll => "Mouse Scroll",
-        }
+pub fn sample_behavior(role: ZmkBehaviorKind) -> Behavior {
+    use zmk_studio_api::BehaviorRole::*;
+    match role {
+        KeyPress => Behavior::KeyPress(HidUsage::from_encoded(0)),
+        KeyToggle => Behavior::KeyToggle(HidUsage::from_encoded(0)),
+        StickyKey => Behavior::StickyKey(HidUsage::from_encoded(0)),
+        MomentaryLayer => Behavior::MomentaryLayer { layer_id: 0 },
+        ToggleLayer => Behavior::ToggleLayer { layer_id: 0 },
+        ToLayer => Behavior::ToLayer { layer_id: 0 },
+        StickyLayer => Behavior::StickyLayer { layer_id: 0 },
+        LayerTap => Behavior::LayerTap {
+            layer_id: 0,
+            tap: HidUsage::from_encoded(0),
+        },
+        ModTap => Behavior::ModTap {
+            hold: HidUsage::from_encoded(0),
+            tap: HidUsage::from_encoded(0),
+        },
+        Transparent => Behavior::Transparent,
+        None => Behavior::None,
+        CapsWord => Behavior::CapsWord,
+        KeyRepeat => Behavior::KeyRepeat,
+        GraveEscape => Behavior::GraveEscape,
+        StudioUnlock => Behavior::StudioUnlock,
+        Reset => Behavior::Reset,
+        Bootloader => Behavior::Bootloader,
+        SoftOff => Behavior::SoftOff,
+        Bluetooth => Behavior::Bluetooth {
+            command: 0,
+            value: 0,
+        },
+        ExternalPower => Behavior::ExternalPower { value: 0 },
+        OutputSelection => Behavior::OutputSelection { value: 0 },
+        Backlight => Behavior::Backlight {
+            command: 0,
+            value: 0,
+        },
+        Underglow => Behavior::Underglow {
+            command: 0,
+            value: 0,
+        },
+        MouseKeyPress => Behavior::MouseKeyPress { value: 0 },
+        MouseMove => Behavior::MouseMove { value: 0 },
+        MouseScroll => Behavior::MouseScroll { value: 0 },
     }
-}
-
-/// The parameterless behaviors, applied directly on click. The grid replaces
-/// the old per-kind panes that held nothing but an Apply button.
-pub fn special_candidates() -> &'static [Candidate] {
-    static SPECIALS: OnceLock<Vec<Candidate>> = OnceLock::new();
-    SPECIALS.get_or_init(|| {
-        let behaviors = [
-            Behavior::Transparent,
-            Behavior::None,
-            Behavior::CapsWord,
-            Behavior::KeyRepeat,
-            Behavior::GraveEscape,
-            Behavior::StudioUnlock,
-            Behavior::Reset,
-            Behavior::Bootloader,
-            Behavior::SoftOff,
-        ];
-        behaviors
-            .into_iter()
-            .map(|behavior| behavior_candidate(&behavior, &[]))
-            .collect()
-    })
 }
 
 /// The layer page's groups, one group per kind in `kinds` order: one
@@ -203,7 +165,7 @@ pub fn command_candidates(kind: ZmkBehaviorKind, backlight_level: u32) -> Vec<Ca
 /// the overlay paints the binding. `Transparent` has no key of its own — it
 /// falls through — so it renders as a ghosted empty slot. `layer_names`
 /// resolves layer references for the legends.
-fn behavior_candidate(behavior: &Behavior, layer_names: &[String]) -> Candidate {
+pub fn behavior_candidate(behavior: &Behavior, layer_names: &[String]) -> Candidate {
     let key = behavior_to_layout_key(behavior, layer_names).unwrap_or_default();
     Candidate {
         binding: KeyAction::Zmk(behavior.clone()),
@@ -265,4 +227,33 @@ pub fn keycode_candidate(encoded: u32) -> Candidate {
         },
     };
     Candidate::new(action, key)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn behaviors_map_to_correct_roles() {
+        assert_eq!(
+            Behavior::Backlight {
+                command: 0,
+                value: 0
+            }
+            .role(),
+            Some(ZmkBehaviorKind::Backlight)
+        );
+        assert_eq!(
+            Behavior::Underglow {
+                command: 0,
+                value: 0
+            }
+            .role(),
+            Some(ZmkBehaviorKind::Underglow)
+        );
+        assert_eq!(
+            Behavior::Transparent.role(),
+            Some(ZmkBehaviorKind::Transparent)
+        );
+    }
 }

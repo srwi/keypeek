@@ -163,6 +163,12 @@ pub trait KeyboardProtocol: Send {
     fn reopener(&self) -> Option<Arc<dyn Reopener>> {
         None
     }
+
+    fn action_filter(
+        &self,
+    ) -> Option<Arc<dyn Fn(&crate::key_action::KeyAction) -> bool + Send + Sync>> {
+        None
+    }
 }
 
 pub trait Reopener: Send + Sync {

@@ -146,6 +146,7 @@ pub struct Keyboard {
     command_tx: mpsc::Sender<KeymapCommand>,
     write_support: WriteSupport,
     _keepalive: Option<mpsc::Sender<()>>,
+    action_filter: Option<Arc<dyn Fn(&KeyAction) -> bool + Send + Sync>>,
 }
 
 /// A keymap command for the protocol, executed on the reader thread so writes
@@ -293,6 +294,7 @@ impl Keyboard {
                 tx
             });
 
+        let action_filter = protocol.action_filter();
         let keyboard = Keyboard {
             layout,
             matrix: Arc::clone(&matrix),
@@ -304,6 +306,7 @@ impl Keyboard {
             command_tx,
             write_support,
             _keepalive: keepalive,
+            action_filter,
         };
 
         let layer_state_clone = Arc::clone(&keyboard.layer_state);
@@ -560,6 +563,12 @@ impl Keyboard {
 
     pub fn is_ralt_held(&self) -> bool {
         self.held_mod_mask() & crate::layout_key::HELD_MOD_RALT != 0
+    }
+
+    pub fn is_action_supported(&self, action: &KeyAction) -> bool {
+        self.action_filter
+            .as_ref()
+            .map_or(true, |filter| filter(action))
     }
 
     pub fn set_config(&self, config: OverlayConfig) {

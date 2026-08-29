@@ -14,6 +14,7 @@ const GAP: f32 = 6.0;
 
 /// One selectable candidate in a picker grid: the binding it stands for,
 /// painted as the key it renders like on the overlay.
+#[derive(Clone)]
 pub struct Candidate {
     /// The firmware binding the candidate writes. Click-to-apply grids write
     /// it directly; staging pickers extract their parameter from it.
