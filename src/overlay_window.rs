@@ -113,6 +113,7 @@ impl OverlayApp {
         self.editor.zmk_draft = Default::default();
         self.editor.zmk_dirty = false;
         self.editor.closing = false;
+        self.editor.zmk_session = crate::keymap_editor::ZmkSessionState::Idle;
         if let AppConnectionState::Connected { keyboard } = &self.session.connection {
             keyboard.end_edit_session();
         }

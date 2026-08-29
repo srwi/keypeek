@@ -118,7 +118,9 @@ pub enum ZmkStudioSession {
 }
 
 impl ZmkStudioSession {
-    /// Opens a session on the given transport and verifies the device is unlocked.
+    /// Opens a session on the given transport, verifies the device is
+    /// unlocked, and pre-loads the behavior catalog so the first write is a
+    /// single round trip instead of a catalog fetch.
     pub fn open(transport: &ZmkTransport) -> Result<Self, Box<dyn Error>> {
         let mut session = match transport {
             ZmkTransport::SerialPort(port_name) => {
@@ -142,6 +144,7 @@ impl ZmkStudioSession {
         if session.lock_state()? == core::LockState::ZmkStudioCoreLockStateLocked {
             return Err(Box::new(DeviceLocked));
         }
+        session.ensure_behavior_catalog()?;
 
         Ok(session)
     }
@@ -151,6 +154,14 @@ impl ZmkStudioSession {
             Self::Serial(client) => client.get_lock_state()?,
             Self::Ble(client) => client.get_lock_state()?,
         })
+    }
+
+    fn ensure_behavior_catalog(&mut self) -> Result<(), Box<dyn Error>> {
+        match self {
+            Self::Serial(client) => client.ensure_behavior_catalog()?,
+            Self::Ble(client) => client.ensure_behavior_catalog()?,
+        }
+        Ok(())
     }
 
     pub fn set_key(

@@ -148,9 +148,13 @@ pub struct Keyboard {
     _keepalive: Option<mpsc::Sender<()>>,
 }
 
-/// A keymap write request for the protocol, executed on the reader thread so
-/// writes and reads never race the same HID handle.
+/// A keymap command for the protocol, executed on the reader thread so writes
+/// and reads never race the same HID handle.
 pub enum KeymapCommand {
+    /// Opens the transient write session ahead of the first write (ZMK).
+    OpenEditSession {
+        respond: mpsc::Sender<Result<(), String>>,
+    },
     SetKey {
         layer_index: usize,
         row: usize,
@@ -186,6 +190,10 @@ fn run_keymap_command(
     ui_wake: &UiWake,
 ) {
     match command {
+        KeymapCommand::OpenEditSession { respond } => {
+            let result = protocol.open_edit_session().map_err(write_error_text);
+            let _ = respond.send(result);
+        }
         KeymapCommand::SetKey {
             layer_index,
             row,
@@ -494,6 +502,12 @@ impl Keyboard {
         self.send_keymap_command(|respond| KeymapCommand::Save { respond })
     }
 
+    /// Opens the transient write session (ZMK Studio RPC) so the first write
+    /// does not pay the connection cost while the user is mid-edit.
+    pub fn open_edit_session(&self) -> mpsc::Receiver<Result<(), String>> {
+        self.send_keymap_command(|respond| KeymapCommand::OpenEditSession { respond })
+    }
+
     /// Fire-and-forget: closes any transient write connection on the protocol.
     pub fn end_edit_session(&self) {
         let _ = self.command_tx.send(KeymapCommand::EndEditSession);
@@ -511,7 +525,9 @@ impl Keyboard {
 
         if let Err(send_error) = self.command_tx.send(command) {
             match send_error.0 {
-                KeymapCommand::SetKey { respond, .. } | KeymapCommand::Save { respond } => {
+                KeymapCommand::SetKey { respond, .. }
+                | KeymapCommand::Save { respond }
+                | KeymapCommand::OpenEditSession { respond } => {
                     let _ = respond.send(Err("Connection lost".to_string()));
                 }
                 KeymapCommand::EndEditSession => {}

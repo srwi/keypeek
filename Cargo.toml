@@ -23,8 +23,13 @@ egui-phosphor = "0.12.0"
 egui-file-dialog = "0.13.0"
 image = "0.25.10"
 lzma-rs = "0.3"
-serialport = "4.9.0"
-zmk-studio-api = { version = "0.5.1", features = ["serial", "ble"] }
+serialport = "4.10.0"
+# Local checkout of zmk-studio-api with one patch over the published 0.5.1:
+# `ensure_behavior_catalog` is public, so the edit session can pre-load the
+# behavior catalog while the editor window is still connecting instead of on
+# the first write. Swap back to the crates.io version once a release with that
+# API is published.
+zmk-studio-api = { path = "../zmk-studio-api", features = ["serial", "ble"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"

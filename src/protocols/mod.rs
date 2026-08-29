@@ -146,6 +146,13 @@ pub trait KeyboardProtocol: Send {
         Ok(())
     }
 
+    /// Opens the transient write session ahead of the first write (ZMK Studio
+    /// client), so the first key change does not wait on a connection.
+    /// Protocols without a session are already ready.
+    fn open_edit_session(&mut self) -> Result<(), Box<dyn Error>> {
+        Ok(())
+    }
+
     /// Closes any transient write connection (ZMK Studio client).
     fn end_edit_session(&mut self) {}
 

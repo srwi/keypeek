@@ -152,6 +152,14 @@ impl OverlayApp {
                                 col,
                             });
                             self.editor.error = None;
+                            // A fresh target retries a failed session open
+                            // (e.g. after the device was unlocked).
+                            if self.editor.zmk_session
+                                == crate::keymap_editor::ZmkSessionState::Failed
+                            {
+                                self.editor.zmk_session =
+                                    crate::keymap_editor::ZmkSessionState::Idle;
+                            }
                             // Rebuild the draft from the newly targeted binding.
                             match keyboard.get_action(pinned.unwrap(), row, col) {
                                 Some(crate::key_action::KeyAction::Qmk(code)) => {

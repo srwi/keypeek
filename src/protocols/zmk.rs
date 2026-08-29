@@ -67,10 +67,11 @@ impl ZmkProtocol {
         })
     }
 
-    /// Runs `write` against the edit session, opening it lazily on first use
-    /// (BLE opens are slow). Any failed operation drops the session so the
-    /// next write starts from a fresh connection — a device that locked or
-    /// drifted mid-session is handled by reconnecting.
+    /// Runs `write` against the edit session, opening it if needed (BLE opens
+    /// are slow, so `open_edit_session` usually runs first). Any failed
+    /// operation drops the session so the next write starts from a fresh
+    /// connection — a device that locked or drifted mid-session is handled by
+    /// reconnecting.
     fn with_session<T>(
         &mut self,
         write: impl FnOnce(&mut ZmkStudioSession) -> Result<T, Box<dyn Error>>,
@@ -206,6 +207,10 @@ impl KeyboardProtocol for ZmkProtocol {
 
     fn save_keymap(&mut self) -> Result<(), Box<dyn Error>> {
         self.with_session(|session| session.save())
+    }
+
+    fn open_edit_session(&mut self) -> Result<(), Box<dyn Error>> {
+        self.with_session(|_session| Ok(()))
     }
 
     fn end_edit_session(&mut self) {
