@@ -68,6 +68,11 @@ pub struct QmkDraft {
     pub base_code: u16,
     pub mod_tap_layer: usize,
     pub hex: String,
+    /// Whether the user has interacted with the draft's parameter controls
+    /// since it was built. Only a touched draft can be mid-selection (and so
+    /// ghosted as invalid in the header); a fresh draft mirrors the current
+    /// binding.
+    pub touched: bool,
 }
 
 impl Default for QmkDraft {
@@ -79,6 +84,7 @@ impl Default for QmkDraft {
             base_code: 0,
             mod_tap_layer: 0,
             hex: String::new(),
+            touched: false,
         }
     }
 }
@@ -92,6 +98,43 @@ impl QmkDraft {
 
     fn mod_value(&self) -> u16 {
         (self.mods & 0x0F) | if self.right { MOD_RIGHT_FLAG } else { 0 }
+    }
+
+    /// The keycode the draft currently describes, if every argument is
+    /// meaningfully present: modifier encodings need at least one modifier,
+    /// and a tap/base key of `KC_NO` (0x00) counts as "not picked yet". A
+    /// valid draft applies instantly, so it never lingers staged.
+    pub(super) fn staged(&self) -> Option<u16> {
+        match self.section {
+            Section::Combo if self.base_code != 0 => encode_combo(self.mod_value(), self.base_code),
+            Section::ModTap if self.base_code != 0 => {
+                encode_mod_tap(self.mod_value(), self.base_code)
+            }
+            Section::LayerTap if self.base_code != 0 => {
+                encode_layer_tap(self.mod_tap_layer.min(15), self.base_code)
+            }
+            Section::OneShot => encode_one_shot_mod(self.mod_value()),
+            Section::Any => u16::from_str_radix(&self.hex, 16).ok(),
+            _ => None,
+        }
+    }
+
+    /// The ghost binding shown in the header while the user is mid-selection
+    /// and the draft is not yet a valid binding: the closest meaningful key —
+    /// the picked tap/base key, or the layer of an incomplete layer-tap.
+    /// Modifier-less one-shot and unparseable hex have no key to preview and
+    /// ghost as an empty key.
+    pub(super) fn ghost_action(&self) -> Option<KeyAction> {
+        if !self.touched || self.staged().is_some() {
+            return None;
+        }
+        let code = match self.section {
+            Section::Combo | Section::ModTap => self.base_code,
+            Section::LayerTap => QK_MOMENTARY.start + self.mod_tap_layer.min(15) as u16,
+            Section::OneShot | Section::Any => 0,
+            _ => return None,
+        };
+        Some(KeyAction::Qmk(code))
     }
 }
 
@@ -197,7 +240,12 @@ impl crate::overlay_window::OverlayApp {
             draft,
             |ui, draft| {
                 for section in Section::ALL {
-                    ui.selectable_value(&mut draft.section, section, section.label());
+                    let response =
+                        ui.selectable_value(&mut draft.section, section, section.label());
+                    // Switching sections starts a fresh selection.
+                    if response.changed() {
+                        draft.touched = false;
+                    }
                 }
             },
             |ui, draft| match draft.section {
@@ -231,9 +279,6 @@ impl crate::overlay_window::OverlayApp {
                     self.draw_qmk_mods_page(ui, keyboard, target, draft)
                 }
                 Section::Any => {
-                    let code = u16::from_str_radix(&draft.hex, 16);
-                    // The preview and field hint describe the group's keycode,
-                    // so they live inside the outline; only Apply sits outside.
                     titled_group(ui, "Keycode", |ui| {
                         ui.horizontal(|ui| {
                             ui.label("0x");
@@ -246,25 +291,15 @@ impl crate::overlay_window::OverlayApp {
                             if response.changed() {
                                 text.retain(|c| c.is_ascii_hexdigit());
                                 draft.hex = text;
+                                // Every parsed prefix applies at once; the
+                                // final value sticks as the last write.
+                                self.commit_qmk_draft(keyboard, target, draft);
                             }
                         });
-                        match code {
-                            Ok(code) => {
-                                let label = get_layout_key(code)
-                                    .map(|k| k.tap.full.clone())
-                                    .unwrap_or_else(|| format!("0x{code:04X}"));
-                                ui.weak(format!("Preview: {label}"));
-                            }
-                            Err(_) => {
-                                ui.weak("Enter a 1–4 digit hex keycode");
-                            }
+                        if u16::from_str_radix(&draft.hex, 16).is_err() {
+                            ui.weak("Enter a 1–4 digit hex keycode");
                         }
                     });
-                    if let Ok(code) = code {
-                        if ui.button("Apply").clicked() {
-                            self.apply_write(keyboard, target, KeyAction::Qmk(code));
-                        }
-                    }
                 }
             },
         );
@@ -294,8 +329,9 @@ impl crate::overlay_window::OverlayApp {
     /// The four modifier sections share one page body: each distinct encoding
     /// argument is framed in its own titled group — the modifier set (with its
     /// hand) for the three mod-carrying encodings, the layer for Layer-Tap, and
-    /// the tap/base key where the encoding takes one. Everything stages into
-    /// the draft and applies through the button below the groups.
+    /// the tap/base key where the encoding takes one. Every interaction stages
+    /// into the draft and a complete binding applies instantly; an incomplete
+    /// one ghosts the header slot until it becomes valid.
     fn draw_qmk_mods_page(
         &mut self,
         ui: &mut egui::Ui,
@@ -311,9 +347,8 @@ impl crate::overlay_window::OverlayApp {
         let hand = if draft.right { Hand::Right } else { Hand::Left };
         match draft.section {
             Section::LayerTap => {
-                // The layer radio from the layer page, one key per real layer;
-                // clicking stages the layer, the tap picker below completes
-                // the binding.
+                // One key per real layer; clicking stages the layer and, once
+                // a tap key is picked too, applies the finished binding.
                 let group = super::qmk_catalog::layer_tap_group(
                     keyboard.layer_infos().len(),
                     draft.base_code,
@@ -334,6 +369,7 @@ impl crate::overlay_window::OverlayApp {
                         |candidate| {
                             if let KeyAction::Qmk(code) = &candidate.binding {
                                 draft.mod_tap_layer = ((code - QK_LAYER_TAP.start) >> 8) as usize;
+                                self.commit_qmk_draft(keyboard, target, draft);
                             }
                         },
                     );
@@ -345,6 +381,7 @@ impl crate::overlay_window::OverlayApp {
                     ui.horizontal(|ui| {
                         modifier_toggle_row(ui, "qmk_mods", draft.mods, hand, &mod_style, |mask| {
                             draft.mods ^= mask;
+                            self.commit_qmk_draft(keyboard, target, draft);
                         });
                         ui.weak("Hand");
                         if ui
@@ -352,6 +389,7 @@ impl crate::overlay_window::OverlayApp {
                             .clicked()
                         {
                             draft.right = false;
+                            self.commit_qmk_draft(keyboard, target, draft);
                         }
                         if ui
                             .add(egui::Button::new("R").small().selected(draft.right))
@@ -359,6 +397,7 @@ impl crate::overlay_window::OverlayApp {
                             .clicked()
                         {
                             draft.right = true;
+                            self.commit_qmk_draft(keyboard, target, draft);
                         }
                     });
                 });
@@ -368,35 +407,44 @@ impl crate::overlay_window::OverlayApp {
         match draft.section {
             Section::LayerTap => {
                 titled_group(ui, "Tap key (8-bit basic only)", |ui| {
-                    self.draw_base_picker(ui, draft);
+                    self.draw_base_picker(ui, keyboard, target, draft);
                 });
             }
             Section::Combo | Section::ModTap => {
                 titled_group(ui, "Tap/base key (8-bit basic only)", |ui| {
-                    self.draw_base_picker(ui, draft);
+                    self.draw_base_picker(ui, keyboard, target, draft);
                 });
             }
             Section::OneShot => {}
             // Only the four modifier sections reach this page.
             _ => {}
         }
+    }
 
-        let code = match draft.section {
-            Section::Combo => encode_combo(draft.mod_value(), draft.base_code),
-            Section::OneShot => encode_one_shot_mod(draft.mod_value()),
-            Section::ModTap => encode_mod_tap(draft.mod_value(), draft.base_code),
-            Section::LayerTap => encode_layer_tap(draft.mod_tap_layer, draft.base_code),
-            _ => None,
-        };
-
-        if ui.button("Apply").clicked() {
-            if let Some(code) = code {
-                self.apply_write(keyboard, target, KeyAction::Qmk(code));
+    /// Marks the draft touched and applies its staged keycode when it is a
+    /// complete, changed binding. QMK writes are immediate, so a valid pick
+    /// applies at once — there is no explicit Apply step.
+    fn commit_qmk_draft(&mut self, keyboard: &Keyboard, target: EditTarget, draft: &mut QmkDraft) {
+        draft.touched = true;
+        if let Some(code) = draft.staged() {
+            let action = KeyAction::Qmk(code);
+            if keyboard
+                .get_action(target.layer_index, target.row, target.col)
+                .as_ref()
+                != Some(&action)
+            {
+                self.apply_write(keyboard, target, action);
             }
         }
     }
 
-    fn draw_base_picker(&mut self, ui: &mut egui::Ui, draft: &mut QmkDraft) {
+    fn draw_base_picker(
+        &mut self,
+        ui: &mut egui::Ui,
+        keyboard: &Keyboard,
+        target: EditTarget,
+        draft: &mut QmkDraft,
+    ) {
         let candidates: Vec<Candidate> = (0x00u16..=0xFF)
             .filter(|&code| get_layout_key(code).is_some())
             .map(qmk_candidate)
@@ -412,6 +460,7 @@ impl crate::overlay_window::OverlayApp {
             |candidate| {
                 if let KeyAction::Qmk(code) = &candidate.binding {
                     draft.base_code = *code;
+                    self.commit_qmk_draft(keyboard, target, draft);
                 }
             },
         );
@@ -503,5 +552,51 @@ mod tests {
         assert_eq!(decode(code).base_code, 0x1C);
         assert!(encode_layer_tap(16, 0x1C).is_none());
         assert!(encode_layer_tap(2, 0x100).is_none());
+    }
+
+    #[test]
+    fn staged_requires_every_argument() {
+        // A modifier encoding without modifiers or without a tap key is
+        // mid-selection, not a bindable keycode.
+        let mut draft = QmkDraft::default();
+        draft.section = Section::ModTap;
+        draft.base_code = 0x04;
+        assert_eq!(draft.staged(), None);
+        draft.mods = MOD_LSFT;
+        assert_eq!(draft.staged(), encode_mod_tap(MOD_LSFT, 0x04));
+
+        draft.section = Section::LayerTap;
+        draft.mod_tap_layer = 2;
+        draft.base_code = 0;
+        assert_eq!(draft.staged(), None);
+        draft.base_code = 0x1C;
+        assert_eq!(draft.staged(), encode_layer_tap(2, 0x1C));
+
+        draft.section = Section::OneShot;
+        draft.mods = 0;
+        assert_eq!(draft.staged(), None);
+        draft.mods = MOD_LCTL;
+        assert_eq!(draft.staged(), encode_one_shot_mod(MOD_LCTL));
+    }
+
+    #[test]
+    fn ghost_previews_the_closest_key_while_invalid() {
+        // Untouched or valid drafts never ghost; an invalid touched draft
+        // previews its picked argument.
+        let mut draft = QmkDraft::default();
+        draft.section = Section::ModTap;
+        assert_eq!(draft.ghost_action(), None);
+        draft.touched = true;
+        assert_eq!(
+            draft.ghost_action(),
+            Some(KeyAction::Qmk(0)), // no tap key picked yet: empty key
+        );
+        draft.base_code = 0x04;
+        assert_eq!(
+            draft.ghost_action(),
+            Some(KeyAction::Qmk(0x04)), // the picked tap key, mods still empty
+        );
+        draft.mods = MOD_LSFT;
+        assert_eq!(draft.ghost_action(), None); // now valid: applies instead
     }
 }

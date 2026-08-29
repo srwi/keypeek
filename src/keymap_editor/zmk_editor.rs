@@ -15,8 +15,7 @@ use crate::ui_widgets::titled_group;
 
 /// The editor's pages: how the left panel groups behavior kinds and which
 /// pane the central panel shows. [`Page::kinds`] is the single source for the
-/// groupings — the panel, the pane dispatch, and the Apply rule all derive
-/// from it.
+/// groupings — the panel and the pane dispatch both derive from it.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Page {
     Keys,
@@ -87,12 +86,6 @@ fn page_of(kind: ZmkBehaviorKind) -> Page {
         .expect("every behavior kind belongs to a page")
 }
 
-/// Kinds staged in the draft get an Apply button; every other kind applies
-/// directly on click from its page's key grids.
-fn needs_params(kind: ZmkBehaviorKind) -> bool {
-    matches!(page_of(kind), Page::Keys | Page::Mods)
-}
-
 /// The editor's editable fields for ZMK, rebuilt on each retarget.
 #[derive(Clone)]
 pub struct ZmkDraft {
@@ -112,9 +105,14 @@ pub struct ZmkDraft {
     /// a choice between keys, so it stays staged in the draft.
     pub bl_value: u32,
     /// Whether a Backlight `Set` binding is being staged, which reveals the
-    /// level control and an Apply button. Every other backlight command is a
-    /// plain key in the grid and applies directly.
+    /// level control. Every other backlight command is a plain key in the grid
+    /// and applies directly.
     pub bl_set_staged: bool,
+    /// Whether the user has interacted with the draft's parameter controls
+    /// since it was built. Only a touched draft can be mid-selection (and so
+    /// ghosted as invalid in the header); a fresh draft mirrors the current
+    /// binding.
+    pub touched: bool,
 }
 
 impl Default for ZmkDraft {
@@ -127,6 +125,7 @@ impl Default for ZmkDraft {
             layer_id: 0,
             bl_value: 0,
             bl_set_staged: false,
+            touched: false,
         }
     }
 }
@@ -209,9 +208,9 @@ impl ZmkDraft {
         draft
     }
 
-    /// Builds the `Behavior` the draft currently describes. Only the staged
-    /// kinds (`needs_params`) encode from the draft; every other kind applies
-    /// directly on click from its page's key grids.
+    /// Builds the `Behavior` the draft currently describes. Staged kinds
+    /// encode from the draft; every other kind applies directly on click from
+    /// its page's key grids.
     pub fn to_behavior(&self) -> Behavior {
         use ZmkBehaviorKind as K;
         let usage = HidUsage::from_parts(self.usage.page(), self.usage.id(), self.modifiers);
@@ -223,8 +222,41 @@ impl ZmkDraft {
                 hold: hold_usage(self.hold_mods),
                 tap: usage,
             },
+            K::LayerTap => Behavior::LayerTap {
+                layer_id: self.layer_id,
+                tap: usage,
+            },
             _ => unreachable!("only staged kinds encode from the draft"),
         }
+    }
+
+    /// The behavior the draft currently describes, if complete. A Mod-Tap
+    /// without a hold modifier has nothing to do on hold and cannot be
+    /// applied; every other staged kind always encodes. A valid draft applies
+    /// instantly, so it never lingers staged.
+    pub(super) fn staged(&self) -> Option<Behavior> {
+        match self.kind {
+            ZmkBehaviorKind::KeyPress
+            | ZmkBehaviorKind::KeyToggle
+            | ZmkBehaviorKind::StickyKey
+            | ZmkBehaviorKind::LayerTap => Some(self.to_behavior()),
+            ZmkBehaviorKind::ModTap if self.hold_mods != 0 => Some(self.to_behavior()),
+            _ => None,
+        }
+    }
+
+    /// The ghost binding shown in the header while the user is mid-selection
+    /// and the draft is not yet a valid binding. The only staged kind that can
+    /// be invalid is a Mod-Tap without hold modifiers; it previews its tap side.
+    pub(super) fn ghost_action(&self) -> Option<KeyAction> {
+        if !self.touched || self.staged().is_some() {
+            return None;
+        }
+        Some(KeyAction::Zmk(Behavior::KeyPress(HidUsage::from_parts(
+            self.usage.page(),
+            self.usage.id(),
+            self.modifiers,
+        ))))
     }
 }
 
@@ -263,6 +295,23 @@ fn hold_usage(hold_mods: u8) -> HidUsage {
 }
 
 impl crate::overlay_window::OverlayApp {
+    /// Marks the draft touched and applies its staged behavior when it is a
+    /// complete, changed binding. Valid picks apply at once; ZMK writes are
+    /// session changes tracked by the save bar.
+    fn commit_zmk_draft(&mut self, keyboard: &Keyboard, target: EditTarget, draft: &mut ZmkDraft) {
+        draft.touched = true;
+        if let Some(behavior) = draft.staged() {
+            let action = KeyAction::Zmk(behavior);
+            if keyboard
+                .get_action(target.layer_index, target.row, target.col)
+                .as_ref()
+                != Some(&action)
+            {
+                self.apply_write(keyboard, target, action);
+            }
+        }
+    }
+
     pub(super) fn draw_zmk_editor_body(
         &mut self,
         ui: &mut egui::Ui,
@@ -291,9 +340,11 @@ impl crate::overlay_window::OverlayApp {
                             let response =
                                 ui.selectable_value(&mut draft.kind, *kind, kind.label());
                             // Switching behavior kinds leaves any staged
-                            // Backlight Set behind.
+                            // Backlight Set behind and starts a fresh
+                            // selection.
                             if response.changed() {
                                 draft.bl_set_staged = false;
+                                draft.touched = false;
                             }
                         }
                     } else {
@@ -302,6 +353,7 @@ impl crate::overlay_window::OverlayApp {
                         if response.clicked() {
                             draft.kind = page.kinds()[0];
                             draft.bl_set_staged = false;
+                            draft.touched = false;
                         }
                     }
                     ui.add_space(4.0);
@@ -319,7 +371,7 @@ impl crate::overlay_window::OverlayApp {
                         // and key grid are tightly coupled, so they share the
                         // boundary.
                         titled_group(ui, "Key", |ui| {
-                            self.draw_usage_picker(ui, draft, true);
+                            self.draw_usage_picker(ui, keyboard, target, draft, true);
                         });
                     }
                     Page::Layers => {
@@ -339,25 +391,18 @@ impl crate::overlay_window::OverlayApp {
                                 &mod_style,
                                 |mask| {
                                     draft.hold_mods ^= mask;
+                                    self.commit_zmk_draft(keyboard, target, draft);
                                 },
                             );
                         });
                         titled_group(ui, "Tap key", |ui| {
-                            self.draw_usage_picker(ui, draft, true);
+                            self.draw_usage_picker(ui, keyboard, target, draft, true);
                         });
-                    }
-                }
-
-                if needs_params(draft.kind) {
-                    ui.add_space(8.0);
-                    // A Mod-Tap without a hold modifier has nothing to do on
-                    // hold, so it can't be applied.
-                    let ready = draft.kind != ZmkBehaviorKind::ModTap || draft.hold_mods != 0;
-                    if !ready {
-                        ui.weak("Select at least one hold modifier.");
-                    }
-                    if ui.add_enabled(ready, egui::Button::new("Apply")).clicked() {
-                        self.apply_write(keyboard, target, KeyAction::Zmk(draft.to_behavior()));
+                        // A Mod-Tap without a hold modifier has nothing to do
+                        // on hold, so the header ghosts it as invalid.
+                        if draft.kind == ZmkBehaviorKind::ModTap && draft.hold_mods == 0 {
+                            ui.weak("Select at least one hold modifier.");
+                        }
                     }
                 }
             },
@@ -365,24 +410,27 @@ impl crate::overlay_window::OverlayApp {
     }
 
     /// The usage-page key grid (with optional modifier toggles). Stages the
-    /// picked usage into the draft; returns true when a usage was clicked so
-    /// callers can apply the finished binding immediately.
+    /// picked usage into the draft and commits it: the staged behavior follows
+    /// the draft's kind (key press, key toggle, sticky key, layer-tap tap side,
+    /// mod-tap tap side), so a complete pick applies at once.
     fn draw_usage_picker(
         &mut self,
         ui: &mut egui::Ui,
+        keyboard: &Keyboard,
+        target: EditTarget,
         draft: &mut ZmkDraft,
         with_mods: bool,
-    ) -> bool {
+    ) {
         // The usage-page categories stay as headers inside one shared scroll
         // region; the key-shaped cells come from the shared picker grid.
         let selected = KeyAction::Zmk(Behavior::KeyPress(draft.usage.base()));
         let style = self.paint_style(KEY_UNIT);
-        let mut picked = false;
 
         if with_mods {
             let mod_style = self.paint_style(KEY_UNIT);
             modifier_toggle_grid(ui, "zmk_mods", draft.modifiers, &mod_style, |mask| {
                 draft.modifiers ^= mask;
+                self.commit_zmk_draft(keyboard, target, draft);
             });
         }
 
@@ -398,11 +446,10 @@ impl crate::overlay_window::OverlayApp {
                 // The base usage is staged; the draft's modifiers ride along.
                 if let KeyAction::Zmk(Behavior::KeyPress(usage)) = &candidate.binding {
                     draft.usage = HidUsage::from_parts(usage.page(), usage.id(), draft.modifiers);
-                    picked = true;
+                    self.commit_zmk_draft(keyboard, target, draft);
                 }
             },
         );
-        picked
     }
 
     /// The ZMK layer page: every layer behavior as one framed group of one key
@@ -449,11 +496,13 @@ impl crate::overlay_window::OverlayApp {
             let kind = kinds[gi];
             if let KeyAction::Zmk(behavior) = &candidate.binding {
                 if kind == ZmkBehaviorKind::LayerTap {
-                    // Selecting a Layer-Tap key only stages the layer; the
-                    // tap-key picker appears below and its click applies.
+                    // Selecting a Layer-Tap key applies it with the draft's
+                    // current tap key; the tap-key group below retunes the
+                    // tap side.
                     if let Some(layer_id) = behavior_layer_id(behavior) {
                         draft.kind = ZmkBehaviorKind::LayerTap;
                         draft.layer_id = layer_id;
+                        self.commit_zmk_draft(keyboard, target, draft);
                     }
                 } else {
                     draft.kind = kind;
@@ -468,19 +517,9 @@ impl crate::overlay_window::OverlayApp {
         if draft.kind == ZmkBehaviorKind::LayerTap {
             // The staged tap side is one distinct argument: usage + its
             // modifier toggles share the group.
-            let picked = titled_group(ui, "Tap key", |ui| self.draw_usage_picker(ui, draft, true));
-            if picked {
-                let tap =
-                    HidUsage::from_parts(draft.usage.page(), draft.usage.id(), draft.modifiers);
-                self.apply_write(
-                    keyboard,
-                    target,
-                    KeyAction::Zmk(Behavior::LayerTap {
-                        layer_id: draft.layer_id,
-                        tap,
-                    }),
-                );
-            }
+            titled_group(ui, "Tap key", |ui| {
+                self.draw_usage_picker(ui, keyboard, target, draft, true);
+            });
         }
     }
 
@@ -488,8 +527,8 @@ impl crate::overlay_window::OverlayApp {
     /// The whole grid sits in one outline — one for the shared Special entry,
     /// one per selected command kind. The exception is Backlight `Set`, whose
     /// level is part of the binding: clicking it stages the binding and
-    /// reveals a Level group below the grid with an Apply button, so the
-    /// spinner is only ever shown for that one key.
+    /// reveals a Level group below the grid; the tuned level commits when the
+    /// drag or text entry finishes.
     fn draw_direct_grid(
         &mut self,
         ui: &mut egui::Ui,
@@ -532,18 +571,19 @@ impl crate::overlay_window::OverlayApp {
 
         if staging_set {
             // The level is the one command argument that is part of the
-            // binding, so it gets its own group below the key grid.
+            // binding, so it gets its own group below the key grid. A level is
+            // tuned rather than picked, so the binding commits when the drag
+            // or the text entry finishes instead of on every frame it changes.
             titled_group(ui, "Level", |ui| {
-                ui.add(egui::DragValue::new(&mut draft.bl_value).range(0..=255));
+                let level = ui.add(egui::DragValue::new(&mut draft.bl_value).range(0..=255));
+                if level.drag_stopped() || level.lost_focus() {
+                    let behavior = Behavior::Backlight {
+                        command: zmk_catalog::BACKLIGHT_SET_COMMAND,
+                        value: draft.bl_value,
+                    };
+                    self.apply_write(keyboard, target, KeyAction::Zmk(behavior));
+                }
             });
-            ui.add_space(8.0);
-            if ui.button("Apply").clicked() {
-                let behavior = Behavior::Backlight {
-                    command: zmk_catalog::BACKLIGHT_SET_COMMAND,
-                    value: draft.bl_value,
-                };
-                self.apply_write(keyboard, target, KeyAction::Zmk(behavior));
-            }
         }
     }
 }
@@ -669,5 +709,28 @@ mod tests {
         assert_eq!(draft.layer_id, 3);
         assert_eq!(draft.usage.id(), 0x1C);
         assert_eq!(draft.modifiers, MOD_LSFT);
+    }
+
+    #[test]
+    fn mod_tap_without_hold_modifier_is_invalid_and_ghosts() {
+        let mut draft = ZmkDraft::default();
+        draft.kind = ZmkBehaviorKind::ModTap;
+        draft.hold_mods = 0;
+        draft.touched = true;
+        assert_eq!(draft.staged(), None);
+        // The ghost previews the tap side while the hold side is empty.
+        assert_eq!(
+            draft.ghost_action(),
+            Some(KeyAction::Zmk(Behavior::KeyPress(draft.usage.base())))
+        );
+        draft.hold_mods = MOD_LSFT;
+        assert_eq!(
+            draft.staged(),
+            Some(Behavior::ModTap {
+                hold: hold_usage(MOD_LSFT),
+                tap: draft.usage.base(),
+            })
+        );
+        assert_eq!(draft.ghost_action(), None);
     }
 }

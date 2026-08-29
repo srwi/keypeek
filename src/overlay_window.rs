@@ -107,6 +107,7 @@ impl OverlayApp {
         self.editor.target = None;
         self.editor.pending = None;
         self.editor.pending_kind = None;
+        self.editor.queued = None;
         self.editor.error = None;
         self.editor.qmk_draft = Default::default();
         self.editor.zmk_draft = Default::default();
@@ -187,6 +188,7 @@ impl OverlayApp {
             // The connection dropped; close the editor and any write session.
             self.editor.target = None;
             self.editor.pending = None;
+            self.editor.queued = None;
             self.editor.error = None;
         }
 

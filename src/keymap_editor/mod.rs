@@ -13,6 +13,7 @@ pub use zmk_editor::ZmkDraft;
 use crate::key_action::KeyAction;
 use crate::key_paint::{self, KeyDisplay};
 use crate::keyboard::Keyboard;
+use crate::layout_key::{BorderStyle, Label};
 use crate::protocols::WriteSupport;
 use egui::Window;
 use std::sync::mpsc;
@@ -50,6 +51,10 @@ pub struct EditorState {
     pub pending: Option<mpsc::Receiver<Result<(), String>>>,
     /// What the in-flight write is for.
     pub pending_kind: Option<PendingKind>,
+    /// Last-write-wins slot for a write requested while one is in flight:
+    /// rapid edits (every valid pick applies instantly) must queue instead of
+    /// being dropped, so the final state always reaches the device.
+    pub queued: Option<(EditTarget, KeyAction)>,
     /// Last write/read error shown in the window.
     pub error: Option<String>,
     /// Per-firmware draft state, rebuilt on each retarget.
@@ -67,6 +72,7 @@ impl EditorState {
             target: None,
             pending: None,
             pending_kind: None,
+            queued: None,
             error: None,
             qmk_draft: QmkDraft::default(),
             zmk_draft: ZmkDraft::default(),
@@ -131,7 +137,7 @@ impl crate::overlay_window::OverlayApp {
             .map(|info| info.name.clone().unwrap_or_default())
             .collect();
 
-        self.poll_pending_write(ctx);
+        self.poll_pending_write(ctx, keyboard);
 
         let mut open = true;
         // A fixed-ish, user-resizable window: panes scroll internally instead
@@ -142,8 +148,12 @@ impl crate::overlay_window::OverlayApp {
             .default_size(egui::vec2(480.0, 620.0))
             .min_size(egui::vec2(440.0, 320.0))
             .show(ctx, |ui| {
-                // Header: the current assignment rendered as the exact key it
-                // paints on the overlay, with its raw firmware value beneath.
+                // Header: one key slot. It shows the current assignment
+                // rendered as the exact key it paints on the overlay, with its
+                // raw firmware value beneath. While a staged draft is mid-
+                // selection and not yet a valid binding, the slot instead
+                // shows the ghosted draft with "Invalid" beneath it — a valid
+                // draft applies instantly, so it never lingers visible.
                 let style = self.paint_style(PREVIEW_KEY_UNIT);
                 let action = keyboard.get_action(target.layer_index, target.row, target.col);
                 let layout_key = action
@@ -156,19 +166,43 @@ impl crate::overlay_window::OverlayApp {
                     .get_key(0, target.row, target.col)
                     .map(|k| k.kind)
                     .unwrap_or(crate::layout_key::KeycodeKind::Basic);
-                // Colors follow the overlay rules; an unbound slot renders
-                // ghosted, like a pinned transparent binding.
+                let ghost = match action.as_ref() {
+                    Some(KeyAction::Qmk(_)) => self.editor.qmk_draft.ghost_action(),
+                    Some(KeyAction::Zmk(_)) => self.editor.zmk_draft.ghost_action(),
+                    _ => None,
+                };
+                let (mut display_key, raw_text, ghosted) = match &ghost {
+                    Some(ghost_action) => (
+                        ghost_action.resolve_label(&layer_names).unwrap_or_default(),
+                        "Invalid".to_string(),
+                        true,
+                    ),
+                    None => {
+                        let raw_text = match &action {
+                            Some(action) => raw_value_text(action),
+                            None => "No binding at this key".to_string(),
+                        };
+                        (layout_key, raw_text, action.is_none())
+                    }
+                };
+                // Colors follow the overlay rules; a ghosted draft or unbound
+                // slot renders ghosted, like a pinned transparent binding.
                 let colors_for = |layer: u8| style.colors_for(layer, kind, false, false);
-                let colors = if action.is_none() {
-                    colors_for(layout_key.layer_ref.unwrap_or(target.layer_index as u8)).ghosted()
+                let mut colors = if ghosted {
+                    colors_for(display_key.layer_ref.unwrap_or(target.layer_index as u8)).ghosted()
                 } else {
-                    colors_for(layout_key.layer_ref.unwrap_or(target.layer_index as u8))
+                    colors_for(display_key.layer_ref.unwrap_or(target.layer_index as u8))
                 };
-
-                let raw_text = match &action {
-                    Some(action) => raw_value_text(action),
-                    None => "No binding at this key".to_string(),
-                };
+                // The invalid draft speaks for itself: a circle-x inside the
+                // key, plus a dashed amber outline no other key state uses
+                // (the styled border derives its color from the fill).
+                if ghost.is_some() {
+                    display_key.tap = Label::new(egui_phosphor::regular::SMILEY_X_EYES);
+                    display_key.border = BorderStyle::Dashed;
+                    colors.fill = colors
+                        .fill
+                        .lerp_to_gamma(egui::Color32::from_rgb(220, 180, 60), 0.45);
+                }
 
                 ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
                     let (_, cell) = ui.allocate_exact_size(
@@ -180,7 +214,7 @@ impl crate::overlay_window::OverlayApp {
                         cell.rect,
                         0.0,
                         &KeyDisplay {
-                            key: &layout_key,
+                            key: &display_key,
                             colors,
                             hovered: false,
                             pressed: false,
@@ -196,14 +230,12 @@ impl crate::overlay_window::OverlayApp {
                 match (write_support, action.as_ref()) {
                     (WriteSupport::Immediate, Some(KeyAction::Qmk(_))) => {
                         ui.add_space(8.0);
-                        ui.separator();
                         let mut draft = self.editor.qmk_draft.clone();
                         self.draw_qmk_editor_body(ui, keyboard, target, &mut draft);
                         self.editor.qmk_draft = draft;
                     }
                     (WriteSupport::Session, Some(KeyAction::Zmk(_))) => {
                         ui.add_space(8.0);
-                        ui.separator();
                         let mut draft = self.editor.zmk_draft.clone();
                         self.draw_zmk_editor_body(ui, keyboard, target, &mut draft);
                         self.editor.zmk_draft = draft;
@@ -262,11 +294,14 @@ impl crate::overlay_window::OverlayApp {
         self.editor.error = None;
     }
 
-    /// Starts writing a finished binding to the target key, unless one is
-    /// already in flight. ZMK writes are session changes tracked by the save
-    /// bar; QMK writes go straight to the device.
+    /// Starts writing a finished binding to the target key. ZMK writes are
+    /// session changes tracked by the save bar; QMK writes go straight to the
+    /// device. While a write is in flight the request waits in the
+    /// last-write-wins queue instead of being dropped — the keymap worker
+    /// serializes commands, so the queued write lands right after it.
     fn apply_write(&mut self, keyboard: &Keyboard, target: EditTarget, action: KeyAction) {
         if self.editor.pending.is_some() {
+            self.editor.queued = Some((target, action));
             return;
         }
         let is_session = matches!(action, KeyAction::Zmk(_));
@@ -278,8 +313,9 @@ impl crate::overlay_window::OverlayApp {
         self.editor.error = None;
     }
 
-    /// Polls an in-flight write once per frame, repainting while it is pending.
-    fn poll_pending_write(&mut self, ctx: &egui::Context) {
+    /// Polls an in-flight write once per frame, repainting while it is
+    /// pending, and kicks off the queued write when the device is ready.
+    fn poll_pending_write(&mut self, ctx: &egui::Context, keyboard: &Keyboard) {
         let Some(receiver) = &self.editor.pending else {
             return;
         };
@@ -295,10 +331,14 @@ impl crate::overlay_window::OverlayApp {
                     }
                     None => {}
                 }
+                if let Some((target, action)) = self.editor.queued.take() {
+                    self.apply_write(keyboard, target, action);
+                }
             }
             Ok(Err(e)) => {
                 self.editor.pending = None;
                 self.editor.pending_kind = None;
+                self.editor.queued = None;
                 self.editor.error = Some(e);
             }
             Err(mpsc::TryRecvError::Empty) => {
@@ -307,6 +347,7 @@ impl crate::overlay_window::OverlayApp {
             Err(mpsc::TryRecvError::Disconnected) => {
                 self.editor.pending = None;
                 self.editor.pending_kind = None;
+                self.editor.queued = None;
                 self.editor.error = Some("Connection lost".to_string());
             }
         }
@@ -369,6 +410,7 @@ impl crate::overlay_window::OverlayApp {
         self.editor.target = None;
         self.editor.pending = None;
         self.editor.pending_kind = None;
+        self.editor.queued = None;
         self.editor.error = None;
         self.editor.qmk_draft = Default::default();
         self.editor.zmk_draft = Default::default();
