@@ -363,17 +363,22 @@ impl crate::overlay_window::OverlayApp {
                     }
                     Page::Mods => {
                         // Two distinct arguments, two groups: the hold-side
-                        // modifier mask, and the tap-side usage (whose own
-                        // modifier toggles stay inside the tap group).
+                        // modifier (single choice for standard ZMK &mt), and
+                        // the tap-side usage (whose own modifier toggles stay
+                        // inside the tap group).
                         let mod_style = self.paint_style(KEY_UNIT);
-                        titled_group(ui, "Hold modifiers", |ui| {
+                        titled_group(ui, "Hold modifier", |ui| {
                             modifier_toggle_grid(
                                 ui,
                                 "zmk_hold_mod",
                                 draft.hold_mods,
                                 &mod_style,
                                 |mask| {
-                                    draft.hold_mods ^= mask;
+                                    draft.hold_mods = if draft.hold_mods == mask {
+                                        0
+                                    } else {
+                                        mask
+                                    };
                                     self.commit_zmk_draft(keyboard, target, draft);
                                 },
                             );
@@ -384,7 +389,7 @@ impl crate::overlay_window::OverlayApp {
                         // A Mod-Tap without a hold modifier has nothing to do
                         // on hold, so the header ghosts it as invalid.
                         if draft.kind == ZmkBehaviorKind::ModTap && draft.hold_mods == 0 {
-                            ui.weak("Select at least one hold modifier.");
+                            ui.weak("Select a hold modifier.");
                         }
                     }
                 }
@@ -420,9 +425,22 @@ impl crate::overlay_window::OverlayApp {
         // No inner scroll area: the surrounding editor pane already scrolls,
         // so categories lay out flat inside it.
         let categories = zmk_catalog::categories();
+        let filtered_categories: Vec<super::picker::CandidateGroup> = categories
+            .iter()
+            .map(|group| super::picker::CandidateGroup {
+                name: group.name,
+                candidates: group
+                    .candidates
+                    .iter()
+                    .filter(|c| keyboard.is_action_supported(&c.binding))
+                    .cloned()
+                    .collect(),
+            })
+            .filter(|group| !group.candidates.is_empty())
+            .collect();
         candidate_groups_rows(
             ui,
-            categories,
+            &filtered_categories,
             |_| Some(selected.clone()),
             &style,
             |_, candidate| {
@@ -529,6 +547,9 @@ impl crate::overlay_window::OverlayApp {
                 .collect()
         } else {
             zmk_catalog::command_candidates(draft.kind, draft.bl_value)
+                .into_iter()
+                .filter(|c| keyboard.is_action_supported(&c.binding))
+                .collect()
         };
         let grid_title = if is_special {
             "Special"

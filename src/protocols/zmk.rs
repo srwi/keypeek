@@ -3,11 +3,11 @@ use super::zmk_rpc::{self, ZmkData, ZmkStudioSession, ZmkTransport};
 use super::{Key, KeyboardDefinition, KeyboardLayout, KeyboardProtocol, Reopener, WriteSupport};
 use crate::key_action::{KeyAction, KeymapSnapshot, LayerInfo};
 use hidapi::{HidApi, HidDevice};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use zmk_studio_api::{BehaviorRole, ClientError, ResolvedLayer};
+use zmk_studio_api::{BehaviorBindingParametersSet, BehaviorRole, ClientError, ResolvedLayer};
 
 const ZMK_USAGE_PAGE: u16 = 0xff60;
 
@@ -17,6 +17,7 @@ struct ZmkLayout {
     /// after writes; mutated in place by the write methods.
     snapshot: Mutex<KeymapSnapshot>,
     supported_behaviors: HashSet<BehaviorRole>,
+    behavior_metadata: HashMap<BehaviorRole, Vec<BehaviorBindingParametersSet>>,
 }
 
 pub struct ZmkProtocol {
@@ -257,9 +258,17 @@ impl KeyboardProtocol for ZmkProtocol {
         &self,
     ) -> Option<Arc<dyn Fn(&crate::key_action::KeyAction) -> bool + Send + Sync>> {
         let supported = self.layout.supported_behaviors.clone();
+        let metadata = self.layout.behavior_metadata.clone();
         Some(Arc::new(move |action| match action {
             crate::key_action::KeyAction::Zmk(behavior) => match behavior.role() {
-                Some(role) => supported.is_empty() || supported.contains(&role),
+                Some(role) => {
+                    if !supported.is_empty() && !supported.contains(&role) {
+                        return false;
+                    }
+                    metadata
+                        .get(&role)
+                        .map_or(true, |sets| behavior.matches_metadata(sets))
+                }
                 None => true,
             },
             _ => true,
@@ -329,6 +338,7 @@ fn build_from_zmk_data(vid: u16, pid: u16, data: ZmkData) -> Result<ZmkLayout, B
         definition,
         snapshot: Mutex::new(snapshot),
         supported_behaviors: data.supported_behaviors,
+        behavior_metadata: data.behavior_metadata,
     })
 }
 

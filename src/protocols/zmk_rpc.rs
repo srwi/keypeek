@@ -104,13 +104,14 @@ fn windows_bluetooth_radio_is_on() -> windows::core::Result<bool> {
     Ok(radio.State()? == RadioState::On)
 }
 
-use std::collections::HashSet;
-use zmk_studio_api::BehaviorRole;
+use std::collections::{HashMap, HashSet};
+use zmk_studio_api::{BehaviorBindingParametersSet, BehaviorRole};
 
 pub struct ZmkData {
     pub physical_layouts: keymap::PhysicalLayouts,
     pub resolved_layers: Vec<ResolvedLayer>,
     pub supported_behaviors: HashSet<BehaviorRole>,
+    pub behavior_metadata: HashMap<BehaviorRole, Vec<BehaviorBindingParametersSet>>,
 }
 
 /// A ZMK Studio RPC connection held open across an edit session. The two
@@ -245,6 +246,7 @@ fn fetch_zmk_data_from_client<T: Read + Write>(
     let resolved_layers = client.resolve_keymap()?;
 
     let supported_behaviors = client.supported_roles().unwrap_or_default();
+    let behavior_metadata = client.behavior_metadata().unwrap_or_default();
 
     // Drop the ZMK RPC connection and give transport time to settle before
     // the caller opens any other handle (e.g. HID).
@@ -255,5 +257,6 @@ fn fetch_zmk_data_from_client<T: Read + Write>(
         physical_layouts,
         resolved_layers,
         supported_behaviors,
+        behavior_metadata,
     })
 }

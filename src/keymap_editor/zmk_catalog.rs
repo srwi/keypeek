@@ -22,21 +22,23 @@ pub use zmk_studio_api::BehaviorRole as ZmkBehaviorKind;
 
 pub fn sample_behavior(role: ZmkBehaviorKind) -> Behavior {
     use zmk_studio_api::BehaviorRole::*;
+    let sample_usage = HidUsage::from(Keycode::A);
+    let sample_mod_usage = HidUsage::from(Keycode::LEFT_SHIFT);
     match role {
-        KeyPress => Behavior::KeyPress(HidUsage::from_encoded(0)),
-        KeyToggle => Behavior::KeyToggle(HidUsage::from_encoded(0)),
-        StickyKey => Behavior::StickyKey(HidUsage::from_encoded(0)),
+        KeyPress => Behavior::KeyPress(sample_usage),
+        KeyToggle => Behavior::KeyToggle(sample_usage),
+        StickyKey => Behavior::StickyKey(sample_usage),
         MomentaryLayer => Behavior::MomentaryLayer { layer_id: 0 },
         ToggleLayer => Behavior::ToggleLayer { layer_id: 0 },
         ToLayer => Behavior::ToLayer { layer_id: 0 },
         StickyLayer => Behavior::StickyLayer { layer_id: 0 },
         LayerTap => Behavior::LayerTap {
             layer_id: 0,
-            tap: HidUsage::from_encoded(0),
+            tap: sample_usage,
         },
         ModTap => Behavior::ModTap {
-            hold: HidUsage::from_encoded(0),
-            tap: HidUsage::from_encoded(0),
+            hold: sample_mod_usage,
+            tap: sample_usage,
         },
         Transparent => Behavior::Transparent,
         None => Behavior::None,
@@ -61,7 +63,7 @@ pub fn sample_behavior(role: ZmkBehaviorKind) -> Behavior {
             command: 0,
             value: 0,
         },
-        MouseKeyPress => Behavior::MouseKeyPress { value: 0 },
+        MouseKeyPress => Behavior::MouseKeyPress { value: 1 },
         MouseMove => Behavior::MouseMove { value: 0 },
         MouseScroll => Behavior::MouseScroll { value: 0 },
     }
@@ -145,11 +147,11 @@ pub fn command_candidates(kind: ZmkBehaviorKind, backlight_level: u32) -> Vec<Ca
             .map(|value| Behavior::MouseKeyPress { value })
             .collect(),
         // ZMK pointing values: `(x << 16) | (y & 0xFFFF)`.
-        MouseMove => [0x0001_0000, 0xFFFF_FFFF, 0x0000_0001, 0x0000_FFFF]
+        MouseMove => [0x0001_0000, 0xFFFF_0000, 0x0000_0001, 0x0000_FFFF]
             .into_iter()
             .map(|value| Behavior::MouseMove { value })
             .collect(),
-        MouseScroll => [0x0000_0001, 0x0000_FFFF, 0x0001_0000, 0xFFFF_FFFF]
+        MouseScroll => [0x0000_0001, 0x0000_FFFF, 0x0001_0000, 0xFFFF_0000]
             .into_iter()
             .map(|value| Behavior::MouseScroll { value })
             .collect(),
