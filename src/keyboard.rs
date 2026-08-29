@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::key_action::{KeyAction, KeymapSnapshot};
+use crate::key_action::KeyAction;
 use crate::key_matrix::{BoundKey, KeyMatrix};
 use crate::layout_key::LayoutKey;
 use crate::protocols::{DeviceLocked, KeyboardLayout, KeyboardProtocol, WriteSupport};
@@ -161,9 +161,6 @@ pub enum KeymapCommand {
     Save {
         respond: mpsc::Sender<Result<(), String>>,
     },
-    Discard {
-        respond: mpsc::Sender<Result<(), String>>,
-    },
     /// Fire-and-forget; closes any transient write connection.
     EndEditSession,
 }
@@ -178,18 +175,6 @@ fn write_error_text(error: Box<dyn Error>) -> String {
     } else {
         error.to_string()
     }
-}
-
-/// Replaces the matrix content from a fresh snapshot while keeping per-key
-/// pressed state (a discard must not clear keys the user is holding).
-fn replace_matrix_content(matrix: &Arc<Mutex<KeyMatrix>>, snapshot: KeymapSnapshot) {
-    let mut guard = matrix.lock().unwrap();
-    let pressed = guard.pressed.clone();
-    let rows = pressed.len();
-    let cols = pressed.first().map_or(0, Vec::len);
-    let mut replacement = KeyMatrix::from_snapshot(snapshot, rows, cols);
-    replacement.pressed = pressed;
-    *guard = replacement;
 }
 
 /// Executes one command on the protocol. Runs on the reader thread.
@@ -243,16 +228,6 @@ fn run_keymap_command(
             let result = protocol.save_keymap().map_err(write_error_text);
             let _ = respond.send(result);
         }
-        KeymapCommand::Discard { respond } => match protocol.discard_keymap() {
-            Ok(snapshot) => {
-                replace_matrix_content(matrix, snapshot);
-                ui_wake.request_repaint();
-                let _ = respond.send(Ok(()));
-            }
-            Err(e) => {
-                let _ = respond.send(Err(write_error_text(e)));
-            }
-        },
         KeymapCommand::EndEditSession => protocol.end_edit_session(),
     }
 }
@@ -519,10 +494,6 @@ impl Keyboard {
         self.send_keymap_command(|respond| KeymapCommand::Save { respond })
     }
 
-    pub fn discard_keymap(&self) -> mpsc::Receiver<Result<(), String>> {
-        self.send_keymap_command(|respond| KeymapCommand::Discard { respond })
-    }
-
     /// Fire-and-forget: closes any transient write connection on the protocol.
     pub fn end_edit_session(&self) {
         let _ = self.command_tx.send(KeymapCommand::EndEditSession);
@@ -540,9 +511,7 @@ impl Keyboard {
 
         if let Err(send_error) = self.command_tx.send(command) {
             match send_error.0 {
-                KeymapCommand::SetKey { respond, .. }
-                | KeymapCommand::Save { respond }
-                | KeymapCommand::Discard { respond } => {
+                KeymapCommand::SetKey { respond, .. } | KeymapCommand::Save { respond } => {
                     let _ = respond.send(Err("Connection lost".to_string()));
                 }
                 KeymapCommand::EndEditSession => {}

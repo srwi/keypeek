@@ -34,13 +34,6 @@ pub struct EditTarget {
 pub enum PendingKind {
     Set,
     Save,
-    Discard,
-}
-
-enum PromptAnswer {
-    Save,
-    Discard,
-    Cancel,
 }
 
 /// Editor window state, owned by `OverlayApp`.
@@ -62,8 +55,9 @@ pub struct EditorState {
     pub zmk_draft: ZmkDraft,
     /// ZMK: whether there are unsaved changes in device RAM.
     pub zmk_dirty: bool,
-    /// ZMK: a settings-close was requested while dirty; show the save prompt.
-    pub close_prompt: bool,
+    /// ZMK: a close was requested while dirty; the window saves first, then
+    /// closes itself. No further edits or retargets happen while closing.
+    pub closing: bool,
 }
 
 impl EditorState {
@@ -77,7 +71,7 @@ impl EditorState {
             qmk_draft: QmkDraft::default(),
             zmk_draft: ZmkDraft::default(),
             zmk_dirty: false,
-            close_prompt: false,
+            closing: false,
         }
     }
 }
@@ -137,143 +131,186 @@ impl crate::overlay_window::OverlayApp {
             .map(|info| info.name.clone().unwrap_or_default())
             .collect();
 
+        // A close was requested (window X or settings close): a dirty ZMK
+        // session saves first, and the window dismisses itself once the save
+        // lands. The save starts here, where the keyboard is at hand.
+        if self.editor.closing && self.editor.pending.is_none() && self.editor.zmk_dirty {
+            self.start_save(keyboard);
+        }
+
         self.poll_pending_write(ctx, keyboard);
 
-        let mut open = true;
-        // A fixed-ish, user-resizable window: panes scroll internally instead
-        // of growing the window to their content height.
-        Window::new("Edit key")
-            .open(&mut open)
+        // While the close-save is in flight the window has no close button:
+        // it dismisses itself when the save lands.
+        let closing = self.editor.closing;
+        let mut window = Window::new("Edit key")
             .resizable(true)
             .default_size(egui::vec2(480.0, 620.0))
-            .min_size(egui::vec2(440.0, 320.0))
-            .show(ctx, |ui| {
-                // Header: one key slot. It shows the current assignment
-                // rendered as the exact key it paints on the overlay, with its
-                // raw firmware value beneath. While a staged draft is mid-
-                // selection and not yet a valid binding, the slot instead
-                // shows the ghosted draft with "Invalid" beneath it — a valid
-                // draft applies instantly, so it never lingers visible.
-                let style = self.paint_style(PREVIEW_KEY_UNIT);
-                let action = keyboard.get_action(target.layer_index, target.row, target.col);
-                let layout_key = action
-                    .as_ref()
-                    .and_then(|a| a.resolve_label(&layer_names))
-                    .unwrap_or_default();
-                // Kind is taken from the layer-0 key at this position, matching
-                // the overlay's coloring rule for Modifier/Special darkening.
-                let kind = keyboard
-                    .get_key(0, target.row, target.col)
-                    .map(|k| k.kind)
-                    .unwrap_or(crate::layout_key::KeycodeKind::Basic);
-                let ghost = match action.as_ref() {
-                    Some(KeyAction::Qmk(_)) => self.editor.qmk_draft.ghost_action(),
-                    Some(KeyAction::Zmk(_)) => self.editor.zmk_draft.ghost_action(),
-                    _ => None,
-                };
-                let (mut display_key, raw_text, ghosted) = match &ghost {
-                    Some(ghost_action) => (
-                        ghost_action.resolve_label(&layer_names).unwrap_or_default(),
-                        "Invalid".to_string(),
-                        true,
-                    ),
-                    None => {
-                        let raw_text = match &action {
-                            Some(action) => raw_value_text(action),
-                            None => "No binding at this key".to_string(),
-                        };
-                        (layout_key, raw_text, action.is_none())
-                    }
-                };
-                // Colors follow the overlay rules; a ghosted draft or unbound
-                // slot renders ghosted, like a pinned transparent binding.
-                let colors_for = |layer: u8| style.colors_for(layer, kind, false, false);
-                let mut colors = if ghosted {
-                    colors_for(display_key.layer_ref.unwrap_or(target.layer_index as u8)).ghosted()
-                } else {
-                    colors_for(display_key.layer_ref.unwrap_or(target.layer_index as u8))
-                };
-                // The invalid draft speaks for itself: a circle-x inside the
-                // key, plus a dashed amber outline no other key state uses
-                // (the styled border derives its color from the fill).
-                if ghost.is_some() {
-                    display_key.tap = Label::new(egui_phosphor::regular::SMILEY_X_EYES);
-                    display_key.border = BorderStyle::Dashed;
-                    colors.fill = colors
-                        .fill
-                        .lerp_to_gamma(egui::Color32::from_rgb(220, 180, 60), 0.45);
-                }
+            .min_size(egui::vec2(440.0, 320.0));
+        let mut open = true;
+        if !closing {
+            window = window.open(&mut open);
+        }
+        // A fixed-ish, user-resizable window: panes scroll internally instead
+        // of growing the window to their content height.
+        window.show(ctx, |ui| {
+            if let Some(error) = &self.editor.error {
+                ui.add_space(4.0);
+                ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
+            }
 
-                ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
-                    let (_, cell) = ui.allocate_exact_size(
-                        egui::vec2(PREVIEW_KEY_UNIT, PREVIEW_KEY_UNIT),
-                        egui::Sense::hover(),
-                    );
-                    key_paint::paint(
-                        ui,
-                        cell.rect,
-                        0.0,
-                        &KeyDisplay {
-                            key: &display_key,
-                            colors,
-                            hovered: false,
-                            pressed: false,
-                            shift_held: false,
-                            ralt_held: false,
-                        },
-                        &style,
-                    );
-                    ui.weak(raw_text);
-                });
-
-                let write_support = keyboard.write_support();
-                match (write_support, action.as_ref()) {
-                    (WriteSupport::Immediate, Some(KeyAction::Qmk(_))) => {
-                        ui.add_space(8.0);
-                        let mut draft = self.editor.qmk_draft.clone();
-                        self.draw_qmk_editor_body(ui, keyboard, target, &mut draft);
-                        self.editor.qmk_draft = draft;
-                    }
-                    (WriteSupport::Session, Some(KeyAction::Zmk(_))) => {
-                        ui.add_space(8.0);
-                        let mut draft = self.editor.zmk_draft.clone();
-                        self.draw_zmk_editor_body(ui, keyboard, target, &mut draft);
-                        self.editor.zmk_draft = draft;
-                        self.draw_save_bar(ui, keyboard);
-                    }
-                    _ => {
-                        ui.add_space(8.0);
-                        ui.weak("This key cannot be edited in this version.");
-                    }
+            // Header: one key slot. It shows the current assignment
+            // rendered as the exact key it paints on the overlay, with its
+            // raw firmware value beneath. While a staged draft is mid-
+            // selection and not yet a valid binding, the slot instead
+            // shows the ghosted draft with "Invalid" beneath it — a valid
+            // draft applies instantly, so it never lingers visible.
+            let style = self.paint_style(PREVIEW_KEY_UNIT);
+            let action = keyboard.get_action(target.layer_index, target.row, target.col);
+            let layout_key = action
+                .as_ref()
+                .and_then(|a| a.resolve_label(&layer_names))
+                .unwrap_or_default();
+            // Kind is taken from the layer-0 key at this position, matching
+            // the overlay's coloring rule for Modifier/Special darkening.
+            let kind = keyboard
+                .get_key(0, target.row, target.col)
+                .map(|k| k.kind)
+                .unwrap_or(crate::layout_key::KeycodeKind::Basic);
+            let ghost = match action.as_ref() {
+                Some(KeyAction::Qmk(_)) => self.editor.qmk_draft.ghost_action(),
+                Some(KeyAction::Zmk(_)) => self.editor.zmk_draft.ghost_action(),
+                _ => None,
+            };
+            let (mut display_key, raw_text, ghosted) = match &ghost {
+                Some(ghost_action) => (
+                    ghost_action.resolve_label(&layer_names).unwrap_or_default(),
+                    "Invalid".to_string(),
+                    true,
+                ),
+                None => {
+                    let raw_text = match &action {
+                        Some(action) => raw_value_text(action),
+                        None => "No binding at this key".to_string(),
+                    };
+                    (layout_key, raw_text, action.is_none())
                 }
+            };
+            // Colors follow the overlay rules; a ghosted draft or unbound
+            // slot renders ghosted, like a pinned transparent binding.
+            let colors_for = |layer: u8| style.colors_for(layer, kind, false, false);
+            let mut colors = if ghosted {
+                colors_for(display_key.layer_ref.unwrap_or(target.layer_index as u8)).ghosted()
+            } else {
+                colors_for(display_key.layer_ref.unwrap_or(target.layer_index as u8))
+            };
+            // The invalid draft speaks for itself: a circle-x inside the
+            // key, plus a dashed amber outline no other key state uses
+            // (the styled border derives its color from the fill).
+            if ghost.is_some() {
+                display_key.tap = Label::new(egui_phosphor::regular::SMILEY_X_EYES);
+                display_key.border = BorderStyle::Dashed;
+                colors.fill = colors
+                    .fill
+                    .lerp_to_gamma(egui::Color32::from_rgb(220, 180, 60), 0.45);
+            }
 
-                if let Some(error) = &self.editor.error {
-                    ui.add_space(4.0);
-                    ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
-                }
+            let status_top = ui.cursor().top();
+            ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                let (_, cell) = ui.allocate_exact_size(
+                    egui::vec2(PREVIEW_KEY_UNIT, PREVIEW_KEY_UNIT),
+                    egui::Sense::hover(),
+                );
+                key_paint::paint(
+                    ui,
+                    cell.rect,
+                    0.0,
+                    &KeyDisplay {
+                        key: &display_key,
+                        colors,
+                        hovered: false,
+                        pressed: false,
+                        shift_held: false,
+                        ralt_held: false,
+                    },
+                    &style,
+                );
+                ui.weak(raw_text);
             });
 
+            // The session status floats in the header's top-right corner: an
+            // absolute child UI paints there without advancing the layout,
+            // so the centered preview never moves for it.
+            let status_corner = egui::Rect::from_min_max(
+                egui::pos2(ui.max_rect().left(), status_top),
+                egui::pos2(ui.max_rect().right(), status_top + 24.0),
+            );
+            let mut status_ui = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(status_corner)
+                    .layout(egui::Layout::right_to_left(egui::Align::Min)),
+            );
+            self.draw_session_status(&mut status_ui);
+
+            // While closing, the save is in flight; nothing here may
+            // start another write that would land after the save.
+            if closing {
+                ui.disable();
+            }
+            let write_support = keyboard.write_support();
+            match (write_support, action.as_ref()) {
+                (WriteSupport::Immediate, Some(KeyAction::Qmk(_))) => {
+                    ui.add_space(8.0);
+                    let mut draft = self.editor.qmk_draft.clone();
+                    self.draw_qmk_editor_body(ui, keyboard, target, &mut draft);
+                    self.editor.qmk_draft = draft;
+                }
+                (WriteSupport::Session, Some(KeyAction::Zmk(_))) => {
+                    ui.add_space(8.0);
+                    let mut draft = self.editor.zmk_draft.clone();
+                    self.draw_zmk_editor_body(ui, keyboard, target, &mut draft);
+                    self.editor.zmk_draft = draft;
+                }
+                _ => {
+                    ui.add_space(8.0);
+                    ui.weak("This key cannot be edited in this version.");
+                }
+            }
+        });
+
         if !open {
-            self.close_editor_window();
+            self.on_close_request();
         }
     }
 
-    /// The Unsaved changes / Save / Discard bar for ZMK sessions.
-    fn draw_save_bar(&mut self, ui: &mut egui::Ui, keyboard: &Keyboard) {
+    /// Handles the window's close button. ZMK sessions save first: the
+    /// window stays up (spinner in the bar) until the save lands, then
+    /// dismisses itself. A failed save revives the window with the error.
+    fn on_close_request(&mut self) {
+        self.editor.error = None;
+        if self.editor.zmk_dirty {
+            self.editor.closing = true;
+        } else {
+            self.close_editor();
+        }
+    }
+
+    /// The session status, floated into the header's top-right corner: an
+    /// amber reminder while the device holds unsaved changes, and a spinner
+    /// while a close-save is in flight.
+    fn draw_session_status(&self, ui: &mut egui::Ui) {
         if !self.editor.zmk_dirty {
             return;
         }
-        ui.add_space(8.0);
-        ui.separator();
-        ui.horizontal(|ui| {
-            ui.colored_label(egui::Color32::from_rgb(220, 180, 60), "Unsaved changes");
-            if ui.button("Save").clicked() {
-                self.start_save(keyboard);
-            }
-            if ui.button("Discard").clicked() {
-                self.start_discard(keyboard);
-            }
-        });
+        // The host child UI is laid out right-to-left so the group hugs the
+        // corner's right edge; `Align::Min` keeps the row content-height.
+        if self.editor.closing {
+            ui.label("Saving…");
+            ui.add(egui::Spinner::new().size(14.0));
+        } else {
+            ui.colored_label(egui::Color32::from_rgb(220, 180, 60), "Unsaved changes")
+                .on_hover_text("Changes are saved automatically when this window closes.");
+        }
     }
 
     fn start_save(&mut self, keyboard: &Keyboard) {
@@ -285,20 +322,13 @@ impl crate::overlay_window::OverlayApp {
         self.editor.error = None;
     }
 
-    fn start_discard(&mut self, keyboard: &Keyboard) {
-        if self.editor.pending.is_some() {
-            return;
-        }
-        self.editor.pending = Some(keyboard.discard_keymap());
-        self.editor.pending_kind = Some(PendingKind::Discard);
-        self.editor.error = None;
-    }
-
     /// Starts writing a finished binding to the target key. ZMK writes are
-    /// session changes tracked by the save bar; QMK writes go straight to the
-    /// device. While a write is in flight the request waits in the
+    /// session changes tracked by the session bar; QMK writes go straight to
+    /// the device. While a write is in flight the request waits in the
     /// last-write-wins queue instead of being dropped — the keymap worker
-    /// serializes commands, so the queued write lands right after it.
+    /// serializes commands, so the queued write lands right after it. While
+    /// closing, only such queued edits still arrive (the UI is disabled);
+    /// they drain before the save.
     fn apply_write(&mut self, keyboard: &Keyboard, target: EditTarget, action: KeyAction) {
         if self.editor.pending.is_some() {
             self.editor.queued = Some((target, action));
@@ -315,6 +345,7 @@ impl crate::overlay_window::OverlayApp {
 
     /// Polls an in-flight write once per frame, repainting while it is
     /// pending, and kicks off the queued write when the device is ready.
+    /// While closing, the pipeline drains write → save → close.
     fn poll_pending_write(&mut self, ctx: &egui::Context, keyboard: &Keyboard) {
         let Some(receiver) = &self.editor.pending else {
             return;
@@ -326,19 +357,25 @@ impl crate::overlay_window::OverlayApp {
                 self.editor.pending_kind = None;
                 match kind {
                     Some(PendingKind::Set) => self.editor.zmk_dirty = true,
-                    Some(PendingKind::Save) | Some(PendingKind::Discard) => {
-                        self.editor.zmk_dirty = false
-                    }
+                    Some(PendingKind::Save) => self.editor.zmk_dirty = false,
                     None => {}
                 }
                 if let Some((target, action)) = self.editor.queued.take() {
                     self.apply_write(keyboard, target, action);
+                }
+                if self.editor.closing {
+                    if self.editor.zmk_dirty {
+                        self.start_save(keyboard);
+                    } else if self.editor.pending.is_none() {
+                        self.close_editor();
+                    }
                 }
             }
             Ok(Err(e)) => {
                 self.editor.pending = None;
                 self.editor.pending_kind = None;
                 self.editor.queued = None;
+                self.editor.closing = false;
                 self.editor.error = Some(e);
             }
             Err(mpsc::TryRecvError::Empty) => {
@@ -348,73 +385,112 @@ impl crate::overlay_window::OverlayApp {
                 self.editor.pending = None;
                 self.editor.pending_kind = None;
                 self.editor.queued = None;
+                self.editor.closing = false;
                 self.editor.error = Some("Connection lost".to_string());
             }
         }
     }
+}
 
-    /// Modal shown when settings are closed with unsaved ZMK changes.
-    pub(super) fn draw_close_prompt(&mut self, ctx: &egui::Context, keyboard: &Keyboard) {
-        if !self.editor.close_prompt {
-            return;
-        }
-        let mut answer = None;
-        egui::Window::new("Unsaved changes")
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .show(ctx, |ui| {
-                ui.label("You have unsaved keymap changes on the keyboard.");
-                ui.add_space(6.0);
-                ui.horizontal(|ui| {
-                    if ui.button("Save").clicked() {
-                        answer = Some(PromptAnswer::Save);
-                    }
-                    if ui.button("Discard").clicked() {
-                        answer = Some(PromptAnswer::Discard);
-                    }
-                    if ui.button("Cancel").clicked() {
-                        answer = Some(PromptAnswer::Cancel);
-                    }
-                });
-            });
+#[cfg(test)]
+mod window_growth_probe {
+    use egui::{Align, Color32, Layout, RawInput, Rect, Sense, Vec2};
 
-        match answer {
-            Some(PromptAnswer::Save) => {
-                self.editor.pending = Some(keyboard.save_keymap());
-                self.editor.pending_kind = Some(PendingKind::Save);
-                self.finish_close();
-            }
-            Some(PromptAnswer::Discard) => {
-                self.editor.pending = Some(keyboard.discard_keymap());
-                self.editor.pending_kind = Some(PendingKind::Discard);
-                self.finish_close();
-            }
-            Some(PromptAnswer::Cancel) => {
-                self.editor.close_prompt = false;
-            }
-            None => {}
+    /// Mirrors the Edit key window's structure: header with the session
+    /// status floated into its top-right corner, left panel + central panel,
+    /// both with tall scroll content. Returns the window height per frame.
+    #[expect(deprecated)] // `Context::run` is the headless-friendly pass driver
+    fn editor_window_heights(dirty_bar: bool) -> Vec<f32> {
+        let ctx = egui::Context::default();
+        let screen = Rect::from_min_size(egui::pos2(0.0, 0.0), Vec2::new(1920.0, 1080.0));
+        let mut heights = Vec::new();
+        for frame in 0..30 {
+            let _ = ctx.run(
+                RawInput {
+                    screen_rect: Some(screen),
+                    time: Some(frame as f64 * 0.016),
+                    ..Default::default()
+                },
+                |ctx| {
+                    let mut open = true;
+                    let response = egui::Window::new("Edit key")
+                        .open(&mut open)
+                        .resizable(true)
+                        .default_size(Vec2::new(480.0, 620.0))
+                        .min_size(Vec2::new(440.0, 320.0))
+                        .show(ctx, |ui| {
+                            let status_top = ui.cursor().top();
+                            ui.with_layout(Layout::top_down(Align::Center), |ui| {
+                                ui.allocate_exact_size(Vec2::splat(68.0), Sense::hover());
+                                ui.weak("0x1234");
+                            });
+                            if dirty_bar {
+                                let status_corner = Rect::from_min_max(
+                                    egui::pos2(ui.max_rect().left(), status_top),
+                                    egui::pos2(ui.max_rect().right(), status_top + 24.0),
+                                );
+                                let mut status_ui = ui.new_child(
+                                    egui::UiBuilder::new()
+                                        .max_rect(status_corner)
+                                        .layout(Layout::right_to_left(Align::Min)),
+                                );
+                                let _ = status_ui.button("Discard");
+                                let _ = status_ui.button("Save");
+                                status_ui.colored_label(
+                                    Color32::from_rgb(220, 180, 60),
+                                    "Unsaved changes",
+                                );
+                            }
+                            egui::Panel::left("zmk_kinds")
+                                .resizable(false)
+                                .exact_size(110.0)
+                                .show_separator_line(false)
+                                .show_inside(ui, |ui| {
+                                    egui::ScrollArea::vertical().show(ui, |ui| {
+                                        for i in 0..20 {
+                                            ui.label(format!("entry {i}"));
+                                        }
+                                    });
+                                });
+                            egui::CentralPanel::default().show_inside(ui, |ui| {
+                                egui::ScrollArea::vertical().show(ui, |ui| {
+                                    for i in 0..300 {
+                                        ui.label(format!("row {i}"));
+                                    }
+                                });
+                            });
+                        });
+                    if let Some(rect) = response.map(|r| r.response.rect) {
+                        heights.push(rect.height());
+                    }
+                },
+            );
         }
+        heights
     }
 
-    fn finish_close(&mut self) {
-        self.editor.zmk_dirty = false;
-        self.editor.close_prompt = false;
-        self.ui.settings_visible = false;
-        self.ui.pinned_layer = None;
-        self.close_editor();
-        self.persist_settings();
+    /// The session status floats over the header; with it visible the window
+    /// must hold its size instead of ratcheting taller every frame.
+    #[test]
+    fn session_status_does_not_grow_the_window() {
+        let heights = editor_window_heights(true);
+        let first = heights[0];
+        let worst = heights.iter().cloned().fold(f32::MIN, f32::max);
+        assert!(
+            worst - first < 2.0,
+            "window grew from {first:.0} to {worst:.0}"
+        );
     }
 
-    fn close_editor_window(&mut self) {
-        self.editor.target = None;
-        self.editor.pending = None;
-        self.editor.pending_kind = None;
-        self.editor.queued = None;
-        self.editor.error = None;
-        self.editor.qmk_draft = Default::default();
-        self.editor.zmk_draft = Default::default();
-        self.editor.zmk_dirty = false;
-        self.editor.close_prompt = false;
+    /// Same structure without the bar, as the baseline.
+    #[test]
+    fn window_is_stable_without_the_session_bar() {
+        let heights = editor_window_heights(false);
+        let first = heights[0];
+        let worst = heights.iter().cloned().fold(f32::MIN, f32::max);
+        assert!(
+            worst - first < 2.0,
+            "window grew from {first:.0} to {worst:.0}"
+        );
     }
 }

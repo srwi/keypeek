@@ -337,14 +337,9 @@ mod tests {
         assert!(write_via_actor(&keyboard, 9, 0, 0, KeyAction::Qmk(code)).is_err());
         assert!(keyboard.get_action(9, 0, 0).is_none());
 
-        // The mock persists immediately; save is a no-op and discard is unsupported,
-        // both reported through the same receiver pattern.
+        // The mock persists immediately; save is a no-op, reported through
+        // the same receiver pattern.
         let _ = keyboard.save_keymap().recv_timeout(Duration::from_secs(10));
-        assert!(keyboard
-            .discard_keymap()
-            .recv_timeout(Duration::from_secs(10))
-            .expect("discard receiver should resolve")
-            .is_err());
         assert!(wakes.load(Ordering::Relaxed) > 0);
     }
 

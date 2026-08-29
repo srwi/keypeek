@@ -143,7 +143,8 @@ impl OverlayApp {
         if hit_test_enabled {
             if let Some(response) = overlay_response.as_ref() {
                 if let Some((hovered, clicked)) = response.inner {
-                    if clicked {
+                    // A closing editor is saving; it must not be retargeted.
+                    if clicked && !self.editor.closing {
                         if let Some((row, col)) = hovered {
                             self.editor.target = Some(crate::keymap_editor::EditTarget {
                                 layer_index: pinned.unwrap(),

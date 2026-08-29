@@ -146,11 +146,6 @@ pub trait KeyboardProtocol: Send {
         Ok(())
     }
 
-    /// ZMK: revert pending writes; returns the reverted keymap.
-    fn discard_keymap(&mut self) -> Result<crate::key_action::KeymapSnapshot, Box<dyn Error>> {
-        Err("not supported".into())
-    }
-
     /// Closes any transient write connection (ZMK Studio client).
     fn end_edit_session(&mut self) {}
 

@@ -112,7 +112,7 @@ impl OverlayApp {
         self.editor.qmk_draft = Default::default();
         self.editor.zmk_draft = Default::default();
         self.editor.zmk_dirty = false;
-        self.editor.close_prompt = false;
+        self.editor.closing = false;
         if let AppConnectionState::Connected { keyboard } = &self.session.connection {
             keyboard.end_edit_session();
         }
@@ -183,13 +183,10 @@ impl OverlayApp {
             if self.editor.target.is_some() {
                 self.draw_editor_window(ctx, &keyboard);
             }
-            self.draw_close_prompt(ctx, &keyboard);
         } else if self.editor.target.is_some() {
-            // The connection dropped; close the editor and any write session.
-            self.editor.target = None;
-            self.editor.pending = None;
-            self.editor.queued = None;
-            self.editor.error = None;
+            // The connection dropped; close the editor. Unsaved ZMK changes
+            // died with the connection, so the dirty flag goes too.
+            self.close_editor();
         }
 
         if self.ui.settings_visible {

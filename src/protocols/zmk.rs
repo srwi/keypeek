@@ -208,13 +208,6 @@ impl KeyboardProtocol for ZmkProtocol {
         self.with_session(|session| session.save())
     }
 
-    fn discard_keymap(&mut self) -> Result<KeymapSnapshot, Box<dyn Error>> {
-        let resolved = self.with_session(|session| session.discard())?;
-        let snapshot = snapshot_from_resolved(&resolved, self.layout.definition.cols);
-        *self.layout.snapshot.lock().unwrap() = snapshot.clone();
-        Ok(snapshot)
-    }
-
     fn end_edit_session(&mut self) {
         self.session = None;
     }

@@ -173,18 +173,6 @@ impl ZmkStudioSession {
         }
         Ok(())
     }
-
-    /// Reverts pending writes and returns the device's restored keymap.
-    pub fn discard(&mut self) -> Result<Vec<ResolvedLayer>, Box<dyn Error>> {
-        match self {
-            Self::Serial(client) => client.discard_changes()?,
-            Self::Ble(client) => client.discard_changes()?,
-        };
-        Ok(match self {
-            Self::Serial(client) => client.resolve_keymap()?,
-            Self::Ble(client) => client.resolve_keymap()?,
-        })
-    }
 }
 
 pub fn fetch_zmk_data(transport: &ZmkTransport) -> Result<ZmkData, Box<dyn Error>> {
