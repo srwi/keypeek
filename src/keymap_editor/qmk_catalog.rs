@@ -128,6 +128,21 @@ pub fn layer_tap_group(layer_count: usize, tap_code: u16) -> CandidateGroup {
     }
 }
 
+/// The Layer-Mod page's layer radio: one plain layer key per real layer,
+/// rendered like the layer page's keys.
+pub fn layer_mod_group(layer_count: usize, mods: u16) -> CandidateGroup {
+    CandidateGroup {
+        name: "Layer",
+        candidates: (0..layer_count.min(16))
+            .filter_map(|layer| {
+                let visual = qmk_candidate(encode_layer(LayerKind::Mo, layer)?).key;
+                let lm_code = QK_LAYER_MOD.start + ((layer as u16) << 5) + (mods & 0x1F);
+                Some(Candidate::new(KeyAction::Qmk(lm_code), visual))
+            })
+            .collect(),
+    }
+}
+
 /// The candidate for a QMK keycode: the fully resolved `LayoutKey`, with
 /// explicit stand-ins for `KC_TRANSPARENT` and `KC_NO`, whose raw labels are
 /// unusable as key legends.

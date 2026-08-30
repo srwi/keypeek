@@ -31,11 +31,13 @@ pub enum Section {
     ModTap,
     /// `LT(layer, kc)`.
     LayerTap,
+    /// `LM(layer, mods)`.
+    LayerMod,
     Any,
 }
 
 impl Section {
-    const ALL: [Section; 8] = [
+    const ALL: [Section; 9] = [
         Section::Basic,
         Section::Media,
         Section::Layers,
@@ -43,6 +45,7 @@ impl Section {
         Section::OneShot,
         Section::ModTap,
         Section::LayerTap,
+        Section::LayerMod,
         Section::Any,
     ];
     fn label(&self) -> &'static str {
@@ -54,6 +57,7 @@ impl Section {
             Section::OneShot => "One-Shot Mod",
             Section::ModTap => "Mod-Tap",
             Section::LayerTap => "Layer-Tap",
+            Section::LayerMod => "Layer-Mod",
             Section::Any => "Any",
         }
     }
@@ -113,6 +117,7 @@ impl QmkDraft {
             Section::LayerTap if self.base_code != 0 => {
                 encode_layer_tap(self.mod_tap_layer.min(15), self.base_code)
             }
+            Section::LayerMod => encode_layer_mod(self.mod_tap_layer.min(15), self.mod_value()),
             Section::OneShot => encode_one_shot_mod(self.mod_value()),
             Section::Any => u16::from_str_radix(&self.hex, 16).ok(),
             _ => None,
@@ -130,7 +135,9 @@ impl QmkDraft {
         }
         let code = match self.section {
             Section::Combo | Section::ModTap => self.base_code,
-            Section::LayerTap => QK_MOMENTARY.start + self.mod_tap_layer.min(15) as u16,
+            Section::LayerTap | Section::LayerMod => {
+                QK_MOMENTARY.start + self.mod_tap_layer.min(15) as u16
+            }
             Section::OneShot | Section::Any => 0,
             _ => return None,
         };
@@ -170,6 +177,14 @@ fn encode_layer_tap(layer: usize, keycode: u16) -> Option<u16> {
         return None;
     }
     Some(QK_LAYER_TAP.start + ((layer as u16) << 8) + keycode)
+}
+
+/// `LM(layer, mods)`: the layer is 4 bits (0–15) and mods is 5 bits (1–31).
+fn encode_layer_mod(layer: usize, mods: u16) -> Option<u16> {
+    if layer > 15 || mods & 0x1F == 0 {
+        return None;
+    }
+    Some(QK_LAYER_MOD.start + ((layer as u16) << 5) + (mods & 0x1F))
 }
 
 // ── Decoder (pre-fill the draft from the current binding) ───────────────────
@@ -212,6 +227,15 @@ fn decode(code: u16) -> QmkDraft {
         draft.section = Section::LayerTap;
         draft.mod_tap_layer = (remainder >> 8) as usize;
         draft.base_code = remainder & 0xFF;
+        return draft;
+    }
+    if QK_LAYER_MOD.contains(&code) {
+        let remainder = code - QK_LAYER_MOD.start;
+        draft.section = Section::LayerMod;
+        draft.mod_tap_layer = (remainder >> 5) as usize;
+        let mod_value = remainder & 0x1F;
+        draft.mods = mod_value & 0x0F;
+        draft.right = mod_value & MOD_RIGHT_FLAG != 0;
         return draft;
     }
 
@@ -275,9 +299,11 @@ impl crate::overlay_window::OverlayApp {
                     // draw_qmk_layer_page.
                     self.draw_qmk_layer_page(ui, keyboard, target);
                 }
-                Section::Combo | Section::OneShot | Section::ModTap | Section::LayerTap => {
-                    self.draw_qmk_mods_page(ui, keyboard, target, draft)
-                }
+                Section::Combo
+                | Section::OneShot
+                | Section::ModTap
+                | Section::LayerTap
+                | Section::LayerMod => self.draw_qmk_mods_page(ui, keyboard, target, draft),
                 Section::Any => {
                     titled_group(ui, "Keycode", |ui| {
                         ui.horizontal(|ui| {
@@ -326,10 +352,10 @@ impl crate::overlay_window::OverlayApp {
         );
     }
 
-    /// The four modifier sections share one page body: each distinct encoding
+    /// The five modifier sections share one page body: each distinct encoding
     /// argument is framed in its own titled group — the modifier set (with its
-    /// hand) for the three mod-carrying encodings, the layer for Layer-Tap, and
-    /// the tap/base key where the encoding takes one. Every interaction stages
+    /// hand) for the mod-carrying encodings, the layer for Layer-Tap and Layer-Mod,
+    /// and the tap/base key where the encoding takes one. Every interaction stages
     /// into the draft and a complete binding applies instantly; an incomplete
     /// one ghosts the header slot until it becomes valid.
     fn draw_qmk_mods_page(
@@ -375,6 +401,58 @@ impl crate::overlay_window::OverlayApp {
                     );
                 });
             }
+            Section::LayerMod => {
+                let group = super::qmk_catalog::layer_mod_group(
+                    keyboard.layer_infos().len(),
+                    draft.mod_value(),
+                );
+                let staged = KeyAction::Qmk(
+                    QK_LAYER_MOD.start
+                        + ((draft.mod_tap_layer.min(15) as u16) << 5)
+                        + (draft.mod_value() & 0x1F),
+                );
+                let style = self.paint_style(KEY_UNIT);
+                titled_group(ui, "Layer", |ui| {
+                    picker_grid_rows(
+                        ui,
+                        "qmk_lm_layer",
+                        &group.candidates,
+                        Some(&staged),
+                        &style,
+                        |candidate| {
+                            if let KeyAction::Qmk(code) = &candidate.binding {
+                                draft.mod_tap_layer = ((code - QK_LAYER_MOD.start) >> 5) as usize;
+                                self.commit_qmk_draft(keyboard, target, draft);
+                            }
+                        },
+                    );
+                });
+                let mod_style = self.paint_style(KEY_UNIT);
+                titled_group(ui, "Modifiers", |ui| {
+                    ui.horizontal(|ui| {
+                        modifier_toggle_row(ui, "qmk_mods", draft.mods, hand, &mod_style, |mask| {
+                            draft.mods ^= mask;
+                            self.commit_qmk_draft(keyboard, target, draft);
+                        });
+                        ui.weak("Hand");
+                        if ui
+                            .add(egui::Button::new("L").small().selected(!draft.right))
+                            .clicked()
+                        {
+                            draft.right = false;
+                            self.commit_qmk_draft(keyboard, target, draft);
+                        }
+                        if ui
+                            .add(egui::Button::new("R").small().selected(draft.right))
+                            .on_hover_text("Right-hand modifiers (RCTL, RSFT, RALT, RGUI)")
+                            .clicked()
+                        {
+                            draft.right = true;
+                            self.commit_qmk_draft(keyboard, target, draft);
+                        }
+                    });
+                });
+            }
             _ => {
                 let mod_style = self.paint_style(KEY_UNIT);
                 titled_group(ui, "Modifiers", |ui| {
@@ -415,8 +493,7 @@ impl crate::overlay_window::OverlayApp {
                     self.draw_base_picker(ui, keyboard, target, draft);
                 });
             }
-            Section::OneShot => {}
-            // Only the four modifier sections reach this page.
+            Section::OneShot | Section::LayerMod => {}
             _ => {}
         }
     }
@@ -555,6 +632,18 @@ mod tests {
     }
 
     #[test]
+    fn layer_mod_round_trips() {
+        let code = encode_layer_mod(3, MOD_LSFT | MOD_LCTL).unwrap(); // LM(3, LSFT|LCTL)
+        let mut draft = QmkDraft::default();
+        draft.section = Section::LayerMod;
+        assert_round_trips(draft, code);
+        assert_eq!(decode(code).mod_tap_layer, 3);
+        assert_eq!(decode(code).mods, MOD_LSFT | MOD_LCTL);
+        assert!(encode_layer_mod(16, MOD_LSFT).is_none());
+        assert!(encode_layer_mod(3, 0).is_none());
+    }
+
+    #[test]
     fn staged_requires_every_argument() {
         // A modifier encoding without modifiers or without a tap key is
         // mid-selection, not a bindable keycode.
@@ -571,6 +660,13 @@ mod tests {
         assert_eq!(draft.staged(), None);
         draft.base_code = 0x1C;
         assert_eq!(draft.staged(), encode_layer_tap(2, 0x1C));
+
+        draft.section = Section::LayerMod;
+        draft.mod_tap_layer = 3;
+        draft.mods = 0;
+        assert_eq!(draft.staged(), None);
+        draft.mods = MOD_LSFT;
+        assert_eq!(draft.staged(), encode_layer_mod(3, MOD_LSFT));
 
         draft.section = Section::OneShot;
         draft.mods = 0;
