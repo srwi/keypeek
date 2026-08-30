@@ -42,6 +42,12 @@ impl KeyColors {
             self
         }
     }
+
+    /// The high-visibility outline color: the fill brightened against the background.
+    /// Used for hovered keys and styled layer borders.
+    pub fn highlight_border(&self) -> egui::Color32 {
+        self.fill.lerp_to_gamma(egui::Color32::WHITE, 0.45)
+    }
 }
 
 /// Appearance tuning for [`paint`], derived from the user's settings.
@@ -189,20 +195,10 @@ pub fn paint(
         } else {
             // Brighten the key's fill color for the outline so it stands out
             // on-theme.
-            (
-                key.border,
-                0.02 * unit,
-                display
-                    .colors
-                    .fill
-                    .lerp_to_gamma(egui::Color32::WHITE, 0.45),
-            )
+            (key.border, 0.02 * unit, display.colors.highlight_border())
         };
     if display.hovered {
-        border_color = display
-            .colors
-            .fill
-            .lerp_to_gamma(egui::Color32::WHITE, 0.45);
+        border_color = display.colors.highlight_border();
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     paint_border(

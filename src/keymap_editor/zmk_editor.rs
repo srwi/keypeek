@@ -215,20 +215,6 @@ impl ZmkDraft {
             _ => None,
         }
     }
-
-    /// The ghost binding shown in the header while the user is mid-selection
-    /// and the draft is not yet a valid binding. The only staged kind that can
-    /// be invalid is a Mod-Tap without hold modifiers; it previews its tap side.
-    pub(super) fn ghost_action(&self) -> Option<KeyAction> {
-        if !self.touched || self.staged().is_some() {
-            return None;
-        }
-        Some(KeyAction::Zmk(Behavior::KeyPress(HidUsage::from_parts(
-            self.usage.page(),
-            self.usage.id(),
-            self.modifiers,
-        ))))
-    }
 }
 
 /// The held-modifier mask of a Mod-Tap hold side. Holds written as a modifier
@@ -720,17 +706,12 @@ mod tests {
     }
 
     #[test]
-    fn mod_tap_without_hold_modifier_is_invalid_and_ghosts() {
+    fn mod_tap_without_hold_modifier_is_invalid() {
         let mut draft = ZmkDraft::default();
         draft.kind = ZmkBehaviorKind::ModTap;
         draft.hold_mods = 0;
         draft.touched = true;
         assert_eq!(draft.staged(), None);
-        // The ghost previews the tap side while the hold side is empty.
-        assert_eq!(
-            draft.ghost_action(),
-            Some(KeyAction::Zmk(Behavior::KeyPress(draft.usage.base())))
-        );
         draft.hold_mods = MOD_LSFT;
         assert_eq!(
             draft.staged(),
@@ -739,6 +720,5 @@ mod tests {
                 tap: draft.usage.base(),
             })
         );
-        assert_eq!(draft.ghost_action(), None);
     }
 }

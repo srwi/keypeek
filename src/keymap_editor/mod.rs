@@ -12,13 +12,9 @@ pub use zmk_editor::ZmkDraft;
 
 use crate::key_action::KeyAction;
 use crate::keyboard::Keyboard;
-use crate::layout_key::{BorderStyle, Label, LayoutKey};
 use crate::protocols::WriteSupport;
 use egui::Window;
 use std::sync::mpsc;
-
-/// Pixels per key-unit for the header's preview of the current assignment.
-const PREVIEW_KEY_UNIT: f32 = 68.0;
 
 /// Which key the editor window is currently targeting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,15 +94,6 @@ impl EditorState {
     }
 }
 
-/// The raw firmware form of a binding, shown under the header key: hex for
-/// QMK keycodes, the behavior's debug form for ZMK.
-pub fn raw_value_text(action: &KeyAction) -> String {
-    match action {
-        KeyAction::Qmk(code) => format!("0x{code:04X}"),
-        KeyAction::Zmk(behavior) => format!("{behavior:?}"),
-    }
-}
-
 /// The editor's two-pane layout, shared by the QMK and ZMK editors: a
 /// fixed-width, non-resizable left list of entries and a scrolling central
 /// pane, both filling the window instead of growing it. `state` is the draft
@@ -147,11 +134,6 @@ impl crate::overlay_window::OverlayApp {
         let Some(target) = self.editor.target else {
             return;
         };
-        let layer_names: Vec<String> = keyboard
-            .layer_infos()
-            .iter()
-            .map(|info| info.name.clone().unwrap_or_default())
-            .collect();
 
         // A close was requested (window X or settings close): a dirty ZMK
         // session saves first, and the window dismisses itself once the save
@@ -188,102 +170,14 @@ impl crate::overlay_window::OverlayApp {
                 ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
             }
 
-            let target = self.draw_editor_layer_selector(ui, keyboard, target);
-            ui.add_space(8.0);
-
-            // Header: one key slot. It shows the current assignment
-            // rendered as the exact key it paints on the overlay, with its
-            // raw firmware value beneath. While a staged draft is mid-
-            // selection and not yet a valid binding, the slot instead
-            // shows the ghosted draft with "Invalid" beneath it — a valid
-            // draft applies instantly, so it never lingers visible.
-            let style = self.paint_style(PREVIEW_KEY_UNIT);
-            let action = keyboard.get_action(target.layer_index, target.row, target.col);
-            let layout_key = action
-                .as_ref()
-                .and_then(|a| a.resolve_label(&layer_names))
-                .unwrap_or_default();
-            // Kind is taken from the layer-0 key at this position, matching
-            // the overlay's coloring rule for Modifier/Special darkening.
-            let kind = keyboard
-                .get_key(0, target.row, target.col)
-                .map(|k| k.kind)
-                .unwrap_or(crate::layout_key::KeycodeKind::Basic);
-            let ghost = match action.as_ref() {
-                Some(KeyAction::Qmk(_)) => self.editor.qmk_draft.ghost_action(),
-                Some(KeyAction::Zmk(_)) => self.editor.zmk_draft.ghost_action(),
-                _ => None,
-            };
-            let (mut display_key, raw_text, ghosted) = match &ghost {
-                Some(ghost_action) => (
-                    ghost_action.resolve_label(&layer_names).unwrap_or_default(),
-                    "Invalid".to_string(),
-                    true,
-                ),
-                None => {
-                    let raw_text = match &action {
-                        Some(action) => raw_value_text(action),
-                        None => "No binding at this key".to_string(),
-                    };
-                    (layout_key, raw_text, action.is_none())
-                }
-            };
-            // Colors follow the overlay rules; a ghosted draft or unbound
-            // slot renders ghosted, like a pinned transparent binding.
-            let colors_for = |layer: u8| style.colors_for(layer, kind, false, false);
-            let mut colors = if ghosted {
-                colors_for(display_key.layer_ref.unwrap_or(target.layer_index as u8)).ghosted()
-            } else {
-                colors_for(display_key.layer_ref.unwrap_or(target.layer_index as u8))
-            };
-            // The invalid draft speaks for itself: a circle-x inside the
-            // key, plus a dashed amber outline no other key state uses
-            // (the styled border derives its color from the fill).
-            if ghost.is_some() {
-                display_key.tap = Label::new(egui_phosphor::regular::SMILEY_X_EYES);
-                display_key.border = BorderStyle::Dashed;
-                colors.fill = colors
-                    .fill
-                    .lerp_to_gamma(egui::Color32::from_rgb(220, 180, 60), 0.45);
-            }
-
-            let status_top = ui.cursor().top();
-            ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
-                let (_, cell) = ui.allocate_exact_size(
-                    egui::vec2(PREVIEW_KEY_UNIT, PREVIEW_KEY_UNIT),
-                    egui::Sense::hover(),
-                );
-                picker::key_button(
-                    ui,
-                    cell.rect,
-                    ui.id().with("editor_preview_key"),
-                    &display_key,
-                    colors,
-                    false,
-                    &style,
-                );
-                ui.weak(raw_text);
-            });
-
-            // The session status floats in the header's top-right corner: an
-            // absolute child UI paints there without advancing the layout,
-            // so the centered preview never moves for it.
-            let status_corner = egui::Rect::from_min_max(
-                egui::pos2(ui.max_rect().left(), status_top),
-                egui::pos2(ui.max_rect().right(), status_top + 24.0),
-            );
-            let mut status_ui = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(status_corner)
-                    .layout(egui::Layout::right_to_left(egui::Align::Min)),
-            );
-            self.draw_session_status(&mut status_ui);
+            let target = self.draw_editor_header(ui, keyboard, target);
 
             // While closing, the save is in flight; nothing here may
             // start another write that would land after the save.
             if closing {
                 ui.disable();
             }
+            let action = keyboard.get_action(target.layer_index, target.row, target.col);
             let write_support = keyboard.write_support();
             match (write_support, action.as_ref()) {
                 (WriteSupport::Immediate, Some(KeyAction::Qmk(_))) => {
@@ -316,53 +210,33 @@ impl crate::overlay_window::OverlayApp {
         }
     }
 
-    /// Draws the layer radio selector in the header at the very top of the "Edit key" window.
-    fn draw_editor_layer_selector(
+    /// Draws the header row: layer switcher buttons on the left, session status on the right.
+    fn draw_editor_header(
         &mut self,
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
         target: EditTarget,
     ) -> EditTarget {
         let layer_infos = keyboard.layer_infos();
-        if layer_infos.is_empty() {
-            return target;
-        }
-
-        let candidates: Vec<picker::Candidate> = layer_infos
-            .iter()
-            .enumerate()
-            .map(|(i, info)| {
-                let label = match &info.name {
-                    Some(name) if !name.is_empty() => Label::new(name),
-                    _ => Label::new(format!("L{i}")),
-                };
-                let key = LayoutKey {
-                    tap: label,
-                    layer_ref: Some(i as u8),
-                    kind: crate::layout_key::KeycodeKind::Modifier,
-                    border: BorderStyle::None,
-                    ..Default::default()
-                };
-                picker::Candidate::new(KeyAction::Qmk(i as u16), key)
-            })
-            .collect();
-
         let style = self.paint_style(picker::KEY_UNIT);
-        let selected = KeyAction::Qmk(target.layer_index as u16);
         let mut selected_layer = None;
 
-        picker::picker_grid_rows(
-            ui,
-            "editor_header_layers",
-            &candidates,
-            Some(&selected),
-            &style,
-            |candidate| {
-                if let KeyAction::Qmk(layer) = candidate.binding {
-                    selected_layer = Some(layer as usize);
+        ui.horizontal(|ui| {
+            for (i, info) in layer_infos.iter().enumerate() {
+                let label = match &info.name {
+                    Some(name) if !name.is_empty() => name.as_str(),
+                    _ => &format!("L{i}"),
+                };
+                let is_selected = target.layer_index == i;
+                if layer_button(ui, label, i, is_selected, &style).clicked() {
+                    selected_layer = Some(i);
                 }
-            },
-        );
+            }
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                self.draw_session_status(ui);
+            });
+        });
 
         if !self.editor.closing {
             if let Some(new_layer) = selected_layer {
@@ -534,12 +408,68 @@ impl crate::overlay_window::OverlayApp {
     }
 }
 
+fn layer_button(
+    ui: &mut egui::Ui,
+    label: &str,
+    layer_index: usize,
+    selected: bool,
+    style: &crate::key_paint::KeyPaintStyle,
+) -> egui::Response {
+    let colors = style.colors_for(
+        layer_index as u8,
+        crate::layout_key::KeycodeKind::Modifier,
+        false,
+        selected,
+    );
+    let text = egui::RichText::new(label)
+        .color(colors.font)
+        .size(12.0);
+
+    let stroke_width = if selected { 2.0_f32 } else { 1.0_f32 };
+    let button = egui::Button::new(text)
+        .fill(colors.fill)
+        .stroke(egui::Stroke::new(stroke_width, colors.border))
+        .corner_radius(4.0)
+        .min_size(egui::vec2(32.0, 22.0));
+
+    let response = ui.add(button);
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        let highlight_stroke = egui::Stroke::new(stroke_width, colors.highlight_border());
+        ui.painter().rect_stroke(response.rect, 4.0, highlight_stroke, egui::StrokeKind::Inside);
+    }
+    response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::key_paint::KeyPaintStyle;
+    use crate::settings::Settings;
+
+    #[test]
+    #[expect(deprecated)]
+    fn layer_button_renders_without_panic() {
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let settings = Settings::default();
+                let style = KeyPaintStyle::from_settings(&settings);
+                let resp_unselected = layer_button(ui, "L0", 0, false, &style);
+                let resp_selected = layer_button(ui, "Nav", 1, true, &style);
+                assert!(!resp_unselected.clicked());
+                assert!(!resp_selected.clicked());
+            });
+        });
+    }
+}
+
 #[cfg(test)]
 mod window_growth_probe {
-    use egui::{Align, Color32, Layout, RawInput, Rect, Sense, Vec2};
+    use egui::{Align, Color32, Layout, RawInput, Rect, Vec2};
 
-    /// Mirrors the Edit key window's structure: header with the session
-    /// status floated into its top-right corner, left panel + central panel,
+    /// Mirrors the Edit key window's structure: header with layer buttons and
+    /// session status in one horizontal row, left panel + central panel,
     /// both with tall scroll content. Returns the window height per frame.
     #[expect(deprecated)] // `Context::run` is the headless-friendly pass driver
     fn editor_window_heights(dirty_bar: bool) -> Vec<f32> {
@@ -561,28 +491,21 @@ mod window_growth_probe {
                         .default_size(Vec2::new(480.0, 620.0))
                         .min_size(Vec2::new(440.0, 320.0))
                         .show(ctx, |ui| {
-                            let status_top = ui.cursor().top();
-                            ui.with_layout(Layout::top_down(Align::Center), |ui| {
-                                ui.allocate_exact_size(Vec2::splat(68.0), Sense::hover());
-                                ui.weak("0x1234");
+                            ui.horizontal(|ui| {
+                                for i in 0..4 {
+                                    let _ = ui.button(format!("L{i}"));
+                                }
+                                if dirty_bar {
+                                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                        let _ = ui.button("Discard");
+                                        let _ = ui.button("Save");
+                                        ui.colored_label(
+                                            Color32::from_rgb(220, 180, 60),
+                                            "Unsaved changes",
+                                        );
+                                    });
+                                }
                             });
-                            if dirty_bar {
-                                let status_corner = Rect::from_min_max(
-                                    egui::pos2(ui.max_rect().left(), status_top),
-                                    egui::pos2(ui.max_rect().right(), status_top + 24.0),
-                                );
-                                let mut status_ui = ui.new_child(
-                                    egui::UiBuilder::new()
-                                        .max_rect(status_corner)
-                                        .layout(Layout::right_to_left(Align::Min)),
-                                );
-                                let _ = status_ui.button("Discard");
-                                let _ = status_ui.button("Save");
-                                status_ui.colored_label(
-                                    Color32::from_rgb(220, 180, 60),
-                                    "Unsaved changes",
-                                );
-                            }
                             egui::Panel::left("zmk_kinds")
                                 .resizable(false)
                                 .exact_size(110.0)

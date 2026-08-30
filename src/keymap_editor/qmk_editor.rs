@@ -172,26 +172,6 @@ impl QmkDraft {
             _ => None,
         }
     }
-
-    /// The ghost binding shown in the header while the user is mid-selection
-    /// and the draft is not yet a valid binding: the closest meaningful key —
-    /// the picked tap/base key, or the layer of an incomplete layer-tap.
-    /// Modifier-less one-shot and unparseable hex have no key to preview and
-    /// ghost as an empty key.
-    pub(super) fn ghost_action(&self) -> Option<KeyAction> {
-        if !self.touched || self.staged().is_some() {
-            return None;
-        }
-        let code = match self.section {
-            Section::Combo | Section::ModTap => self.base_code,
-            Section::LayerTap | Section::LayerMod => {
-                QK_MOMENTARY.start + self.mod_tap_layer.min(15) as u16
-            }
-            Section::OneShot | Section::Any => 0,
-            _ => return None,
-        };
-        Some(KeyAction::Qmk(code))
-    }
 }
 
 // ── Encoders ────────────────────────────────────────────────────────────────
@@ -693,27 +673,6 @@ mod tests {
         assert_eq!(draft.staged(), None);
         draft.mods = MOD_LCTL;
         assert_eq!(draft.staged(), encode_one_shot_mod(MOD_LCTL));
-    }
-
-    #[test]
-    fn ghost_previews_the_closest_key_while_invalid() {
-        // Untouched or valid drafts never ghost; an invalid touched draft
-        // previews its picked argument.
-        let mut draft = QmkDraft::default();
-        draft.section = Section::ModTap;
-        assert_eq!(draft.ghost_action(), None);
-        draft.touched = true;
-        assert_eq!(
-            draft.ghost_action(),
-            Some(KeyAction::Qmk(0)), // no tap key picked yet: empty key
-        );
-        draft.base_code = 0x04;
-        assert_eq!(
-            draft.ghost_action(),
-            Some(KeyAction::Qmk(0x04)), // the picked tap key, mods still empty
-        );
-        draft.mods = MOD_LSFT;
-        assert_eq!(draft.ghost_action(), None); // now valid: applies instead
     }
 
     #[test]
