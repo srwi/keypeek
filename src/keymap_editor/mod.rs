@@ -94,6 +94,12 @@ impl EditorState {
     }
 }
 
+/// Pixels width of the left category sidebar in the editor.
+const SIDEBAR_WIDTH: f32 = 110.0;
+/// Margin reserved on the right of the central pane so the vertical scrollbar track
+/// never touches or overlaps the titled group outline borders.
+const SCROLLBAR_GUTTER: f32 = 8.0;
+
 /// The editor's two-pane layout, shared by the QMK and ZMK editors: a
 /// fixed-width, non-resizable left list of entries and a scrolling central
 /// pane, both filling the window instead of growing it. `state` is the draft
@@ -102,7 +108,6 @@ impl EditorState {
 fn editor_panes<D>(
     ui: &mut egui::Ui,
     left_id: &str,
-    left_width: f32,
     state: &mut D,
     left: impl FnOnce(&mut egui::Ui, &mut D),
     central: impl FnOnce(&mut egui::Ui, &mut D),
@@ -112,20 +117,38 @@ fn editor_panes<D>(
     // carry the visual separation.
     egui::Panel::left(left_id)
         .resizable(false)
-        .exact_size(left_width)
+        .exact_size(SIDEBAR_WIDTH)
         .show_separator_line(false)
+        .frame(egui::Frame::NONE.inner_margin(egui::Margin {
+            left: 0,
+            right: 8,
+            top: 0,
+            bottom: 0,
+        }))
         .show_inside(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.add_space(2.0);
                 ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
                     left(ui, state);
                 });
             });
         });
 
-    egui::CentralPanel::default().show_inside(ui, |ui| {
-        egui::ScrollArea::vertical().show(ui, |ui| central(ui, state));
-    });
+    egui::CentralPanel::default()
+        .frame(egui::Frame::NONE.inner_margin(egui::Margin {
+            left: 4,
+            right: 0,
+            top: 0,
+            bottom: 0,
+        }))
+        .show_inside(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    let content_width = (ui.available_width() - SCROLLBAR_GUTTER).max(100.0);
+                    ui.set_max_width(content_width);
+                    central(ui, state);
+                });
+        });
 }
 
 impl crate::overlay_window::OverlayApp {
@@ -223,12 +246,9 @@ impl crate::overlay_window::OverlayApp {
 
         ui.horizontal(|ui| {
             for (i, info) in layer_infos.iter().enumerate() {
-                let label = match &info.name {
-                    Some(name) if !name.is_empty() => name.as_str(),
-                    _ => &format!("L{i}"),
-                };
+                let label = info.short_name(i);
                 let is_selected = target.layer_index == i;
-                if layer_button(ui, label, i, is_selected, &style).clicked() {
+                if layer_button(ui, &label, i, is_selected, &style).clicked() {
                     selected_layer = Some(i);
                 }
             }
@@ -508,8 +528,14 @@ mod window_growth_probe {
                             });
                             egui::Panel::left("zmk_kinds")
                                 .resizable(false)
-                                .exact_size(110.0)
+                                .exact_size(super::SIDEBAR_WIDTH)
                                 .show_separator_line(false)
+                                .frame(egui::Frame::NONE.inner_margin(egui::Margin {
+                                    left: 0,
+                                    right: 8,
+                                    top: 0,
+                                    bottom: 0,
+                                }))
                                 .show_inside(ui, |ui| {
                                     egui::ScrollArea::vertical().show(ui, |ui| {
                                         for i in 0..20 {
@@ -517,13 +543,26 @@ mod window_growth_probe {
                                         }
                                     });
                                 });
-                            egui::CentralPanel::default().show_inside(ui, |ui| {
-                                egui::ScrollArea::vertical().show(ui, |ui| {
-                                    for i in 0..300 {
-                                        ui.label(format!("row {i}"));
-                                    }
+                            egui::CentralPanel::default()
+                                .frame(egui::Frame::NONE.inner_margin(egui::Margin {
+                                    left: 4,
+                                    right: 0,
+                                    top: 0,
+                                    bottom: 0,
+                                }))
+                                .show_inside(ui, |ui| {
+                                    egui::ScrollArea::vertical()
+                                        .auto_shrink([false, false])
+                                        .show(ui, |ui| {
+                                            let content_width = (ui.available_width()
+                                                - super::SCROLLBAR_GUTTER)
+                                                .max(100.0);
+                                            ui.set_max_width(content_width);
+                                            for i in 0..300 {
+                                                ui.label(format!("row {i}"));
+                                            }
+                                        });
                                 });
-                            });
                         });
                     if let Some(rect) = response.map(|r| r.response.rect) {
                         heights.push(rect.height());

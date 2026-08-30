@@ -295,7 +295,6 @@ impl crate::overlay_window::OverlayApp {
         super::editor_panes(
             ui,
             "zmk_kinds",
-            110.0,
             draft,
             |ui, draft| {
                 for page in Page::ALL {

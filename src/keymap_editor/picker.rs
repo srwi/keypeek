@@ -234,20 +234,19 @@ fn modifier_chip_key(name: &modifier_symbols::ModName, hand: Option<Hand>) -> La
 /// the same darkened modifier colors. Selected bits use the pressed treatment,
 /// matching how the selected cell is highlighted in the picker grids. Each
 /// chip is tagged with the currently selected hand in its bottom strip, since
-/// QMK's encoding applies one hand to the whole set.
-///
-/// `mods` is the low modifier nibble in HID bit order (Ctrl 0x01 … Gui 0x08).
-/// `on_toggle` receives the clicked bit so the caller can flip it.
+/// The four QMK modifier types as key-shaped toggle chips, sharing the
+/// overlay's modifier look, alongside a vertically centered Hand (L/R) selector.
+/// Returns `true` if any modifier bit or hand selection changed.
 pub fn modifier_toggle_row(
     ui: &mut egui::Ui,
     id_salt: &str,
-    mods: u16,
-    hand: Hand,
+    mods: &mut u16,
+    right: &mut bool,
     style: &KeyPaintStyle,
-    mut on_toggle: impl FnMut(u16),
-) {
+) -> bool {
     use modifier_symbols::{MOD_ALT, MOD_CTRL, MOD_GUI, MOD_SHIFT};
 
+    let hand = if *right { Hand::Right } else { Hand::Left };
     let defs = [
         (0x01, &MOD_CTRL),
         (0x02, &MOD_SHIFT),
@@ -255,32 +254,55 @@ pub fn modifier_toggle_row(
         (0x08, &MOD_GUI),
     ];
 
-    // One allocated row rect with per-cell interact rects, like the grids.
-    let cells = defs.len() as f32;
-    let row_width = cells * KEY_UNIT + (cells - 1.0) * GAP;
-    let (_, space_rect) =
-        ui.allocate_exact_size(egui::vec2(row_width, KEY_UNIT), egui::Sense::hover());
-    let origin = space_rect.rect.min;
+    let mut changed = false;
 
-    for (i, (mask, name)) in defs.iter().enumerate() {
-        let cell = egui::Rect::from_min_size(
-            origin + egui::vec2(i as f32 * (KEY_UNIT + GAP), 0.0),
-            egui::vec2(KEY_UNIT, KEY_UNIT),
-        );
-        let key = modifier_chip_key(name, Some(hand));
-        let response = key_chip(
-            ui,
-            cell,
-            ui.id().with((id_salt, "mod", i)),
-            &key,
-            mods & mask != 0,
-            style,
-        );
+    ui.horizontal(|ui| {
+        let cells = defs.len() as f32;
+        let row_width = cells * KEY_UNIT + (cells - 1.0) * GAP;
+        let (_, space_rect) =
+            ui.allocate_exact_size(egui::vec2(row_width, KEY_UNIT), egui::Sense::hover());
+        let origin = space_rect.rect.min;
 
-        if response.clicked() {
-            on_toggle(*mask);
+        for (i, (mask, name)) in defs.iter().enumerate() {
+            let cell = egui::Rect::from_min_size(
+                origin + egui::vec2(i as f32 * (KEY_UNIT + GAP), 0.0),
+                egui::vec2(KEY_UNIT, KEY_UNIT),
+            );
+            let key = modifier_chip_key(name, Some(hand));
+            let response = key_chip(
+                ui,
+                cell,
+                ui.id().with((id_salt, "mod", i)),
+                &key,
+                *mods & mask != 0,
+                style,
+            );
+
+            if response.clicked() {
+                *mods ^= *mask;
+                changed = true;
+            }
         }
-    }
+
+        ui.add_space(8.0);
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            ui.weak("Hand");
+            if ui.add(egui::Button::new("L").small().selected(!*right)).clicked() {
+                *right = false;
+                changed = true;
+            }
+            if ui
+                .add(egui::Button::new("R").small().selected(*right))
+                .on_hover_text("Right-hand modifiers (RCTL, RSFT, RALT, RGUI)")
+                .clicked()
+            {
+                *right = true;
+                changed = true;
+            }
+        });
+    });
+
+    changed
 }
 
 /// The eight HID modifier bits as two key-shaped toggle chip rows (left hand,

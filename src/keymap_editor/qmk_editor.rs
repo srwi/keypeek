@@ -9,7 +9,7 @@ use crate::qmk_keycode_labels::constants::*;
 use crate::qmk_keycode_labels::get_layout_key;
 
 use super::picker::{
-    framed_candidate_groups_rows, modifier_toggle_row, picker_grid_rows, Candidate, Hand, KEY_UNIT,
+    framed_candidate_groups_rows, modifier_toggle_row, picker_grid_rows, Candidate, KEY_UNIT,
 };
 use super::qmk_catalog::{qmk_candidate, LayerKind};
 use super::EditTarget;
@@ -302,7 +302,6 @@ impl crate::overlay_window::OverlayApp {
         super::editor_panes(
             ui,
             "qmk_sections",
-            100.0,
             draft,
             |ui, draft| {
                 for section in Section::ALL {
@@ -462,31 +461,17 @@ impl crate::overlay_window::OverlayApp {
         }
 
         if draft.section.has_mods() {
-            let hand = if draft.right { Hand::Right } else { Hand::Left };
             let mod_style = self.paint_style(KEY_UNIT);
             titled_group(ui, "Modifiers", |ui| {
-                ui.horizontal(|ui| {
-                    modifier_toggle_row(ui, "qmk_mods", draft.mods, hand, &mod_style, |mask| {
-                        draft.mods ^= mask;
-                        self.commit_qmk_draft(keyboard, target, draft);
-                    });
-                    ui.weak("Hand");
-                    if ui
-                        .add(egui::Button::new("L").small().selected(!draft.right))
-                        .clicked()
-                    {
-                        draft.right = false;
-                        self.commit_qmk_draft(keyboard, target, draft);
-                    }
-                    if ui
-                        .add(egui::Button::new("R").small().selected(draft.right))
-                        .on_hover_text("Right-hand modifiers (RCTL, RSFT, RALT, RGUI)")
-                        .clicked()
-                    {
-                        draft.right = true;
-                        self.commit_qmk_draft(keyboard, target, draft);
-                    }
-                });
+                if modifier_toggle_row(
+                    ui,
+                    "qmk_mods",
+                    &mut draft.mods,
+                    &mut draft.right,
+                    &mod_style,
+                ) {
+                    self.commit_qmk_draft(keyboard, target, draft);
+                }
             });
         }
 

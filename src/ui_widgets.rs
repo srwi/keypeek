@@ -11,7 +11,7 @@ pub fn titled_group<R>(
 ) -> R {
     let title_height = ui.text_style_height(&egui::TextStyle::Body);
     // Half the title strip rises above the top border; reserve room for it.
-    ui.add_space(title_height / 2.0 + 2.0);
+    ui.add_space(title_height / 2.0);
 
     let frame = egui::Frame::group(ui.style()).inner_margin(egui::Margin::symmetric(10, 8));
     let ret = frame.show(ui, |ui| {
