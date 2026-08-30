@@ -12,7 +12,7 @@ pub use zmk_editor::ZmkDraft;
 
 use crate::key_action::KeyAction;
 use crate::keyboard::Keyboard;
-use crate::layout_key::{BorderStyle, Label};
+use crate::layout_key::{BorderStyle, Label, LayoutKey};
 use crate::protocols::WriteSupport;
 use egui::Window;
 use std::sync::mpsc;
@@ -188,6 +188,9 @@ impl crate::overlay_window::OverlayApp {
                 ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
             }
 
+            let target = self.draw_editor_layer_selector(ui, keyboard, target);
+            ui.add_space(8.0);
+
             // Header: one key slot. It shows the current assignment
             // rendered as the exact key it paints on the overlay, with its
             // raw firmware value beneath. While a staged draft is mid-
@@ -310,6 +313,91 @@ impl crate::overlay_window::OverlayApp {
 
         if !open {
             self.on_close_request();
+        }
+    }
+
+    /// Draws the layer radio selector in the header at the very top of the "Edit key" window.
+    fn draw_editor_layer_selector(
+        &mut self,
+        ui: &mut egui::Ui,
+        keyboard: &Keyboard,
+        target: EditTarget,
+    ) -> EditTarget {
+        let layer_infos = keyboard.layer_infos();
+        if layer_infos.is_empty() {
+            return target;
+        }
+
+        let candidates: Vec<picker::Candidate> = layer_infos
+            .iter()
+            .enumerate()
+            .map(|(i, info)| {
+                let label = match &info.name {
+                    Some(name) if !name.is_empty() => Label::new(name),
+                    _ => Label::new(format!("L{i}")),
+                };
+                let key = LayoutKey {
+                    tap: label,
+                    layer_ref: Some(i as u8),
+                    kind: crate::layout_key::KeycodeKind::Modifier,
+                    border: BorderStyle::None,
+                    ..Default::default()
+                };
+                picker::Candidate::new(KeyAction::Qmk(i as u16), key)
+            })
+            .collect();
+
+        let style = self.paint_style(picker::KEY_UNIT);
+        let selected = KeyAction::Qmk(target.layer_index as u16);
+        let mut selected_layer = None;
+
+        picker::picker_grid_rows(
+            ui,
+            "editor_header_layers",
+            &candidates,
+            Some(&selected),
+            &style,
+            |candidate| {
+                if let KeyAction::Qmk(layer) = candidate.binding {
+                    selected_layer = Some(layer as usize);
+                }
+            },
+        );
+
+        if !self.editor.closing {
+            if let Some(new_layer) = selected_layer {
+                if new_layer != target.layer_index {
+                    let new_target = EditTarget {
+                        layer_index: new_layer,
+                        row: target.row,
+                        col: target.col,
+                    };
+                    self.retarget_editor(keyboard, new_target);
+                    return new_target;
+                }
+            }
+        }
+
+        target
+    }
+
+    pub(crate) fn retarget_editor(&mut self, keyboard: &Keyboard, target: EditTarget) {
+        self.editor.target = Some(target);
+        self.editor.error = None;
+        if self.editor.zmk_session == ZmkSessionState::Failed {
+            self.editor.zmk_session = ZmkSessionState::Idle;
+        }
+        match keyboard.get_action(target.layer_index, target.row, target.col) {
+            Some(KeyAction::Qmk(code)) => {
+                self.editor.qmk_draft = QmkDraft::from_keycode(code);
+            }
+            Some(KeyAction::Zmk(behavior)) => {
+                self.editor.zmk_draft = ZmkDraft::from_behavior(&behavior);
+            }
+            _ => {
+                self.editor.qmk_draft = Default::default();
+                self.editor.zmk_draft = Default::default();
+            }
         }
     }
 

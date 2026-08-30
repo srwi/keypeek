@@ -45,7 +45,6 @@ impl OverlayApp {
                 settings_warning: None,
                 mouse_passthrough: None,
                 file_dialog: egui_file_dialog::FileDialog::new(),
-                pinned_layer: None,
             },
             settings: SettingsState {
                 active: base_settings.clone(),
@@ -173,14 +172,9 @@ impl OverlayApp {
         self.sync_mouse_passthrough(host);
         if let AppConnectionState::Connected { keyboard } = &self.session.connection {
             // Clone the shared keyboard so drawing can mutate app state (the
-            // layer picker, the editor) without holding a borrow on `self.session`.
+            // editor) without holding a borrow on `self.session`.
             let keyboard = Arc::clone(keyboard);
-            let overlay_rect = self.draw_overlay_window(ctx, &keyboard, self.overlay_visible());
-            if self.ui.settings_visible {
-                if let Some(rect) = overlay_rect {
-                    self.draw_layer_picker(ctx, &keyboard, rect);
-                }
-            }
+            self.draw_overlay_window(ctx, &keyboard, self.overlay_visible());
             if self.editor.target.is_some() {
                 self.draw_editor_window(ctx, &keyboard);
             }

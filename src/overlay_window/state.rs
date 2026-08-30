@@ -51,8 +51,6 @@ pub struct UiState {
     pub settings_warning: Option<String>,
     pub mouse_passthrough: Option<bool>,
     pub file_dialog: FileDialog,
-    /// `None` = the live "Active" view; `Some(n)` freezes the overlay on layer `n`.
-    pub pinned_layer: Option<usize>,
 }
 
 pub struct SettingsState {

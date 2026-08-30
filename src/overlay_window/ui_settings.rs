@@ -384,7 +384,6 @@ impl OverlayApp {
 
         if self.ui.settings_visible && !open {
             self.ui.settings_visible = false;
-            self.ui.pinned_layer = None;
             self.persist_settings();
             if self.editor.zmk_dirty {
                 // Unsaved ZMK changes: the editor window saves them while it

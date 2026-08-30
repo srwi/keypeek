@@ -2,24 +2,23 @@ use super::OverlayApp;
 use crate::key_paint::{self, KeyDisplay};
 use crate::keyboard::Keyboard;
 use crate::layout_key::KeycodeKind;
-use crate::settings::{LegendMode, WindowPosition};
+use crate::settings::LegendMode;
 use egui::Window;
 
 impl OverlayApp {
-    /// Returns the overlay window's rect when it was shown, so the layer picker
-    /// can sit adjacent to it.
     pub(super) fn draw_overlay_window(
         &mut self,
         ctx: &egui::Context,
         keyboard: &Keyboard,
         visible: bool,
-    ) -> Option<egui::Rect> {
+    ) {
         let anchor_params = self.get_anchor_params();
         let mut window_open = visible;
         let size = self.settings.active.size as f32;
-        let pinned = self.ui.pinned_layer;
-        // Keys can only be clicked on a pinned layer while settings are open.
-        let hit_test_enabled = self.ui.settings_visible && pinned.is_some();
+        // Pinned while the editor is targeting a specific layer; otherwise automatic (active).
+        let pinned = self.editor.target.as_ref().map(|t| t.layer_index);
+        // Keys can be clicked whenever settings are visible (window is not clickthrough).
+        let hit_test_enabled = self.ui.settings_visible;
 
         // One shared painter for every key this frame; painting itself lives
         // in `key_paint` so pickers render identically.
@@ -48,7 +47,7 @@ impl OverlayApp {
                     egui::Sense::click(),
                 );
 
-                let mut hovered_key: Option<(usize, usize)> = None;
+                let mut hovered_key: Option<(usize, usize, usize)> = None;
 
                 // Only walk the matrix for live modifier state when the preview can
                 // actually use it; same reasoning as `is_key_pressed` elsewhere.
@@ -117,7 +116,7 @@ impl OverlayApp {
                             face.contains(key_paint::rotate_point(p, center, -angle))
                         });
                     if hovered {
-                        hovered_key = Some((key.row, key.col));
+                        hovered_key = Some((key.row, key.col, effective_layer as usize));
                         if let Some(tooltip) = key_tooltip(&layout_key, transparent) {
                             show_pointer_tooltip(
                                 ui,
@@ -152,111 +151,21 @@ impl OverlayApp {
                 if let Some((hovered, clicked)) = response.inner {
                     // A closing editor is saving; it must not be retargeted.
                     if clicked && !self.editor.closing {
-                        if let Some((row, col)) = hovered {
-                            self.editor.target = Some(crate::keymap_editor::EditTarget {
-                                layer_index: pinned.unwrap(),
-                                row,
-                                col,
-                            });
-                            self.editor.error = None;
-                            // A fresh target retries a failed session open
-                            // (e.g. after the device was unlocked).
-                            if self.editor.zmk_session
-                                == crate::keymap_editor::ZmkSessionState::Failed
-                            {
-                                self.editor.zmk_session =
-                                    crate::keymap_editor::ZmkSessionState::Idle;
-                            }
-                            // Rebuild the draft from the newly targeted binding.
-                            match keyboard.get_action(pinned.unwrap(), row, col) {
-                                Some(crate::key_action::KeyAction::Qmk(code)) => {
-                                    self.editor.qmk_draft =
-                                        crate::keymap_editor::QmkDraft::from_keycode(code);
-                                }
-                                Some(crate::key_action::KeyAction::Zmk(behavior)) => {
-                                    self.editor.zmk_draft =
-                                        crate::keymap_editor::ZmkDraft::from_behavior(&behavior);
-                                }
-                                _ => {
-                                    self.editor.qmk_draft = Default::default();
-                                    self.editor.zmk_draft = Default::default();
-                                }
-                            }
+                        if let Some((row, col, target_layer)) = hovered {
+                            self.retarget_editor(
+                                keyboard,
+                                crate::keymap_editor::EditTarget {
+                                    layer_index: target_layer,
+                                    row,
+                                    col,
+                                },
+                            );
                         }
                     }
                 }
             }
         }
-
-        overlay_response.map(|response| response.response.rect)
     }
-
-    /// The dropdown next to the overlay that picks which layer it shows. Only
-    /// present in settings mode; "Active" restores the live view.
-    pub(super) fn draw_layer_picker(
-        &mut self,
-        ctx: &egui::Context,
-        keyboard: &Keyboard,
-        overlay_rect: egui::Rect,
-    ) {
-        let layer_infos = keyboard.layer_infos();
-
-        // The layer count can change across a reconnect; drop a stale pin.
-        if let Some(layer) = self.ui.pinned_layer {
-            if layer >= layer_infos.len() {
-                self.ui.pinned_layer = None;
-            }
-        }
-
-        // Sit the picker above a bottom-anchored overlay, below it otherwise.
-        let bottom_anchored = matches!(
-            self.settings.active.position,
-            WindowPosition::BottomLeft | WindowPosition::BottomRight | WindowPosition::Bottom
-        );
-        let gap = 8.0;
-        let (pivot, pos) = if bottom_anchored {
-            (
-                egui::Align2::CENTER_BOTTOM,
-                egui::pos2(overlay_rect.center().x, overlay_rect.top() - gap),
-            )
-        } else {
-            (
-                egui::Align2::CENTER_TOP,
-                egui::pos2(overlay_rect.center().x, overlay_rect.bottom() + gap),
-            )
-        };
-
-        let mut selected = self.ui.pinned_layer;
-        Window::new("layer_picker")
-            .title_bar(false)
-            .collapsible(false)
-            .resizable(false)
-            .auto_sized()
-            .pivot(pivot)
-            .fixed_pos(pos)
-            .show(ctx, |ui| {
-                let selected_text = selected
-                    .map(|i| format!("{i}: {}", layer_display_name(&layer_infos, i)))
-                    .unwrap_or_else(|| "Active".to_string());
-                egui::ComboBox::from_id_salt("layer_picker_combo")
-                    .selected_text(selected_text)
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut selected, None, "Active");
-                        for (i, _) in layer_infos.iter().enumerate() {
-                            let label = format!("{i}: {}", layer_display_name(&layer_infos, i));
-                            ui.selectable_value(&mut selected, Some(i), label);
-                        }
-                    });
-            });
-        self.ui.pinned_layer = selected;
-    }
-}
-
-fn layer_display_name(layer_infos: &[crate::key_action::LayerInfo], index: usize) -> String {
-    layer_infos
-        .get(index)
-        .and_then(|info| info.name.clone())
-        .unwrap_or_else(|| format!("Layer {index}"))
 }
 
 fn key_tooltip(key: &crate::layout_key::LayoutKey, transparent: bool) -> Option<String> {
