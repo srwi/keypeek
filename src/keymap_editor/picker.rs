@@ -89,11 +89,9 @@ pub fn picker_grid_rows(
         (cols as f32 * KEY_UNIT + (cols.saturating_sub(1)) as f32 * GAP).min(ui.available_width());
     let total_height = rows as f32 * KEY_UNIT + (rows.saturating_sub(1)) as f32 * GAP;
 
-    let (_, space_rect) = ui.allocate_exact_size(
-        egui::vec2(grid_width.max(KEY_UNIT), total_height),
-        egui::Sense::hover(),
-    );
-    let origin = space_rect.rect.min;
+    let (_, space_rect) =
+        ui.allocate_space(egui::vec2(grid_width.max(KEY_UNIT), total_height));
+    let origin = space_rect.min;
 
     for (i, candidate) in candidates.iter().enumerate() {
         let cell = egui::Rect::from_min_size(
@@ -259,9 +257,8 @@ pub fn modifier_toggle_row(
     ui.horizontal(|ui| {
         let cells = defs.len() as f32;
         let row_width = cells * KEY_UNIT + (cells - 1.0) * GAP;
-        let (_, space_rect) =
-            ui.allocate_exact_size(egui::vec2(row_width, KEY_UNIT), egui::Sense::hover());
-        let origin = space_rect.rect.min;
+        let (_, space_rect) = ui.allocate_space(egui::vec2(row_width, KEY_UNIT));
+        let origin = space_rect.min;
 
         for (i, (mask, name)) in defs.iter().enumerate() {
             let cell = egui::Rect::from_min_size(
@@ -326,11 +323,10 @@ pub fn modifier_toggle_grid(
             for (i, name) in names.iter().enumerate() {
                 let mask = 1 << (row * 4 + i as u8);
                 let key = modifier_chip_key(name, Some(hand));
-                let (_, cell) =
-                    ui.allocate_exact_size(egui::vec2(KEY_UNIT, KEY_UNIT), egui::Sense::hover());
+                let (_, cell_rect) = ui.allocate_space(egui::vec2(KEY_UNIT, KEY_UNIT));
                 let response = key_chip(
                     ui,
-                    cell.rect,
+                    cell_rect,
                     ui.id().with((id_salt, "mod", mask)),
                     &key,
                     mods & mask != 0,

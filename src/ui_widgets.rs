@@ -14,11 +14,13 @@ pub fn titled_group<R>(
     ui.add_space(title_height / 2.0);
 
     let frame = egui::Frame::group(ui.style()).inner_margin(egui::Margin::symmetric(10, 8));
-    let ret = frame.show(ui, |ui| {
-        ui.set_min_width(ui.available_width());
-        add_contents(ui)
+    let ret = ui.push_id(title, |ui| {
+        frame.show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
+            add_contents(ui)
+        })
     });
-    let frame_rect = ret.response.rect;
+    let frame_rect = ret.inner.response.rect;
 
     // Paint the title over the top border, masking the border line behind it
     // with the window background so the line appears to break around the text.
@@ -40,5 +42,5 @@ pub fn titled_group<R>(
     painter.rect_filled(mask_rect, 0.0, ui.visuals().window_fill());
     painter.galley(title_min, galley, text_color);
 
-    ret.inner
+    ret.inner.inner
 }

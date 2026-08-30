@@ -12,6 +12,7 @@ use std::sync::OnceLock;
 use zmk_studio_api::{Behavior, HidUsage, Keycode};
 pub const HID_USAGE_KEYBOARD: u16 = 0x07;
 pub const HID_USAGE_CONSUMER: u16 = 0x0C;
+const MAX_USAGE_ID: u32 = 0x3FF;
 
 /// Backlight command id whose `value` is the brightness level — the one
 /// backlight binding with a parameter, staged in the editor draft.
@@ -195,18 +196,18 @@ pub fn categories() -> &'static [CandidateGroup] {
 fn build_categories() -> Vec<CandidateGroup> {
     let mut keyboard = Vec::new();
     let mut consumer = Vec::new();
-    // Scan every encoded usage below the consumer range; keep only known
-    // keyboard-page (0x07) and consumer-page (0x0C) keycodes.
-    for encoded in 0..=((HID_USAGE_CONSUMER as u32) << 16 | 0x3FF) {
-        let Some(_keycode) = Keycode::from_hid_usage(encoded) else {
-            continue;
-        };
-        let page = HidUsage::from_encoded(encoded).page();
-        let candidate = keycode_candidate(encoded);
-        match page {
-            HID_USAGE_KEYBOARD => keyboard.push(candidate),
-            HID_USAGE_CONSUMER => consumer.push(candidate),
-            _ => {}
+    for &page in &[HID_USAGE_KEYBOARD, HID_USAGE_CONSUMER] {
+        for id in 0..=MAX_USAGE_ID {
+            let encoded = (page as u32) << 16 | id;
+            if Keycode::from_hid_usage(encoded).is_none() {
+                continue;
+            }
+            let candidate = keycode_candidate(encoded);
+            match page {
+                HID_USAGE_KEYBOARD => keyboard.push(candidate),
+                HID_USAGE_CONSUMER => consumer.push(candidate),
+                _ => {}
+            }
         }
     }
     vec![
