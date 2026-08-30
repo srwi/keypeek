@@ -1,3 +1,4 @@
+use super::qmk_common::{qmk_set_key_with_retry, QmkFeatures};
 use super::{
     qmk_json_parser, KeyboardDefinition, KeyboardProtocol, RawHidSubscription, SubscriptionSender,
     WriteSupport,
@@ -9,14 +10,20 @@ use std::error::Error;
 pub struct ViaProtocol {
     api: KeyboardApi,
     definition: KeyboardDefinition,
+    features: QmkFeatures,
 }
 
 impl ViaProtocol {
     pub fn connect(json_path: &str) -> Result<Self, Box<dyn Error>> {
         let definition = qmk_json_parser::parse_qmk_json(json_path)?;
         let api = Self::get_api(definition.vid, definition.pid)?;
+        let features = QmkFeatures::probe(&api);
 
-        Ok(Self { api, definition })
+        Ok(Self {
+            api,
+            definition,
+            features,
+        })
     }
 
     fn layer_count(&self) -> Result<usize, Box<dyn Error>> {
@@ -103,7 +110,7 @@ impl KeyboardProtocol for ViaProtocol {
     ) -> Result<(), Box<dyn Error>> {
         match action {
             KeyAction::Qmk(code) => {
-                super::qmk_set_key_with_retry(&self.api, layer_index, row, col, *code)
+                qmk_set_key_with_retry(&self.api, layer_index, row, col, *code)
             }
             KeyAction::Zmk(_) => Err("Cannot apply a ZMK behavior to a QMK keyboard".into()),
         }
@@ -111,5 +118,9 @@ impl KeyboardProtocol for ViaProtocol {
 
     fn subscription_sender(&self) -> Result<Option<Box<dyn SubscriptionSender>>, Box<dyn Error>> {
         RawHidSubscription::open(self.definition.vid, self.definition.pid)
+    }
+
+    fn action_filter(&self) -> Option<super::ActionFilter> {
+        self.features.action_filter()
     }
 }

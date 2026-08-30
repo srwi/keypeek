@@ -1,3 +1,4 @@
+use super::qmk_common::{qmk_set_key_with_retry, QmkFeatures};
 use super::{
     kle_parser, KeyboardDefinition, KeyboardProtocol, RawHidSubscription, SubscriptionSender,
     WriteSupport,
@@ -18,6 +19,7 @@ enum VialCommand {
 pub struct VialProtocol {
     api: KeyboardApi,
     definition: KeyboardDefinition,
+    features: QmkFeatures,
 }
 
 impl VialProtocol {
@@ -71,8 +73,13 @@ impl VialProtocol {
         }
 
         let definition = Self::fetch_definition(&api, vid, pid)?;
+        let features = QmkFeatures::probe(&api);
 
-        Ok(Self { api, definition })
+        Ok(Self {
+            api,
+            definition,
+            features,
+        })
     }
 
     fn vial_command(
@@ -196,7 +203,7 @@ impl KeyboardProtocol for VialProtocol {
     ) -> Result<(), Box<dyn Error>> {
         match action {
             KeyAction::Qmk(code) => {
-                super::qmk_set_key_with_retry(&self.api, layer_index, row, col, *code)
+                qmk_set_key_with_retry(&self.api, layer_index, row, col, *code)
             }
             KeyAction::Zmk(_) => Err("Cannot apply a ZMK behavior to a QMK keyboard".into()),
         }
@@ -204,5 +211,9 @@ impl KeyboardProtocol for VialProtocol {
 
     fn subscription_sender(&self) -> Result<Option<Box<dyn SubscriptionSender>>, Box<dyn Error>> {
         RawHidSubscription::open(self.definition.vid, self.definition.pid)
+    }
+
+    fn action_filter(&self) -> Option<super::ActionFilter> {
+        self.features.action_filter()
     }
 }

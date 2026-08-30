@@ -10,33 +10,95 @@ use crate::layout_key::{Label, LayoutKey};
 use crate::qmk_keycode_labels::constants::*;
 use crate::qmk_keycode_labels::get_layout_key;
 use qmk_via_api::keycodes::Keycode;
-use std::ops::RangeInclusive;
 use std::sync::OnceLock;
 
-/// Consumer/media keycodes (audio, transport, brightness, application launch).
-const MEDIA_RANGE: RangeInclusive<u16> = 0xA8..=0xC2;
+fn keycodes_between(from: Keycode, to: Keycode) -> impl Iterator<Item = u16> {
+    (from as u16)..=(to as u16)
+}
 
-/// Dedicated modifier keys (`LCTL`…`RGUI`).
-const MODIFIER_RANGE: RangeInclusive<u16> = 0xE0..=0xE7;
+fn candidate_group(name: &'static str, codes: impl IntoIterator<Item = u16>) -> CandidateGroup {
+    CandidateGroup {
+        name,
+        candidates: codes
+            .into_iter()
+            .filter(|&c| get_layout_key(c).is_some())
+            .map(qmk_candidate)
+            .collect(),
+    }
+}
 
-/// The Basic and Media groups as ready-made candidates, built once: resolving
-/// every label per frame would be wasted work in the editor.
+/// The candidate groups built once: resolving every label per frame would be
+/// wasted work in the editor.
 pub fn categories() -> &'static [CandidateGroup] {
     static CATEGORIES: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     CATEGORIES.get_or_init(|| {
-        let mut basic: Vec<u16> = (0x00..=0xA7).collect();
+        let mut basic: Vec<u16> =
+            keycodes_between(Keycode::KC_NO, Keycode::KC_SYSTEM_WAKE).collect();
         // Mouse cursor/button/wheel keycodes sit in their own sub-range.
-        basic.extend(0xCD..=0xDF);
-        basic.extend(MODIFIER_RANGE);
+        basic.extend(keycodes_between(
+            Keycode::QK_MOUSE_CURSOR_UP,
+            Keycode::QK_MOUSE_ACCELERATION_2,
+        ));
+        basic.extend(keycodes_between(
+            Keycode::KC_LEFT_CTRL,
+            Keycode::KC_RIGHT_GUI,
+        ));
+
+        let special = [
+            Keycode::QK_BOOTLOADER,
+            Keycode::QK_REBOOT,
+            Keycode::QK_GRAVE_ESCAPE,
+            Keycode::QK_CAPS_WORD_TOGGLE,
+            Keycode::QK_REPEAT_KEY,
+            Keycode::QK_ALT_REPEAT_KEY,
+            Keycode::QK_CLEAR_EEPROM,
+            Keycode::QK_DEBUG_TOGGLE,
+        ]
+        .map(|k| k as u16);
+
+        let audio = [
+            Keycode::QK_AUDIO_ON,
+            Keycode::QK_AUDIO_OFF,
+            Keycode::QK_AUDIO_TOGGLE,
+            Keycode::QK_AUDIO_CLICKY_TOGGLE,
+            Keycode::QK_AUDIO_CLICKY_UP,
+            Keycode::QK_AUDIO_CLICKY_DOWN,
+            Keycode::QK_AUDIO_CLICKY_RESET,
+        ]
+        .map(|k| k as u16);
+
+        let custom: Vec<u16> = keycodes_between(Keycode::QK_MACRO_0, Keycode::QK_MACRO_15)
+            .chain(keycodes_between(Keycode::QK_KB_0, Keycode::QK_KB_31))
+            .chain(keycodes_between(Keycode::QK_USER_0, Keycode::QK_USER_31))
+            .collect();
+
         vec![
-            CandidateGroup {
-                name: "Basic",
-                candidates: basic.iter().map(|&code| qmk_candidate(code)).collect(),
-            },
-            CandidateGroup {
-                name: "Media",
-                candidates: MEDIA_RANGE.map(qmk_candidate).collect(),
-            },
+            candidate_group("Basic", basic),
+            candidate_group(
+                "Media",
+                keycodes_between(Keycode::KC_AUDIO_MUTE, Keycode::KC_LAUNCHPAD),
+            ),
+            candidate_group("Special", special),
+            candidate_group(
+                "Backlight",
+                keycodes_between(
+                    Keycode::QK_BACKLIGHT_ON,
+                    Keycode::QK_BACKLIGHT_TOGGLE_BREATHING,
+                ),
+            ),
+            candidate_group(
+                "RGB Underglow",
+                keycodes_between(Keycode::QK_UNDERGLOW_TOGGLE, Keycode::RGB_MODE_TWINKLE),
+            ),
+            candidate_group(
+                "RGB Matrix",
+                keycodes_between(
+                    Keycode::QK_RGB_MATRIX_ON,
+                    Keycode::QK_RGB_MATRIX_SPEED_DOWN,
+                ),
+            ),
+            candidate_group("Audio", audio),
+            candidate_group("Custom", custom),
         ]
     })
 }
@@ -203,6 +265,22 @@ mod tests {
                 assert!(
                     all.contains(&code),
                     "keycode 0x{code:04X} is labeled but missing from the catalog"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn all_catalog_candidates_have_labels() {
+        for group in categories() {
+            for candidate in &group.candidates {
+                assert!(
+                    !candidate.key.tap.full.is_empty()
+                        || candidate.key.symbol.is_some()
+                        || candidate.transparent,
+                    "Group {:?} candidate {:?} has no label or symbol",
+                    group.name,
+                    candidate.binding
                 );
             }
         }

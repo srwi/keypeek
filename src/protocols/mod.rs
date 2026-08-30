@@ -1,6 +1,7 @@
 pub mod kle_parser;
 pub mod layout_geometry;
 pub mod mock;
+pub mod qmk_common;
 pub mod qmk_json_parser;
 pub mod via;
 pub mod vial;
@@ -10,8 +11,6 @@ pub mod zmk_rpc;
 use qmk_via_api::api::KeyboardApi;
 use std::error::Error;
 use std::sync::Arc;
-use std::thread;
-use std::time::Duration;
 
 use self::mock::MockProtocol;
 use self::via::ViaProtocol;
@@ -24,34 +23,7 @@ pub const KEYPEEK_SUBSCRIBE_MARKER: u8 = 0xC0;
 pub const KEYPEEK_SUBSCRIBE_ACTIVE: u8 = 0xA1;
 pub const KEYPEEK_SUBSCRIBE_INACTIVE: u8 = 0xA0;
 
-/// Writes one dynamic-keymap keycode through the VIA protocol.
-///
-/// A layer-state packet arriving between `set_key`'s send and its single
-/// response read makes the crate report `BadCommandResponse` even though the
-/// write usually applied; a matching `get_key` readback confirms success.
-pub(crate) fn qmk_set_key_with_retry(
-    api: &KeyboardApi,
-    layer_index: usize,
-    row: usize,
-    col: usize,
-    code: u16,
-) -> Result<(), Box<dyn Error>> {
-    match api.set_key(layer_index as u8, row as u8, col as u8, code) {
-        Ok(_) => Ok(()),
-        Err(qmk_via_api::Error::BadCommandResponse(_)) => {
-            for _ in 0..3 {
-                thread::sleep(Duration::from_millis(50));
-                if let Ok(readback) = api.get_key(layer_index as u8, row as u8, col as u8) {
-                    if readback == code {
-                        return Ok(());
-                    }
-                }
-            }
-            Err("Failed to set key: the device did not confirm the write".into())
-        }
-        Err(e) => Err(format!("Failed to set key: {e}").into()),
-    }
-}
+pub type ActionFilter = Arc<dyn Fn(&crate::key_action::KeyAction) -> bool + Send + Sync>;
 
 pub type Row = usize;
 pub type Column = usize;
@@ -164,9 +136,7 @@ pub trait KeyboardProtocol: Send {
         None
     }
 
-    fn action_filter(
-        &self,
-    ) -> Option<Arc<dyn Fn(&crate::key_action::KeyAction) -> bool + Send + Sync>> {
+    fn action_filter(&self) -> Option<ActionFilter> {
         None
     }
 }

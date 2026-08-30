@@ -146,7 +146,7 @@ pub struct Keyboard {
     command_tx: mpsc::Sender<KeymapCommand>,
     write_support: WriteSupport,
     _keepalive: Option<mpsc::Sender<()>>,
-    action_filter: Option<Arc<dyn Fn(&KeyAction) -> bool + Send + Sync>>,
+    action_filter: Option<crate::protocols::ActionFilter>,
 }
 
 /// A keymap command for the protocol, executed on the reader thread so writes
