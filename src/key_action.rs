@@ -15,7 +15,13 @@ impl KeyAction {
     /// Derive the display label. `None` = transparent (falls through to lower layers).
     pub fn resolve_label(&self, layer_names: &[String]) -> Option<LayoutKey> {
         match self {
-            KeyAction::Qmk(code) => crate::qmk_keycode_labels::get_layout_key(*code),
+            KeyAction::Qmk(code) => match crate::qmk_keycode_labels::resolve_qmk_key(*code) {
+                crate::qmk_keycode_labels::KeyResolution::Transparent => None,
+                crate::qmk_keycode_labels::KeyResolution::Key(key) => Some(key),
+                crate::qmk_keycode_labels::KeyResolution::Unknown => {
+                    Some(crate::qmk_keycode_labels::get_hex_layout_key(*code))
+                }
+            },
             KeyAction::Zmk(b) => crate::zmk_keycode_labels::behavior_to_layout_key(b, layer_names),
         }
     }

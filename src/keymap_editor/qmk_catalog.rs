@@ -8,7 +8,7 @@ use super::picker::{Candidate, CandidateGroup};
 use crate::key_action::KeyAction;
 use crate::layout_key::{Label, LayoutKey};
 use crate::qmk_keycode_labels::constants::*;
-use crate::qmk_keycode_labels::get_layout_key;
+use crate::qmk_keycode_labels::{get_hex_layout_key, resolve_qmk_key, KeyResolution};
 use qmk_via_api::keycodes::Keycode;
 use std::sync::OnceLock;
 
@@ -21,7 +21,7 @@ fn candidate_group(name: &'static str, codes: impl IntoIterator<Item = u16>) -> 
         name,
         candidates: codes
             .into_iter()
-            .filter(|&c| get_layout_key(c).is_some())
+            .filter(|&c| matches!(resolve_qmk_key(c), KeyResolution::Key(_)))
             .map(qmk_candidate)
             .collect(),
     }
@@ -210,16 +210,6 @@ pub fn layer_mod_group(layer_count: usize, mods: u16) -> CandidateGroup {
 /// unusable as key legends.
 pub fn qmk_candidate(code: u16) -> Candidate {
     let binding = KeyAction::Qmk(code);
-    if code == Keycode::KC_TRANSPARENT as u16 {
-        return Candidate {
-            binding,
-            key: LayoutKey {
-                tap: Label::with_short("Trans", egui_phosphor::regular::CARET_DOWN),
-                ..Default::default()
-            },
-            transparent: true,
-        };
-    }
     if code == Keycode::KC_NO as u16 {
         return Candidate::new(
             binding,
@@ -229,15 +219,17 @@ pub fn qmk_candidate(code: u16) -> Candidate {
             },
         );
     }
-    match get_layout_key(code) {
-        Some(key) => Candidate::new(binding, key),
-        None => Candidate::new(
+    match resolve_qmk_key(code) {
+        KeyResolution::Transparent => Candidate {
             binding,
-            LayoutKey {
-                tap: Label::new(format!("0x{code:04X}")),
+            key: LayoutKey {
+                tap: Label::with_short("Trans", egui_phosphor::regular::CARET_DOWN),
                 ..Default::default()
             },
-        ),
+            transparent: true,
+        },
+        KeyResolution::Key(key) => Candidate::new(binding, key),
+        KeyResolution::Unknown => Candidate::new(binding, get_hex_layout_key(code)),
     }
 }
 
@@ -284,5 +276,22 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn invalid_keycodes_excluded_from_catalog() {
+        let all: Vec<u16> = categories()
+            .iter()
+            .flat_map(|group| &group.candidates)
+            .filter_map(|candidate| match &candidate.binding {
+                KeyAction::Qmk(code) => Some(*code),
+                _ => None,
+            })
+            .collect();
+
+        assert!(!all.contains(&0x0002), "0x0002 should not be in catalog");
+        assert!(!all.contains(&0x0003), "0x0003 should not be in catalog");
+        assert_eq!(get_layout_key(0x0002), None);
+        assert_eq!(get_layout_key(0x0003), None);
     }
 }
