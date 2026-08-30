@@ -11,7 +11,6 @@ pub use qmk_editor::QmkDraft;
 pub use zmk_editor::ZmkDraft;
 
 use crate::key_action::KeyAction;
-use crate::key_paint::{self, KeyDisplay};
 use crate::keyboard::Keyboard;
 use crate::layout_key::{BorderStyle, Label};
 use crate::protocols::WriteSupport;
@@ -251,18 +250,13 @@ impl crate::overlay_window::OverlayApp {
                     egui::vec2(PREVIEW_KEY_UNIT, PREVIEW_KEY_UNIT),
                     egui::Sense::hover(),
                 );
-                key_paint::paint(
+                picker::key_button(
                     ui,
                     cell.rect,
-                    0.0,
-                    &KeyDisplay {
-                        key: &display_key,
-                        colors,
-                        hovered: false,
-                        pressed: false,
-                        shift_held: false,
-                        ralt_held: false,
-                    },
+                    ui.id().with("editor_preview_key"),
+                    &display_key,
+                    colors,
+                    false,
                     &style,
                 );
                 ui.weak(raw_text);

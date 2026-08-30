@@ -5,49 +5,58 @@ pub mod modifier_symbols {
     pub struct ModName {
         pub full: &'static str,
         pub short: &'static str,
+        pub name: &'static str,
     }
 
     #[cfg(target_os = "macos")]
     pub const MOD_CTRL: ModName = ModName {
         full: egui_phosphor::regular::CONTROL,
         short: egui_phosphor::regular::CONTROL,
+        name: "Control",
     };
     #[cfg(not(target_os = "macos"))]
     pub const MOD_CTRL: ModName = ModName {
         full: "Ctrl",
         short: "Ctl",
+        name: "Control",
     };
 
     pub const MOD_SHIFT: ModName = ModName {
         full: egui_phosphor::regular::ARROW_FAT_UP,
         short: egui_phosphor::regular::ARROW_FAT_UP,
+        name: "Shift",
     };
 
     #[cfg(target_os = "macos")]
     pub const MOD_ALT: ModName = ModName {
         full: egui_phosphor::regular::OPTION,
         short: egui_phosphor::regular::OPTION,
+        name: "Option",
     };
     #[cfg(not(target_os = "macos"))]
     pub const MOD_ALT: ModName = ModName {
         full: "Alt",
         short: "Alt",
+        name: "Alt",
     };
 
     #[cfg(target_os = "macos")]
     pub const MOD_GUI: ModName = ModName {
         full: egui_phosphor::regular::COMMAND,
         short: egui_phosphor::regular::COMMAND,
+        name: "Command",
     };
     #[cfg(target_os = "windows")]
     pub const MOD_GUI: ModName = ModName {
         full: "Win",
         short: "Win",
+        name: "Windows",
     };
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     pub const MOD_GUI: ModName = ModName {
         full: "Super",
         short: "Sup",
+        name: "Super",
     };
 
     /// Chord separator: macOS packs glyphs tightly (⌃⇧⌥⌘); elsewhere "+" separates text names.
@@ -66,20 +75,12 @@ pub mod modifier_symbols {
     /// Build a standalone modifier key: glyph modifiers go in `symbol`, text names in `tap`.
     /// `mod_mask` is `HELD_MOD_SHIFT`/`HELD_MOD_RALT`, or 0. See their doc comments.
     pub fn modifier_key(m: &ModName, mod_mask: u16) -> super::LayoutKey {
-        if is_glyph(m.full) {
-            super::LayoutKey {
-                symbol: Some(m.full.to_string()),
-                kind: super::KeycodeKind::Modifier,
-                mod_mask: (mod_mask != 0).then_some(mod_mask),
-                ..Default::default()
-            }
-        } else {
-            super::LayoutKey {
-                tap: super::Label::with_short(m.full, m.short),
-                kind: super::KeycodeKind::Modifier,
-                mod_mask: (mod_mask != 0).then_some(mod_mask),
-                ..Default::default()
-            }
+        super::LayoutKey {
+            tap: super::Label::with_short(m.name, m.short),
+            symbol: is_glyph(m.full).then(|| m.full.to_string()),
+            kind: super::KeycodeKind::Modifier,
+            mod_mask: (mod_mask != 0).then_some(mod_mask),
+            ..Default::default()
         }
     }
 
@@ -258,6 +259,30 @@ pub struct LayoutKey {
     pub border: BorderStyle,
 }
 
+impl LayoutKey {
+    /// Full long name for tooltips and descriptions.
+    pub fn tooltip_text(&self) -> Option<String> {
+        if self.tap.is_empty() {
+            return None;
+        }
+
+        let full_text = match (&self.behavior, &self.argument) {
+            (Some(behavior), Some(arg)) => {
+                format!("{}: {} ({})", behavior.full, self.tap.full, arg.full)
+            }
+            (Some(behavior), None) => {
+                format!("{}: {}", behavior.full, self.tap.full)
+            }
+            (None, Some(arg)) => {
+                format!("{} ({})", self.tap.full, arg.full)
+            }
+            (None, None) => self.tap.full.clone(),
+        };
+
+        Some(full_text)
+    }
+}
+
 impl Default for LayoutKey {
     fn default() -> Self {
         LayoutKey {
@@ -273,5 +298,36 @@ impl Default for LayoutKey {
             layer_ref: None,
             border: BorderStyle::None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tooltip_text_for_plain_key() {
+        let key = LayoutKey {
+            tap: Label::with_short("Space", "Spc"),
+            ..Default::default()
+        };
+        assert_eq!(key.tooltip_text().as_deref(), Some("Space"));
+    }
+
+    #[test]
+    fn tooltip_text_for_behavior_and_argument() {
+        let key = LayoutKey {
+            tap: Label::new("A"),
+            behavior: Some(Label::new("Mod-Tap")),
+            argument: Some(Label::new("Ctrl")),
+            ..Default::default()
+        };
+        assert_eq!(key.tooltip_text().as_deref(), Some("Mod-Tap: A (Ctrl)"));
+    }
+
+    #[test]
+    fn tooltip_text_for_glyph_modifier() {
+        let key = modifier_symbols::modifier_key(&modifier_symbols::MOD_SHIFT, 0);
+        assert_eq!(key.tooltip_text().as_deref(), Some("Shift"));
     }
 }

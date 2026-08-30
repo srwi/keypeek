@@ -6,6 +6,7 @@
 //! applied directly on click.
 
 use crate::key_action::{KeyAction, LayerInfo};
+use crate::layout_key::{Label, LayoutKey};
 use crate::zmk_keycode_labels::behavior_to_layout_key;
 use std::sync::OnceLock;
 use zmk_studio_api::{Behavior, HidUsage, Keycode};
@@ -168,7 +169,17 @@ pub fn command_candidates(kind: ZmkBehaviorKind, backlight_level: u32) -> Vec<Ca
 /// falls through — so it renders as a ghosted empty slot. `layer_names`
 /// resolves layer references for the legends.
 pub fn behavior_candidate(behavior: &Behavior, layer_names: &[String]) -> Candidate {
-    let key = behavior_to_layout_key(behavior, layer_names).unwrap_or_default();
+    let key = match behavior {
+        Behavior::Transparent => LayoutKey {
+            tap: Label::with_short("Transparent", egui_phosphor::regular::CARET_DOWN),
+            ..Default::default()
+        },
+        Behavior::None => LayoutKey {
+            tap: Label::new("None"),
+            ..Default::default()
+        },
+        _ => behavior_to_layout_key(behavior, layer_names).unwrap_or_default(),
+    };
     Candidate {
         binding: KeyAction::Zmk(behavior.clone()),
         key,

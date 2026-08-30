@@ -118,6 +118,13 @@ impl OverlayApp {
                         });
                     if hovered {
                         hovered_key = Some((key.row, key.col));
+                        if let Some(tooltip) = key_tooltip(&layout_key, transparent) {
+                            show_pointer_tooltip(
+                                ui,
+                                ui.id().with(("overlay_key_tooltip", key.row, key.col)),
+                                &tooltip,
+                            );
+                        }
                     }
 
                     key_paint::paint(
@@ -250,4 +257,52 @@ fn layer_display_name(layer_infos: &[crate::key_action::LayerInfo], index: usize
         .get(index)
         .and_then(|info| info.name.clone())
         .unwrap_or_else(|| format!("Layer {index}"))
+}
+
+fn key_tooltip(key: &crate::layout_key::LayoutKey, transparent: bool) -> Option<String> {
+    if transparent {
+        Some("Transparent".to_string())
+    } else {
+        key.tooltip_text()
+    }
+}
+
+fn show_pointer_tooltip(ui: &egui::Ui, id: egui::Id, text: &str) {
+    egui::Tooltip::always_open(
+        ui.ctx().clone(),
+        ui.layer_id(),
+        id,
+        egui::PopupAnchor::Pointer,
+    )
+    .gap(12.0)
+    .show(|ui| {
+        ui.label(text);
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::layout_key::{Label, LayoutKey};
+
+    #[test]
+    fn overlay_tooltip_for_transparent_slot() {
+        let empty_key = LayoutKey::default();
+        assert_eq!(key_tooltip(&empty_key, true).as_deref(), Some("Transparent"));
+    }
+
+    #[test]
+    fn overlay_tooltip_for_labeled_key() {
+        let key = LayoutKey {
+            tap: Label::new("Enter"),
+            ..Default::default()
+        };
+        assert_eq!(key_tooltip(&key, false).as_deref(), Some("Enter"));
+    }
+
+    #[test]
+    fn overlay_tooltip_for_unbound_slot() {
+        let empty_key = LayoutKey::default();
+        assert_eq!(key_tooltip(&empty_key, false), None);
+    }
 }

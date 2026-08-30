@@ -36,6 +36,38 @@ impl Candidate {
     }
 }
 
+/// Renders an interactive key button with hover highlight, cursor-following tooltip,
+/// pressed styling, and painting.
+pub fn key_button(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    id: egui::Id,
+    key: &LayoutKey,
+    colors: crate::key_paint::KeyColors,
+    pressed: bool,
+    style: &KeyPaintStyle,
+) -> egui::Response {
+    let mut response = ui.interact(rect, id, egui::Sense::click());
+    if let Some(tooltip) = key.tooltip_text() {
+        response = response.on_hover_text_at_pointer(tooltip);
+    }
+    key_paint::paint(
+        ui,
+        rect,
+        0.0,
+        &KeyDisplay {
+            key,
+            colors,
+            hovered: response.hovered(),
+            pressed,
+            shift_held: false,
+            ralt_held: false,
+        },
+        style,
+    );
+    response
+}
+
 /// A scrollable grid of miniature keys, one per candidate. The currently
 /// assigned `selected` binding is highlighted with the overlay's pressed look.
 /// Clicking a key invokes `on_select` with the whole candidate.
@@ -72,15 +104,7 @@ pub fn picker_grid_rows(
                 ),
             egui::vec2(KEY_UNIT, KEY_UNIT),
         );
-        let response = ui.interact(
-            cell,
-            ui.id().with((id_salt, "cell", i)),
-            egui::Sense::click(),
-        );
 
-        // Selected uses the overlay's pressed treatment; transparent bindings
-        // render ghosted, like unset slots on the overlay. Layer keys take
-        // their target layer's fill, matching the overlay's coloring rule.
         let pressed = selected == Some(&candidate.binding);
         let colors = style
             .colors_for(
@@ -91,18 +115,13 @@ pub fn picker_grid_rows(
             )
             .ghosted_if(candidate.transparent);
 
-        key_paint::paint(
+        let response = key_button(
             ui,
             cell,
-            0.0,
-            &KeyDisplay {
-                key: &candidate.key,
-                colors,
-                hovered: response.hovered(),
-                pressed,
-                shift_held: false,
-                ralt_held: false,
-            },
+            ui.id().with((id_salt, "cell", i)),
+            &candidate.key,
+            colors,
+            pressed,
             style,
         );
 
@@ -180,23 +199,8 @@ fn key_chip(
     selected: bool,
     style: &KeyPaintStyle,
 ) -> egui::Response {
-    let response = ui.interact(cell, id, egui::Sense::click());
     let colors = style.colors_for(0, KeycodeKind::Modifier, false, selected);
-    key_paint::paint(
-        ui,
-        cell,
-        0.0,
-        &KeyDisplay {
-            key,
-            colors,
-            hovered: response.hovered(),
-            pressed: selected,
-            shift_held: false,
-            ralt_held: false,
-        },
-        style,
-    );
-    response
+    key_button(ui, cell, id, key, colors, selected, style)
 }
 
 /// Which hand variant a modifier chip stands for. Rendered as a tag in the
@@ -295,7 +299,6 @@ pub fn modifier_toggle_grid(
     use modifier_symbols::{MOD_ALT, MOD_CTRL, MOD_GUI, MOD_SHIFT};
 
     let names = [&MOD_CTRL, &MOD_SHIFT, &MOD_ALT, &MOD_GUI];
-    let full_names = ["Control", "Shift", "Alt", "GUI"];
     for (row, hand) in [(0u8, Hand::Left), (1, Hand::Right)] {
         ui.horizontal(|ui| {
             for (i, name) in names.iter().enumerate() {
@@ -314,12 +317,39 @@ pub fn modifier_toggle_grid(
                 if response.clicked() {
                     on_toggle(mask);
                 }
-                response.on_hover_text(format!(
-                    "{} {full} modifier",
-                    if hand == Hand::Left { "Left" } else { "Right" },
-                    full = full_names[i]
-                ));
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::keymap_editor::qmk_catalog::qmk_candidate;
+    use crate::keymap_editor::zmk_catalog::behavior_candidate;
+    use qmk_via_api::keycodes::Keycode;
+    use zmk_studio_api::Behavior;
+
+    #[test]
+    fn candidate_tooltip_for_transparent() {
+        let qmk_trans = qmk_candidate(Keycode::KC_TRANSPARENT as u16);
+        assert_eq!(qmk_trans.key.tooltip_text().as_deref(), Some("Transparent"));
+
+        let zmk_trans = behavior_candidate(&Behavior::Transparent, &[]);
+        assert_eq!(zmk_trans.key.tooltip_text().as_deref(), Some("Transparent"));
+    }
+
+    #[test]
+    fn candidate_tooltip_for_none() {
+        let qmk_none = qmk_candidate(Keycode::KC_NO as u16);
+        assert_eq!(qmk_none.key.tooltip_text().as_deref(), Some("None"));
+
+        let zmk_none = behavior_candidate(&Behavior::None, &[]);
+        assert_eq!(zmk_none.key.tooltip_text().as_deref(), Some("None"));
+    }
+
+    #[test]
+    fn candidate_tooltip_for_qmk_key() {
+        let candidate = qmk_candidate(Keycode::KC_ENTER as u16);
+        assert_eq!(candidate.key.tooltip_text().as_deref(), Some("Enter"));
     }
 }

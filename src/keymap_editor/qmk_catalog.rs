@@ -223,7 +223,7 @@ pub fn qmk_candidate(code: u16) -> Candidate {
         KeyResolution::Transparent => Candidate {
             binding,
             key: LayoutKey {
-                tap: Label::with_short("Trans", egui_phosphor::regular::CARET_DOWN),
+                tap: Label::with_short("Transparent", egui_phosphor::regular::CARET_DOWN),
                 ..Default::default()
             },
             transparent: true,
