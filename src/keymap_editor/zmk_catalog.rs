@@ -1,9 +1,4 @@
-//! Candidate ZMK keycodes for the editor's picker grids, split into the
-//! keyboard (usage page 0x07) and consumer (page 0x0C) pages. The candidate
-//! lists and their button text are computed once and cached, since enumerating
-//! every encoded usage is expensive to do per frame. Also builds the
-//! behavior candidates for the parameterless and command keys, which are
-//! applied directly on click.
+//! Candidate ZMK keycodes and behaviors for picker grids.
 
 use crate::key_action::{KeyAction, LayerInfo};
 use crate::layout_key::{Label, LayoutKey};
@@ -14,14 +9,14 @@ pub const HID_USAGE_KEYBOARD: u16 = 0x07;
 pub const HID_USAGE_CONSUMER: u16 = 0x0C;
 const MAX_USAGE_ID: u32 = 0x3FF;
 
-/// Backlight command id whose `value` is the brightness level — the one
-/// backlight binding with a parameter, staged in the editor draft.
+/// Backlight command identifier for setting brightness level.
 pub const BACKLIGHT_SET_COMMAND: u32 = 6;
 
 use super::picker::{Candidate, CandidateGroup};
 
 pub use zmk_studio_api::BehaviorRole as ZmkBehaviorKind;
 
+/// Returns a sample Behavior instance for a behavior role.
 pub fn sample_behavior(role: ZmkBehaviorKind) -> Behavior {
     use zmk_studio_api::BehaviorRole::*;
     let sample_usage = HidUsage::from(Keycode::A);
@@ -71,10 +66,7 @@ pub fn sample_behavior(role: ZmkBehaviorKind) -> Behavior {
     }
 }
 
-/// The layer page's groups, one group per kind in `kinds` order: one
-/// candidate per layer, rendered like the overlay paints the binding (layer
-/// name as the legend, the layer's own color). The Layer-Tap group's tap side
-/// comes from `tap`. `kinds` must be layer behaviors only.
+/// Returns candidate groups for ZMK layer behaviors.
 pub fn layer_groups(
     kinds: &[ZmkBehaviorKind],
     layer_infos: &[LayerInfo],
@@ -108,15 +100,12 @@ pub fn layer_groups(
         .collect()
 }
 
-/// Candidates for one command behavior kind: every option is rendered as a key
-/// (its overlay legend comes from the behavior resolver) and applied directly
-/// on click. `backlight_level` feeds the parametric Backlight `Set` command.
+/// Returns candidate keys for a ZMK command behavior.
 pub fn command_candidates(kind: ZmkBehaviorKind, backlight_level: u32) -> Vec<Candidate> {
     use ZmkBehaviorKind::*;
     let behaviors: Vec<Behavior> = match kind {
         Bluetooth => {
-            // Fixed commands, then Select/Disconnect expanded per profile —
-            // the profile is part of the binding, so each is its own key.
+            // Profile select and disconnect commands (profiles 0 to 9).
             let mut list: Vec<Behavior> = (0..=2)
                 .map(|command| Behavior::Bluetooth { command, value: 0 })
                 .collect();
@@ -148,7 +137,7 @@ pub fn command_candidates(kind: ZmkBehaviorKind, backlight_level: u32) -> Vec<Ca
             .into_iter()
             .map(|value| Behavior::MouseKeyPress { value })
             .collect(),
-        // ZMK pointing values: `(x << 16) | (y & 0xFFFF)`.
+        // Pointing coordinates: `(x << 16) | (y & 0xFFFF)`.
         MouseMove => [0x0001_0000, 0xFFFF_0000, 0x0000_0001, 0x0000_FFFF]
             .into_iter()
             .map(|value| Behavior::MouseMove { value })
@@ -165,10 +154,7 @@ pub fn command_candidates(kind: ZmkBehaviorKind, backlight_level: u32) -> Vec<Ca
         .collect()
 }
 
-/// The candidate for a ZMK behavior: its fully resolved `LayoutKey`, exactly as
-/// the overlay paints the binding. `Transparent` has no key of its own — it
-/// falls through — so it renders as a ghosted empty slot. `layer_names`
-/// resolves layer references for the legends.
+/// Creates a candidate definition for a ZMK behavior.
 pub fn behavior_candidate(behavior: &Behavior, layer_names: &[String]) -> Candidate {
     let key = match behavior {
         Behavior::Transparent => LayoutKey {
@@ -222,8 +208,7 @@ fn build_categories() -> Vec<CandidateGroup> {
     ]
 }
 
-/// The candidate for a ZMK keycode: the fully resolved `LayoutKey` from the
-/// key-press behavior, falling back to a hex label for unknown usages.
+/// Creates a candidate definition for a ZMK HID usage code.
 pub fn keycode_candidate(encoded: u32) -> Candidate {
     let usage = HidUsage::from_encoded(encoded);
     let action = KeyAction::Zmk(Behavior::KeyPress(usage));

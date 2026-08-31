@@ -97,7 +97,7 @@ pub fn qmk_read_snapshot(
     })
 }
 
-/// Writes one key binding to a QMK/VIA/VIAL keyboard.
+/// Writes a key binding to a QMK keyboard.
 pub fn qmk_set_key(
     api: &KeyboardApi,
     layer_index: usize,
@@ -111,11 +111,7 @@ pub fn qmk_set_key(
     }
 }
 
-/// Writes one dynamic-keymap keycode through the VIA protocol.
-///
-/// A layer-state packet arriving between `set_key`'s send and its single
-/// response read makes the crate report `BadCommandResponse` even though the
-/// write usually applied; a matching `get_key` readback confirms success.
+/// Writes a keycode via the VIA protocol with readback verification on error.
 pub(crate) fn qmk_set_key_with_retry(
     api: &KeyboardApi,
     layer_index: usize,

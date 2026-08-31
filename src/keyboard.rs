@@ -502,20 +502,17 @@ impl Keyboard {
         self.send_keymap_command(|respond| KeymapCommand::Save { respond })
     }
 
-    /// Opens the transient write session (ZMK Studio RPC) so the first write
-    /// does not pay the connection cost while the user is mid-edit.
+    /// Opens the write session in the background to prepare for key editing.
     pub fn open_edit_session(&self) -> mpsc::Receiver<Result<(), String>> {
         self.send_keymap_command(|respond| KeymapCommand::OpenEditSession { respond })
     }
 
-    /// Fire-and-forget: closes any transient write connection on the protocol.
+    /// Closes any active edit session on the keyboard protocol.
     pub fn end_edit_session(&self) {
         let _ = self.command_tx.send(KeymapCommand::EndEditSession);
     }
 
-    /// Queues a command for the reader thread and returns the receiver for its
-    /// result. If the thread is gone (connection lost), the receiver carries an
-    /// error instead of hanging.
+    /// Sends a command to the keyboard communication thread and returns a response receiver.
     fn send_keymap_command(
         &self,
         build: impl FnOnce(mpsc::Sender<Result<(), String>>) -> KeymapCommand,

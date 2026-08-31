@@ -114,18 +114,14 @@ pub struct ZmkData {
     pub behavior_metadata: HashMap<BehaviorRole, Vec<BehaviorBindingParametersSet>>,
 }
 
-/// A ZMK Studio RPC connection held open across an edit session. The two
-/// transports are different concrete client types; they are not unified
-/// generically.
+/// ZMK Studio RPC connection session.
 pub enum ZmkStudioSession {
     Serial(StudioClient<SerialTransport>),
     Ble(StudioClient<PlatformBleTransport>),
 }
 
 impl ZmkStudioSession {
-    /// Opens a session on the given transport, verifies the device is
-    /// unlocked, and pre-loads the behavior catalog so the first write is a
-    /// single round trip instead of a catalog fetch.
+    /// Opens a ZMK Studio session on the specified transport.
     pub fn open(transport: &ZmkTransport) -> Result<Self, Box<dyn Error>> {
         let mut session = match transport {
             ZmkTransport::SerialPort(port_name) => {

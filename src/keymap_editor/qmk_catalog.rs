@@ -1,10 +1,7 @@
-//! Candidate QMK/VIA keycodes for the editor's picker grids.
-//!
-//! Every keycode below `0x0100` maps to a `Keycode` enum variant that
-//! `get_basic_layout_key` labels, so the categories enumerate those ranges
-//! rather than hand-maintaining hundreds of entries.
+//! Candidate QMK keycodes and categories for picker grids.
 
 use super::picker::{Candidate, CandidateGroup};
+use super::qmk_editor::{encode_layer_mod, encode_layer_tap};
 use crate::key_action::KeyAction;
 use crate::layout_key::{Label, LayoutKey};
 use crate::qmk_keycode_labels::constants::*;
@@ -27,14 +24,12 @@ fn candidate_group(name: &'static str, codes: impl IntoIterator<Item = u16>) -> 
     }
 }
 
-/// The candidate groups built once: resolving every label per frame would be
-/// wasted work in the editor.
+/// Returns the static list of QMK candidate key categories.
 pub fn categories() -> &'static [CandidateGroup] {
     static CATEGORIES: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     CATEGORIES.get_or_init(|| {
         let mut basic: Vec<u16> =
             keycodes_between(Keycode::KC_NO, Keycode::KC_SYSTEM_WAKE).collect();
-        // Mouse cursor/button/wheel keycodes sit in their own sub-range.
         basic.extend(keycodes_between(
             Keycode::QK_MOUSE_CURSOR_UP,
             Keycode::QK_MOUSE_ACCELERATION_2,
@@ -103,8 +98,7 @@ pub fn categories() -> &'static [CandidateGroup] {
     })
 }
 
-/// The QMK layer keycode kinds offered on the layer page, with their keycode
-/// ranges and two-letter labels.
+/// QMK layer keycode types.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum LayerKind {
     Mo,
@@ -146,7 +140,7 @@ impl LayerKind {
     }
 }
 
-/// `MO/TG/TO/OSL/TT/DF(layer)` → keycode.
+/// Encodes a layer keycode for a given layer kind and layer index.
 pub(super) fn encode_layer(kind: LayerKind, layer: usize) -> Option<u16> {
     let range = kind.range();
     let layer = layer as u16;
@@ -155,10 +149,7 @@ pub(super) fn encode_layer(kind: LayerKind, layer: usize) -> Option<u16> {
         .then_some(range.start + layer)
 }
 
-/// The layer page's groups: one candidate per real layer for each QMK layer
-/// keycode kind, rendered like the overlay paints the binding (`L1`, `L2`, …).
-/// `layer_count` is the keyboard's actual layer count, as reported by
-/// VIA/Vial; kinds whose keycode range is smaller simply show fewer keys.
+/// Returns candidate groups for all supported layer keycode types.
 pub fn layer_groups(layer_count: usize) -> Vec<CandidateGroup> {
     LayerKind::ALL
         .iter()
@@ -172,42 +163,35 @@ pub fn layer_groups(layer_count: usize) -> Vec<CandidateGroup> {
         .collect()
 }
 
-/// The Layer-Tap page's layer radio: one plain layer key per real layer,
-/// rendered like the layer page's keys. Each candidate's binding is the full
-/// `LT(layer, tap)` keycode for the draft's current tap key, so the editor can
-/// highlight the staged layer and stage a new one from the same grid.
+/// Returns a candidate group for selecting a Layer-Tap layer.
 pub fn layer_tap_group(layer_count: usize, tap_code: u16) -> CandidateGroup {
     CandidateGroup {
         name: "Layer",
         candidates: (0..layer_count.min(16))
-            .filter(|_| tap_code <= 0xFF)
             .filter_map(|layer| {
                 let visual = qmk_candidate(encode_layer(LayerKind::Mo, layer)?).key;
-                let lt_code = QK_LAYER_TAP.start + ((layer as u16) << 8) + tap_code;
+                let lt_code = encode_layer_tap(layer, tap_code)?;
                 Some(Candidate::new(KeyAction::Qmk(lt_code), visual))
             })
             .collect(),
     }
 }
 
-/// The Layer-Mod page's layer radio: one plain layer key per real layer,
-/// rendered like the layer page's keys.
+/// Returns a candidate group for selecting a Layer-Mod layer.
 pub fn layer_mod_group(layer_count: usize, mods: u16) -> CandidateGroup {
     CandidateGroup {
         name: "Layer",
         candidates: (0..layer_count.min(16))
             .filter_map(|layer| {
                 let visual = qmk_candidate(encode_layer(LayerKind::Mo, layer)?).key;
-                let lm_code = QK_LAYER_MOD.start + ((layer as u16) << 5) + (mods & 0x1F);
+                let lm_code = encode_layer_mod(layer, mods)?;
                 Some(Candidate::new(KeyAction::Qmk(lm_code), visual))
             })
             .collect(),
     }
 }
 
-/// The candidate for a QMK keycode: the fully resolved `LayoutKey`, with
-/// explicit stand-ins for `KC_TRANSPARENT` and `KC_NO`, whose raw labels are
-/// unusable as key legends.
+/// Creates a candidate definition for a QMK keycode.
 pub fn qmk_candidate(code: u16) -> Candidate {
     let binding = KeyAction::Qmk(code);
     if code == Keycode::KC_NO as u16 {

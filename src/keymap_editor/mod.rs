@@ -1,5 +1,4 @@
-//! Persistent "Edit key" window: its content follows the most recently clicked
-//! key on a pinned layer.
+//! "Edit key" window. Displays and updates the key selected on the overlay.
 
 mod picker;
 mod qmk_catalog;
@@ -16,7 +15,7 @@ use crate::protocols::WriteSupport;
 use egui::Window;
 use std::sync::mpsc;
 
-/// Which key the editor window is currently targeting.
+/// Target key position in the keymap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EditTarget {
     pub layer_index: usize,
@@ -24,7 +23,7 @@ pub struct EditTarget {
     pub col: usize,
 }
 
-/// What an in-flight `pending` receiver is for.
+/// Operation type of an active background task.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PendingKind {
     Open,
@@ -32,48 +31,40 @@ pub enum PendingKind {
     Save,
 }
 
-/// Lifecycle of the transient ZMK Studio session backing the editor window:
-/// it opens as soon as the window appears, carries the writes and the
-/// close-save, and ends when the window closes.
+/// Connection state of the ZMK Studio session.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ZmkSessionState {
-    /// No session yet; the window open — or a retarget after a failure —
-    /// starts one.
+    /// No active session.
     Idle,
-    /// The session is being established on the reader thread; the picker is
-    /// disabled until it lands.
+    /// Session is connecting.
     Opening,
-    /// The session is open and writes can proceed.
+    /// Session is connected and ready for writes.
     Ready,
-    /// The open failed (locked device, port in use); the error shows in the
-    /// window and no automatic retry happens until the next retarget or
-    /// window reopen.
+    /// Session connection failed.
     Failed,
 }
 
 /// Editor window state, owned by `OverlayApp`.
 pub struct EditorState {
-    /// `None` = window closed.
+    /// Active target key, or `None` when the window is closed.
     pub target: Option<EditTarget>,
-    /// An in-flight write; polled each frame.
+    /// Active background operation receiver.
     pub pending: Option<mpsc::Receiver<Result<(), String>>>,
-    /// What the in-flight write is for.
+    /// Type of the active background operation.
     pub pending_kind: Option<PendingKind>,
-    /// Last-write-wins slot for a write requested while one is in flight:
-    /// rapid edits (every valid pick applies instantly) must queue instead of
-    /// being dropped, so the final state always reaches the device.
+    /// Queued write operation to send when the current operation completes.
     pub queued: Option<(EditTarget, KeyAction)>,
-    /// Last write/read error shown in the window.
+    /// Error message to display in the window.
     pub error: Option<String>,
-    /// Per-firmware draft state, rebuilt on each retarget.
+    /// Draft state for QMK keycodes.
     pub qmk_draft: QmkDraft,
+    /// Draft state for ZMK behaviors.
     pub zmk_draft: ZmkDraft,
-    /// ZMK: whether there are unsaved changes in device RAM.
+    /// Indicates unsaved ZMK changes on the device.
     pub zmk_dirty: bool,
-    /// ZMK: lifecycle of the transient Studio session behind the window.
+    /// State of the ZMK Studio session.
     pub zmk_session: ZmkSessionState,
-    /// ZMK: a close was requested while dirty; the window saves first, then
-    /// closes itself. No further edits or retargets happen while closing.
+    /// Indicates the window is saving changes before closing.
     pub closing: bool,
 }
 
@@ -99,14 +90,13 @@ impl EditorState {
         Self::default()
     }
 
-    /// Resets all editor fields back to their default closed/idle state.
+    /// Resets the editor state to default values.
     pub fn reset(&mut self) {
         *self = Self::default();
     }
 
-    /// Handles a close request: if there are unsaved ZMK changes, marks the editor
-    /// closing so it saves before dismissing; otherwise resets to closed immediately.
-    /// Returns `true` if the editor is now fully closed.
+    /// Requests window close. If ZMK has unsaved changes, starts a save operation
+    /// before closing. Returns `true` if closed immediately.
     pub fn request_close(&mut self) -> bool {
         self.error = None;
         if self.zmk_dirty {
@@ -118,8 +108,7 @@ impl EditorState {
         }
     }
 
-    /// Retargets the editor to a new key on the given keyboard, updating the drafts
-    /// to reflect the current key binding.
+    /// Sets the target key and loads its current binding into the draft.
     pub fn retarget(&mut self, keyboard: &Keyboard, target: EditTarget) {
         self.target = Some(target);
         self.error = None;
@@ -143,13 +132,12 @@ impl EditorState {
     }
 }
 
-/// Pixels width of the left category sidebar in the editor.
+/// Width of the left category panel in pixels.
 const SIDEBAR_WIDTH: f32 = 110.0;
-/// Margin reserved on the right of the central pane so the vertical scrollbar track
-/// never touches or overlaps the titled group outline borders.
+/// Right margin to prevent scrollbar overlap with group borders.
 const SCROLLBAR_GUTTER: f32 = 8.0;
 
-/// The editor's left category sidebar panel.
+/// Draws the left category panel.
 pub(super) fn editor_left_panel(
     ui: &mut egui::Ui,
     left_id: &str,
@@ -197,30 +185,23 @@ pub(super) fn editor_central_panel(
 }
 
 impl crate::overlay_window::OverlayApp {
-    /// Draws the persistent "Edit key" window for the current target.
+    /// Draws the edit key window.
     pub(super) fn draw_editor_window(&mut self, ctx: &egui::Context, keyboard: &Keyboard) {
         let Some(target) = self.editor.target else {
             return;
         };
 
-        // A close was requested (window X or settings close): a dirty ZMK
-        // session saves first, and the window dismisses itself once the save
-        // lands. The save starts here, where the keyboard is at hand.
+        // Save unsaved ZMK changes before closing the window.
         if self.editor.closing && self.editor.pending.is_none() && self.editor.zmk_dirty {
             self.start_save(keyboard);
         }
 
         self.poll_pending_write(ctx, keyboard);
 
-        // The transient ZMK Studio session opens as soon as the window is up
-        // (on the reader thread), so the first write does not wait on a
-        // connection. Until it lands the picker stays disabled.
         if matches!(keyboard.write_support(), WriteSupport::Session) && !self.editor.closing {
             self.ensure_zmk_session(keyboard);
         }
 
-        // While the close-save is in flight the window has no close button:
-        // it dismisses itself when the save lands.
         let closing = self.editor.closing;
         let mut window = Window::new("Edit key")
             .resizable(true)
@@ -230,8 +211,6 @@ impl crate::overlay_window::OverlayApp {
         if !closing {
             window = window.open(&mut open);
         }
-        // A fixed-ish, user-resizable window: panes scroll internally instead
-        // of growing the window to their content height.
         window.show(ctx, |ui| {
             if let Some(error) = &self.editor.error {
                 ui.add_space(4.0);
@@ -240,8 +219,7 @@ impl crate::overlay_window::OverlayApp {
 
             let target = self.draw_editor_header(ui, keyboard, target);
 
-            // While closing, the save is in flight; nothing here may
-            // start another write that would land after the save.
+            // Disable input while saving before close.
             if closing {
                 ui.disable();
             }
@@ -254,9 +232,6 @@ impl crate::overlay_window::OverlayApp {
                 }
                 (WriteSupport::Session, Some(KeyAction::Zmk(_))) => {
                     ui.add_space(8.0);
-                    // The picker stays disabled until the Studio session is
-                    // open, so no write can be requested before the device
-                    // accepts them.
                     let session_ready = self.editor.zmk_session == ZmkSessionState::Ready;
                     ui.add_enabled_ui(session_ready, |ui| {
                         self.draw_zmk_editor_body(ui, keyboard, target);
@@ -274,7 +249,7 @@ impl crate::overlay_window::OverlayApp {
         }
     }
 
-    /// Applies a staged binding if it is complete and differs from the current keymap.
+    /// Applies a staged binding if it is complete and different from the current key.
     fn commit_staged(
         &mut self,
         keyboard: &Keyboard,
@@ -292,7 +267,7 @@ impl crate::overlay_window::OverlayApp {
         }
     }
 
-    /// Draws the header row: layer switcher buttons on the left, session status on the right.
+    /// Draws the header row with layer switcher buttons and session status.
     fn draw_editor_header(
         &mut self,
         ui: &mut egui::Ui,
@@ -338,10 +313,7 @@ impl crate::overlay_window::OverlayApp {
         self.editor.retarget(keyboard, target);
     }
 
-    /// The session status, floated into the header's top-right corner: a
-    /// spinner while the Studio session connects, an amber reminder while the
-    /// device holds unsaved changes, and a spinner while a close-save is in
-    /// flight.
+    /// Draws the ZMK session status indicator.
     fn draw_session_status(&self, ui: &mut egui::Ui) {
         if self.editor.zmk_session == ZmkSessionState::Opening {
             ui.label("Connecting…");
@@ -351,8 +323,6 @@ impl crate::overlay_window::OverlayApp {
         if !self.editor.zmk_dirty {
             return;
         }
-        // The host child UI is laid out right-to-left so the group hugs the
-        // corner's right edge; `Align::Min` keeps the row content-height.
         if self.editor.closing {
             ui.label("Saving…");
             ui.add(egui::Spinner::new().size(14.0));
@@ -371,10 +341,7 @@ impl crate::overlay_window::OverlayApp {
         self.editor.error = None;
     }
 
-    /// Starts opening the transient ZMK Studio session, once per window
-    /// lifetime: `Idle` arms it, `Opening` waits for the reader thread, and a
-    /// `Failed` attempt is not retried until the next retarget or window
-    /// reopen.
+    /// Starts the ZMK Studio session connection if idle.
     fn ensure_zmk_session(&mut self, keyboard: &Keyboard) {
         if self.editor.zmk_session != ZmkSessionState::Idle || self.editor.pending.is_some() {
             return;
@@ -385,13 +352,7 @@ impl crate::overlay_window::OverlayApp {
         self.editor.error = None;
     }
 
-    /// Starts writing a finished binding to the target key. ZMK writes are
-    /// session changes tracked by the session bar; QMK writes go straight to
-    /// the device. While a write is in flight the request waits in the
-    /// last-write-wins queue instead of being dropped — the keymap worker
-    /// serializes commands, so the queued write lands right after it. While
-    /// closing, only such queued edits still arrive (the UI is disabled);
-    /// they drain before the save.
+    /// Sends a write command to the device, or queues it if an operation is in progress.
     fn apply_write(&mut self, keyboard: &Keyboard, target: EditTarget, action: KeyAction) {
         if self.editor.pending.is_some() {
             self.editor.queued = Some((target, action));
@@ -406,9 +367,7 @@ impl crate::overlay_window::OverlayApp {
         self.editor.error = None;
     }
 
-    /// Polls an in-flight write once per frame, repainting while it is
-    /// pending, and kicks off the queued write when the device is ready.
-    /// While closing, the pipeline drains write → save → close.
+    /// Polls active background operations and processes queued write commands.
     fn poll_pending_write(&mut self, ctx: &egui::Context, keyboard: &Keyboard) {
         let Some(receiver) = &self.editor.pending else {
             return;

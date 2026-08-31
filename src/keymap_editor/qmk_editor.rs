@@ -1,7 +1,4 @@
-//! QMK/VIA editor content: left-panel sections for the basic/media pickers,
-//! layer keys, the four modifier encodings (combo, one-shot, mod-tap,
-//! layer-tap), and a raw-hex "Any" fallback. Writes apply immediately (VIA
-//! behavior — no save button).
+//! QMK keycode editor and encoder.
 
 use crate::key_action::KeyAction;
 use crate::keyboard::Keyboard;
@@ -15,9 +12,7 @@ use super::qmk_catalog::{qmk_candidate, LayerKind};
 use super::EditTarget;
 use crate::ui_widgets::titled_group;
 
-/// The editor's left-panel sections, one entry each. The four modifier
-/// encodings are separate sections rather than a dropdown mode, so each is
-/// reachable in one click; the section itself selects the encoding.
+/// Editor categories for QMK keycodes.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Section {
     Basic,
@@ -29,15 +24,15 @@ pub enum Section {
     Audio,
     Custom,
     Layers,
-    /// `(mods << 8) | kc` — `LSFT(kc)`-style modified keycodes.
+    /// Keycode with modifier mask (e.g. `LSFT(kc)`).
     Combo,
-    /// `OSM(mods)`.
+    /// One-shot modifier.
     OneShot,
-    /// `MT(mods, kc)`.
+    /// Mod-tap keycode.
     ModTap,
-    /// `LT(layer, kc)`.
+    /// Layer-tap keycode.
     LayerTap,
-    /// `LM(layer, mods)`.
+    /// Layer-mod keycode.
     LayerMod,
     Any,
 }
@@ -112,7 +107,7 @@ impl Section {
     }
 }
 
-/// The editor's editable fields, rebuilt on each retarget.
+/// Editable parameter state for QMK keycodes.
 #[derive(Clone)]
 pub struct QmkDraft {
     pub section: Section,
@@ -121,11 +116,6 @@ pub struct QmkDraft {
     pub base_code: u16,
     pub mod_tap_layer: usize,
     pub hex: String,
-    /// Whether the user has interacted with the draft's parameter controls
-    /// since it was built. Only a touched draft can be mid-selection (and so
-    /// ghosted as invalid in the header); a fresh draft mirrors the current
-    /// binding.
-    pub touched: bool,
 }
 
 impl Default for QmkDraft {
@@ -137,14 +127,12 @@ impl Default for QmkDraft {
             base_code: 0,
             mod_tap_layer: 0,
             hex: String::new(),
-            touched: false,
         }
     }
 }
 
 impl QmkDraft {
-    /// Pre-fills the draft from a QMK keycode, choosing the section and fields
-    /// that best describe it. Unknown/plain codes land in the *Any* section.
+    /// Creates draft state by decoding an existing keycode.
     pub fn from_keycode(code: u16) -> Self {
         decode(code)
     }
@@ -153,10 +141,7 @@ impl QmkDraft {
         (self.mods & 0x0F) | if self.right { MOD_RIGHT_FLAG } else { 0 }
     }
 
-    /// The keycode the draft currently describes, if every argument is
-    /// meaningfully present: modifier encodings need at least one modifier,
-    /// and a tap/base key of `KC_NO` (0x00) counts as "not picked yet". A
-    /// valid draft applies instantly, so it never lingers staged.
+    /// Returns the encoded keycode if all required parameters are valid.
     pub(super) fn staged(&self) -> Option<u16> {
         match self.section {
             Section::Combo if self.base_code != 0 => encode_combo(self.mod_value(), self.base_code),
@@ -176,9 +161,8 @@ impl QmkDraft {
 
 // ── Encoders ────────────────────────────────────────────────────────────────
 
-/// `LSFT(kc)`-style combo: `(mods << 8) | keycode`. Needs at least one mod and
-/// an 8-bit tap key.
-fn encode_combo(mods: u16, keycode: u16) -> Option<u16> {
+/// Encodes a modified keycode: `(mods << 8) | keycode`.
+pub(super) fn encode_combo(mods: u16, keycode: u16) -> Option<u16> {
     if mods & 0x1F == 0 || keycode > 0xFF {
         return None;
     }
@@ -186,37 +170,37 @@ fn encode_combo(mods: u16, keycode: u16) -> Option<u16> {
     QK_MODS.contains(&code).then_some(code)
 }
 
-fn encode_one_shot_mod(mods: u16) -> Option<u16> {
+pub(super) fn encode_one_shot_mod(mods: u16) -> Option<u16> {
     if mods & 0x1F == 0 {
         return None;
     }
     Some(QK_ONE_SHOT_MOD.start + (mods & 0x1F))
 }
 
-fn encode_mod_tap(mods: u16, keycode: u16) -> Option<u16> {
+pub(super) fn encode_mod_tap(mods: u16, keycode: u16) -> Option<u16> {
     if mods & 0x1F == 0 || keycode > 0xFF {
         return None;
     }
     Some(QK_MOD_TAP.start + (mods << 8) + keycode)
 }
 
-/// `LT(layer, kc)`: the layer is only 4 bits (0–15).
-fn encode_layer_tap(layer: usize, keycode: u16) -> Option<u16> {
+/// Encodes a Layer-Tap keycode: `LT(layer, keycode)`.
+pub(super) fn encode_layer_tap(layer: usize, keycode: u16) -> Option<u16> {
     if layer > 15 || keycode > 0xFF {
         return None;
     }
     Some(QK_LAYER_TAP.start + ((layer as u16) << 8) + keycode)
 }
 
-/// `LM(layer, mods)`: the layer is 4 bits (0–15) and mods is 5 bits (1–31).
-fn encode_layer_mod(layer: usize, mods: u16) -> Option<u16> {
+/// Encodes a Layer-Mod keycode: `LM(layer, mods)`.
+pub(super) fn encode_layer_mod(layer: usize, mods: u16) -> Option<u16> {
     if layer > 15 || mods & 0x1F == 0 {
         return None;
     }
     Some(QK_LAYER_MOD.start + ((layer as u16) << 5) + (mods & 0x1F))
 }
 
-// ── Decoder (pre-fill the draft from the current binding) ───────────────────
+// ── Decoder ─────────────────────────────────────────────────────────────────
 
 fn decode(code: u16) -> QmkDraft {
     let mut draft = QmkDraft::default();
@@ -300,12 +284,7 @@ impl crate::overlay_window::OverlayApp {
                 if !s.is_supported(keyboard) {
                     continue;
                 }
-                let response =
-                    ui.selectable_value(&mut self.editor.qmk_draft.section, s, s.label());
-                // Switching sections starts a fresh selection.
-                if response.changed() {
-                    self.editor.qmk_draft.touched = false;
-                }
+                ui.selectable_value(&mut self.editor.qmk_draft.section, s, s.label());
             }
         });
 
@@ -370,11 +349,7 @@ impl crate::overlay_window::OverlayApp {
         });
     }
 
-    /// The layer page: every layer keycode kind as one framed group with one
-    /// key per real layer, grouped like the ZMK layer page. A QMK layer keycode
-    /// is fully determined by its kind and layer, so clicking applies directly
-    /// and nothing needs staging. QMK keymaps carry no layer names, so keys
-    /// show their index.
+    /// Draws the layer key selection page.
     fn draw_qmk_layer_page(&mut self, ui: &mut egui::Ui, keyboard: &Keyboard, target: EditTarget) {
         let layer_count = keyboard.layer_infos().len();
         let groups = super::qmk_catalog::layer_groups(layer_count);
@@ -391,12 +366,7 @@ impl crate::overlay_window::OverlayApp {
         );
     }
 
-    /// The five modifier sections share one page body: each distinct encoding
-    /// argument is framed in its own titled group — the modifier set (with its
-    /// hand) for the mod-carrying encodings, the layer for Layer-Tap and Layer-Mod,
-    /// and the tap/base key where the encoding takes one. Every interaction stages
-    /// into the draft and a complete binding applies instantly; an incomplete
-    /// one ghosts the header slot until it becomes valid.
+    /// Draws the parameter controls for composite modifier and layer keycodes.
     fn draw_qmk_mods_page(
         &mut self,
         ui: &mut egui::Ui,
@@ -405,24 +375,21 @@ impl crate::overlay_window::OverlayApp {
     ) {
         let section = self.editor.qmk_draft.section;
         if section.has_layer() {
+            let layer = self.editor.qmk_draft.mod_tap_layer.min(15);
             let (group, staged_code) = match section {
                 Section::LayerTap => (
                     super::qmk_catalog::layer_tap_group(
                         keyboard.layer_infos().len(),
                         self.editor.qmk_draft.base_code,
                     ),
-                    QK_LAYER_TAP.start
-                        + ((self.editor.qmk_draft.mod_tap_layer.min(15) as u16) << 8)
-                        + self.editor.qmk_draft.base_code,
+                    encode_layer_tap(layer, self.editor.qmk_draft.base_code),
                 ),
                 Section::LayerMod => (
                     super::qmk_catalog::layer_mod_group(
                         keyboard.layer_infos().len(),
                         self.editor.qmk_draft.mod_value(),
                     ),
-                    QK_LAYER_MOD.start
-                        + ((self.editor.qmk_draft.mod_tap_layer.min(15) as u16) << 5)
-                        + (self.editor.qmk_draft.mod_value() & 0x1F),
+                    encode_layer_mod(layer, self.editor.qmk_draft.mod_value()),
                 ),
                 _ => unreachable!(),
             };
@@ -432,7 +399,7 @@ impl crate::overlay_window::OverlayApp {
                     ui,
                     "qmk_layer",
                     &group.candidates,
-                    Some(&KeyAction::Qmk(staged_code)),
+                    staged_code.map(KeyAction::Qmk).as_ref(),
                     &style,
                     |candidate| {
                         if let KeyAction::Qmk(code) = &candidate.binding {
@@ -470,11 +437,8 @@ impl crate::overlay_window::OverlayApp {
         }
     }
 
-    /// Marks the draft touched and applies its staged keycode when it is a
-    /// complete, changed binding. QMK writes are immediate, so a valid pick
-    /// applies at once — there is no explicit Apply step.
+    /// Applies the current draft keycode to the target key.
     fn commit_qmk_draft(&mut self, keyboard: &Keyboard, target: EditTarget) {
-        self.editor.qmk_draft.touched = true;
         let staged = self.editor.qmk_draft.staged().map(KeyAction::Qmk);
         self.commit_staged(keyboard, target, staged);
     }

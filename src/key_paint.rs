@@ -1,20 +1,9 @@
-//! The key painter shared by the overlay and the keycode pickers.
-//!
-//! Everything visual about a single key — fill, border, behavior/argument
-//! strips, and the legend galleys (with the same fitting/shrinking rules) — is
-//! resolved by one function, [`paint`], so a key drawn anywhere looks exactly
-//! like the same key in the live overlay. All dimensions derive from `unit`
-//! (one key-unit in pixels): passing a smaller unit yields miniature keys that
-//! are geometrically identical to their full-size counterparts.
-//!
-//! Per-key drawing state arrives as [`KeyDisplay`] + [`KeyColors`]; appearance
-//! tuning lives in [`KeyPaintStyle`], built once per frame from `Settings`.
+//! Shared key rendering engine for the overlay and keycode pickers.
 
 use crate::layout_key::{BorderStyle, KeycodeKind, LayoutKey};
 use crate::settings::{LegendMode, Settings, ThemeColor, ThemeSettings};
 
-/// Resolved colors for painting a single key, derived from its layer, kind,
-/// and state. Callers may adjust them afterwards.
+/// Color palette for painting a key.
 #[derive(Clone, Copy)]
 pub struct KeyColors {
     pub fill: egui::Color32,
@@ -24,9 +13,7 @@ pub struct KeyColors {
 }
 
 impl KeyColors {
-    /// The look of an unbound slot: heavily dimmed fill doubled as its own
-    /// faint border. Used by the overlay for pinned transparent bindings and
-    /// by pickers for `KC_TRANSPARENT`.
+    /// Returns dimmed colors for transparent and unbound keys.
     pub fn ghosted(mut self) -> Self {
         self.fill = self.fill.gamma_multiply(0.25);
         self.border = self.fill;
@@ -34,7 +21,7 @@ impl KeyColors {
         self
     }
 
-    /// [`Self::ghosted`] when `condition` holds.
+    /// Returns ghosted colors if `condition` is true.
     pub fn ghosted_if(self, condition: bool) -> Self {
         if condition {
             self.ghosted()
@@ -43,28 +30,25 @@ impl KeyColors {
         }
     }
 
-    /// The high-visibility outline color: the fill brightened against the background.
-    /// Used for hovered keys and styled layer borders.
+    /// Returns the highlight border color for hover and selection outlines.
     pub fn highlight_border(&self) -> egui::Color32 {
         self.fill.lerp_to_gamma(egui::Color32::WHITE, 0.45)
     }
 }
 
-/// Appearance tuning for [`paint`], derived from the user's settings.
+/// Rendering style settings for keys.
 pub struct KeyPaintStyle {
-    /// Pixels per key-unit; every painted dimension is a fraction of this.
+    /// Key unit size in pixels.
     pub unit: f32,
-    /// User's global text scale.
+    /// Text size multiplier.
     pub font_scale: f32,
-    /// `false` when legends stack (Shifted above tap); `true` for any
-    /// single-legend mode.
+    /// Single-legend display mode.
     pub single_legend: bool,
-    /// Only single-legend-live mode swaps what a key shows while Shift/RAlt
-    /// is held (`shift_held`/`ralt_held` flags of [`paint`]).
+    /// Dynamic legend update mode for held modifiers.
     pub live_legends: bool,
-    /// Whether labels shrink to fit before falling back to an ellipsis.
+    /// Scale text down to fit before truncating.
     pub auto_fit_before_ellipsis: bool,
-    /// Theme palette (layer fills and the legend color).
+    /// Color theme settings.
     pub theme: ThemeSettings,
 }
 
@@ -80,25 +64,20 @@ impl KeyPaintStyle {
         }
     }
 
-    /// Override the unit size (the keycode pickers paint miniature keys).
+    /// Sets the key unit size in pixels.
     pub fn with_unit(mut self, unit: f32) -> Self {
         self.unit = unit;
         self
     }
 
-    /// `(font_size, strip_height)` for the legend strips, scaled to the tap
-    /// font so the strips grow with the text rather than the key height.
+    /// Calculates font size and height for behavior and argument strips.
     fn strip_metrics(&self) -> (f32, f32) {
-        // 0.55x the main tap font, so the legend stays a bit smaller.
         let font_size = 0.55 * 0.25 * self.unit * self.font_scale;
-        // Single text line is ~1.16x the font size; add a little vertical padding.
         let strip_height = font_size * 1.4;
         (font_size, strip_height)
     }
 
-    /// Colors for one key: the layer fill darkened by kind, brightened while
-    /// pressed, and optionally desaturated toward the layer-0 palette when it
-    /// belongs to an inactive background layer.
+    /// Calculates colors for a key based on its layer, kind, and pressed state.
     pub fn colors_for(
         &self,
         layer: u8,
@@ -147,24 +126,18 @@ impl KeyPaintStyle {
     }
 }
 
-/// What a single painted key needs to know about itself right now. The
-/// `*_held` flags only matter in live-legend mode (SingleLive); every other
-/// caller passes `false`.
+/// Display state for a single key.
 pub struct KeyDisplay<'a> {
     pub key: &'a LayoutKey,
     pub colors: KeyColors,
     pub hovered: bool,
-    /// While pressed, the palette above carries the pressed colors *and* the
-    /// border renders as solid at its pressed thickness, overriding a styled
-    /// border.
+    /// Key is pressed.
     pub pressed: bool,
     pub shift_held: bool,
     pub ralt_held: bool,
 }
 
-/// Paint one key into `rect`, rotated by `angle` around its own center.
-/// `rect` is the raw cell; a margin of `0.06*unit` shrinks it to the visible
-/// key face, exactly as on the overlay.
+/// Paints a key into the given rectangle with rotation.
 pub fn paint(
     ui: &egui::Ui,
     rect: egui::Rect,
@@ -178,9 +151,6 @@ pub fn paint(
     let corner_radius = 0.1 * unit;
     let key = display.key;
 
-    // Fill first; the border is drawn separately so layer keys can carry a
-    // styled outline. The pressed outline always wins; otherwise a layer key
-    // uses a heavier styled border hinting how its layer activates.
     ui.painter().add(
         egui::epaint::RectShape::filled(rect, corner_radius, display.colors.fill).with_angle(angle),
     );
@@ -193,8 +163,6 @@ pub fn paint(
                 display.colors.border,
             )
         } else {
-            // Brighten the key's fill color for the outline so it stands out
-            // on-theme.
             (key.border, 0.02 * unit, display.colors.highlight_border())
         };
     if display.hovered {
@@ -299,7 +267,7 @@ struct LabelGalleys {
     argument: Option<std::sync::Arc<egui::Galley>>,
 }
 
-/// Lay out all of a key's legends within its face rect.
+/// Generates text galleys for all key legends.
 fn generate_label_galleys(
     ui: &egui::Ui,
     display: &KeyDisplay<'_>,
@@ -338,14 +306,9 @@ fn generate_tap_galleys(
     let max_width = rect.width() * 0.85;
     let single_legend = style.single_legend;
 
-    // Live preview: while Shift/RAlt is physically held somewhere on the
-    // keyboard, show what THIS key would produce under that modifier instead
-    // of its plain tap. It shows flat, with no stacking (single-legend mode
-    // never stacks).
+    // Display active modifier result in live-legend mode.
     if style.live_legends {
         let live = if display.shift_held && display.ralt_held {
-            // Both held: prefer the Shift+RAlt result where the layout defines
-            // one, otherwise fall back to the single-modifier results.
             key.ralt_shifted.as_ref().or(key.shifted.as_ref())
         } else if display.shift_held {
             key.shifted.as_ref()
@@ -359,7 +322,7 @@ fn generate_tap_galleys(
         }
     }
 
-    // Default (dual-legend): stack the shifted character above the base character.
+    // Stack shifted character above base character in dual-legend mode.
     if !single_legend {
         if let Some(shifted) = &key.shifted {
             let text = if key.tap.is_empty() {
@@ -410,7 +373,7 @@ fn generate_tap_galleys(
     )
 }
 
-/// Lay out an optional strip label (behavior name or argument) to fit its strip.
+/// Generates a text galley for a behavior or argument strip.
 fn generate_strip_galley(
     ui: &egui::Ui,
     label: Option<&crate::layout_key::Label>,
@@ -433,8 +396,7 @@ fn generate_strip_galley(
     )
 }
 
-/// Lay out `full` (or `short`) within `max`; when neither fits, either scale
-/// down (`auto_fit_before_ellipsis`) or truncate with an ellipsis.
+/// Formats text into a galley fitted to the maximum dimensions.
 fn fit_text_galley(
     ui: &egui::Ui,
     full: &str,
@@ -496,8 +458,7 @@ fn fit_text_galley(
     None
 }
 
-/// Rotate `point` clockwise around `origin` by `angle_rad` (screen space, y-down).
-/// Also used for hover hit-testing against tilted overlay keys.
+/// Rotates a point clockwise around an origin by the specified angle in radians.
 pub fn rotate_point(point: egui::Pos2, origin: egui::Pos2, angle_rad: f32) -> egui::Pos2 {
     if angle_rad == 0.0 {
         return point;
@@ -511,8 +472,7 @@ pub fn rotate_point(point: egui::Pos2, origin: egui::Pos2, angle_rad: f32) -> eg
     )
 }
 
-/// Sample a rounded-rect outline into a closed polyline, rotated about `center`
-/// by `angle` so a dashed/dotted border matches a tilted key.
+/// Generates a rotated rounded rectangle outline path.
 fn rounded_rect_outline(
     rect: egui::Rect,
     radius: f32,
@@ -524,8 +484,7 @@ fn rounded_rect_outline(
         .min(rect.width() * 0.5)
         .min(rect.height() * 0.5)
         .max(0.0);
-    const SEG: usize = 4; // straight segments approximating each rounded corner
-                          // (corner arc center, start angle, end angle), traced clockwise (screen y-down).
+    const SEG: usize = 4;
     let corners = [
         (
             egui::pos2(rect.right() - r, rect.top() + r),
@@ -556,16 +515,13 @@ fn rounded_rect_outline(
             points.push(rotate_point(p, center, angle));
         }
     }
-    // Close the loop so the dashed/dotted line spans the final edge too.
     if let Some(&first) = points.first() {
         points.push(first);
     }
     points
 }
 
-/// Build a text shape tilted as if the key were rotated by `angle` around
-/// `center`: the anchor moves along the arc and the glyphs tilt by the same
-/// angle.
+/// Creates a rotated text shape.
 fn rotated_text_shape(
     pos: egui::Pos2,
     galley: std::sync::Arc<egui::Galley>,
@@ -579,8 +535,7 @@ fn rotated_text_shape(
     )
 }
 
-/// Paint one legend strip along a key edge. `top` selects which corners are
-/// rounded; `strip` is the un-rotated edge rect, rotated to the key's `angle`.
+/// Paints a behavior or argument strip along a key edge.
 #[allow(clippy::too_many_arguments)]
 fn paint_strip(
     ui: &egui::Ui,
@@ -593,8 +548,6 @@ fn paint_strip(
     background: egui::Color32,
     font_color: egui::Color32,
 ) {
-    // RectShape rotates around its own center, so orbit the strip's center
-    // around the key center first, then tilt it in place.
     let strip_rect =
         egui::Rect::from_center_size(rotate_point(strip.center(), center, angle), strip.size());
     let radius = (0.08 * unit) as u8;
@@ -635,8 +588,7 @@ fn paint_strip(
     }
 }
 
-/// Paint a key's border, rotated to match the key. `Solid`/`None` use the
-/// native stroke; `Dashed` traces the outline as styled segments.
+/// Paints a key border with rotation.
 #[allow(clippy::too_many_arguments)]
 fn paint_border(
     ui: &egui::Ui,

@@ -13,8 +13,6 @@ const ZMK_USAGE_PAGE: u16 = 0xff60;
 
 struct ZmkLayout {
     definition: KeyboardDefinition,
-    /// Shared with the reopener so a reconnected protocol stays truthful
-    /// after writes; mutated in place by the write methods.
     snapshot: Mutex<KeymapSnapshot>,
     supported_behaviors: HashSet<BehaviorRole>,
     behavior_metadata: HashMap<BehaviorRole, Vec<BehaviorBindingParametersSet>>,
@@ -70,11 +68,7 @@ impl ZmkProtocol {
         })
     }
 
-    /// Runs `write` against the edit session, opening it if needed (BLE opens
-    /// are slow, so `open_edit_session` usually runs first). Transport or
-    /// communication failures drop the session so the next write reconnects,
-    /// while application-level validation errors (such as an unsupported keycode)
-    /// keep the session intact.
+    /// Executes an operation with an active ZMK studio session.
     fn with_session<T>(
         &mut self,
         write: impl FnOnce(&mut ZmkStudioSession) -> Result<T, Box<dyn Error>>,
@@ -104,10 +98,7 @@ impl ZmkProtocol {
     }
 }
 
-/// Returns whether an RPC write error is fatal to the transport session.
-/// Recoverable validation rejections from the firmware (e.g. invalid parameter
-/// for a keycode not supported by this keyboard) keep the session open so the
-/// next write does not pay the slow reconnection and catalog fetch penalty.
+/// Returns true if the RPC error requires dropping the session.
 fn should_drop_session(err: &(dyn Error + 'static)) -> bool {
     let Some(client_err) = err.downcast_ref::<ClientError>() else {
         return true;

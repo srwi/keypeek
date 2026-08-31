@@ -1,28 +1,22 @@
-//! Key-shaped editor controls shared by the QMK and ZMK editors: a scrollable
-//! grid of candidate keys and a row of modifier toggles. Everything is painted
-//! by [`crate::key_paint`], so each key looks exactly like it will on the live
-//! overlay.
+//! Shared key picker controls. Draws candidate keys and modifier selectors using [`crate::key_paint`].
 
 use crate::key_action::KeyAction;
 use crate::key_paint::{self, KeyDisplay, KeyPaintStyle};
 use crate::layout_key::{modifier_symbols, KeycodeKind, Label, LayoutKey};
 
-/// Pixels per key-unit in picker grids; a miniature overlay key.
+/// Key unit size in picker grids in pixels.
 pub const KEY_UNIT: f32 = 51.0;
-/// Gap between grid cells, matching the old button-grid rhythm.
+/// Space between key cells in pixels.
 const GAP: f32 = 6.0;
 
-/// One selectable candidate in a picker grid: the binding it stands for,
-/// painted as the key it renders like on the overlay.
+/// Candidate key binding displayed in a picker grid.
 #[derive(Clone)]
 pub struct Candidate {
-    /// The firmware binding the candidate writes. Click-to-apply grids write
-    /// it directly; staging pickers extract their parameter from it.
+    /// Firmware key binding.
     pub binding: KeyAction,
-    /// The fully resolved key: labels, symbol, and kind (for coloring).
+    /// Visual key representation.
     pub key: LayoutKey,
-    /// Rendered dimmed like an unset overlay slot (QMK `KC_TRANSPARENT` / ZMK
-    /// `Transparent`).
+    /// Indicates a transparent key slot.
     pub transparent: bool,
 }
 
@@ -36,8 +30,7 @@ impl Candidate {
     }
 }
 
-/// Renders an interactive key button with hover highlight, cursor-following tooltip,
-/// pressed styling, and painting.
+/// Draws an interactive key button.
 pub fn key_button(
     ui: &mut egui::Ui,
     rect: egui::Rect,
@@ -68,12 +61,7 @@ pub fn key_button(
     response
 }
 
-/// A scrollable grid of miniature keys, one per candidate. The currently
-/// assigned `selected` binding is highlighted with the overlay's pressed look.
-/// Clicking a key invokes `on_select` with the whole candidate.
-///
-/// No scroll area of its own: embed inside the pane that owns scrolling.
-/// A scrollable grid of miniature keys from a slice of candidate references.
+/// Draws a grid of key candidates from references.
 pub fn picker_grid_refs(
     ui: &mut egui::Ui,
     id_salt: &str,
@@ -133,11 +121,7 @@ pub fn picker_grid_refs(
     }
 }
 
-/// A scrollable grid of miniature keys, one per candidate. The currently
-/// assigned `selected` binding is highlighted with the overlay's pressed look.
-/// Clicking a key invokes `on_select` with the whole candidate.
-///
-/// No scroll area of its own: embed inside the pane that owns scrolling.
+/// Draws a grid of key candidates.
 pub fn picker_grid_rows(
     ui: &mut egui::Ui,
     id_salt: &str,
@@ -150,7 +134,7 @@ pub fn picker_grid_rows(
     picker_grid_refs(ui, id_salt, &refs, selected, style, on_select);
 }
 
-/// A scrollable grid of miniature keys filtered on-the-fly by a predicate without cloning candidates.
+/// Draws a grid of key candidates filtered by a predicate.
 pub fn picker_grid_filtered(
     ui: &mut egui::Ui,
     id_salt: &str,
@@ -164,14 +148,13 @@ pub fn picker_grid_filtered(
     picker_grid_refs(ui, id_salt, &refs, selected, style, on_select);
 }
 
-/// A titled group of key candidates, rendered with a header like the usage
-/// picker's category labels.
+/// Named group of candidate keys.
 pub struct CandidateGroup {
     pub name: &'static str,
     pub candidates: Vec<Candidate>,
 }
 
-/// Titled groups of key grids, filtered on-the-fly without cloning candidates.
+/// Draws labeled groups of candidate keys.
 pub fn candidate_groups_rows(
     ui: &mut egui::Ui,
     groups: &[CandidateGroup],
@@ -198,10 +181,7 @@ pub fn candidate_groups_rows(
     }
 }
 
-/// [`candidate_groups_rows`] with every group framed in its own
-/// [`crate::ui_widgets::titled_group`] outline — the layout for pages whose
-/// groups are distinct keycode kinds (the layer pages and the direct-apply
-/// command grids).
+/// Draws candidate groups in framed group boxes.
 pub fn framed_candidate_groups_rows(
     ui: &mut egui::Ui,
     groups: &[CandidateGroup],
@@ -223,8 +203,7 @@ pub fn framed_candidate_groups_rows(
     }
 }
 
-/// Paint one key-shaped chip and handle its click. `selected` uses the pressed
-/// look, matching how the selected cell is highlighted in the picker grids.
+/// Draws a modifier key button.
 fn key_chip(
     ui: &mut egui::Ui,
     cell: egui::Rect,
@@ -237,9 +216,7 @@ fn key_chip(
     key_button(ui, cell, id, key, colors, selected, style)
 }
 
-/// Which hand variant a modifier chip stands for. Rendered as a tag in the
-/// chip's bottom argument strip rather than a separate row label, so chip rows
-/// align with the pane's left edge.
+/// Hand variant for a modifier key.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Hand {
     Left,
@@ -255,8 +232,7 @@ impl Hand {
     }
 }
 
-/// A modifier chip key: the shared modifier glyph/name with an optional hand
-/// tag in the bottom argument strip.
+/// Creates a modifier key definition with an optional hand label.
 fn modifier_chip_key(name: &modifier_symbols::ModName, hand: Option<Hand>) -> LayoutKey {
     let mut key = modifier_symbols::modifier_key(name, 0);
     key.argument = hand.map(Hand::tag);
@@ -264,13 +240,10 @@ fn modifier_chip_key(name: &modifier_symbols::ModName, hand: Option<Hand>) -> La
 }
 
 /// The four QMK modifier types as key-shaped toggle chips, sharing the
-/// overlay's modifier look: the same platform glyphs (`modifier_symbols`) and
-/// the same darkened modifier colors. Selected bits use the pressed treatment,
-/// matching how the selected cell is highlighted in the picker grids. Each
-/// chip is tagged with the currently selected hand in its bottom strip, since
-/// The four QMK modifier types as key-shaped toggle chips, sharing the
 /// overlay's modifier look, alongside a vertically centered Hand (L/R) selector.
-/// Returns `true` if any modifier bit or hand selection changed.
+/// Selected bits use the pressed treatment, matching how the selected cell is
+/// highlighted in the picker grids. Returns `true` if any modifier bit or hand
+/// selection changed.
 pub fn modifier_toggle_row(
     ui: &mut egui::Ui,
     id_salt: &str,
@@ -338,12 +311,7 @@ pub fn modifier_toggle_row(
     changed
 }
 
-/// The eight HID modifier bits as two key-shaped toggle chip rows (left hand,
-/// right hand), freely combinable — unlike the single-hand [`modifier_toggle_row`],
-/// this matches binding formats that store each modifier bit independently
-/// (ZMK's usage modifier byte, LCTL 0x01 … RGUI 0x80). `mods` is that full
-/// mask; `on_toggle` receives the clicked bit. Each chip is tagged with its
-/// hand in the bottom argument strip, so no row labels are needed.
+/// Draws an 8-key modifier toggle grid (4 Left, 4 Right).
 pub fn modifier_toggle_grid(
     ui: &mut egui::Ui,
     id_salt: &str,
@@ -354,25 +322,37 @@ pub fn modifier_toggle_grid(
     use modifier_symbols::{MOD_ALT, MOD_CTRL, MOD_GUI, MOD_SHIFT};
 
     let names = [&MOD_CTRL, &MOD_SHIFT, &MOD_ALT, &MOD_GUI];
+    let cells = names.len() as f32;
+    let row_width = cells * KEY_UNIT + (cells - 1.0) * GAP;
+    let total_height = 2.0 * KEY_UNIT + GAP;
+
+    let (_, space_rect) = ui.allocate_space(egui::vec2(row_width, total_height));
+    let origin = space_rect.min;
+
     for (row, hand) in [(0u8, Hand::Left), (1, Hand::Right)] {
-        ui.horizontal(|ui| {
-            for (i, name) in names.iter().enumerate() {
-                let mask = 1 << (row * 4 + i as u8);
-                let key = modifier_chip_key(name, Some(hand));
-                let (_, cell_rect) = ui.allocate_space(egui::vec2(KEY_UNIT, KEY_UNIT));
-                let response = key_chip(
-                    ui,
-                    cell_rect,
-                    ui.id().with((id_salt, "mod", mask)),
-                    &key,
-                    mods & mask != 0,
-                    style,
-                );
-                if response.clicked() {
-                    on_toggle(mask);
-                }
+        for (i, name) in names.iter().enumerate() {
+            let mask = 1 << (row * 4 + i as u8);
+            let cell = egui::Rect::from_min_size(
+                origin
+                    + egui::vec2(
+                        i as f32 * (KEY_UNIT + GAP),
+                        row as f32 * (KEY_UNIT + GAP),
+                    ),
+                egui::vec2(KEY_UNIT, KEY_UNIT),
+            );
+            let key = modifier_chip_key(name, Some(hand));
+            let response = key_chip(
+                ui,
+                cell,
+                ui.id().with((id_salt, "mod", mask)),
+                &key,
+                mods & mask != 0,
+                style,
+            );
+            if response.clicked() {
+                on_toggle(mask);
             }
-        });
+        }
     }
 }
 
