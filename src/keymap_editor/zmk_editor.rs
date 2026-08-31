@@ -71,13 +71,13 @@ impl Page {
         }
     }
 
-    fn supported_kinds<'a>(&self, keyboard: &'a Keyboard) -> impl Iterator<Item = ZmkBehaviorKind> + 'a {
-        self.kinds()
-            .iter()
-            .copied()
-            .filter(|k| {
-                keyboard.is_action_supported(&KeyAction::Zmk(zmk_catalog::sample_behavior(*k)))
-            })
+    fn supported_kinds<'a>(
+        &self,
+        keyboard: &'a Keyboard,
+    ) -> impl Iterator<Item = ZmkBehaviorKind> + 'a {
+        self.kinds().iter().copied().filter(|k| {
+            keyboard.is_action_supported(&KeyAction::Zmk(zmk_catalog::sample_behavior(*k)))
+        })
     }
 }
 
@@ -237,7 +237,9 @@ impl crate::overlay_window::OverlayApp {
         let layer_infos = keyboard.layer_infos();
 
         // If the current draft kind is not supported on this keyboard, switch to the first supported one.
-        if !keyboard.is_action_supported(&KeyAction::Zmk(zmk_catalog::sample_behavior(self.editor.zmk_draft.kind))) {
+        if !keyboard.is_action_supported(&KeyAction::Zmk(zmk_catalog::sample_behavior(
+            self.editor.zmk_draft.kind,
+        ))) {
             self.editor.zmk_draft.kind = Page::ALL
                 .iter()
                 .find_map(|page| page.supported_kinds(keyboard).next())
@@ -258,8 +260,11 @@ impl crate::overlay_window::OverlayApp {
                 if matches!(page, Page::Keys | Page::Mods | Page::Commands) {
                     ui.weak(page.label());
                     for kind in kinds {
-                        let response =
-                            ui.selectable_value(&mut self.editor.zmk_draft.kind, kind, kind.label());
+                        let response = ui.selectable_value(
+                            &mut self.editor.zmk_draft.kind,
+                            kind,
+                            kind.label(),
+                        );
                         // Switching behavior kinds leaves any staged
                         // Backlight Set behind.
                         if response.changed() {
@@ -268,8 +273,10 @@ impl crate::overlay_window::OverlayApp {
                     }
                 } else {
                     let first_kind = *kinds.peek().unwrap();
-                    let response =
-                        ui.selectable_label(page_of(self.editor.zmk_draft.kind) == page, page.label());
+                    let response = ui.selectable_label(
+                        page_of(self.editor.zmk_draft.kind) == page,
+                        page.label(),
+                    );
                     if response.clicked() {
                         self.editor.zmk_draft.kind = first_kind;
                         self.editor.zmk_draft.bl_set_staged = false;
@@ -312,11 +319,12 @@ impl crate::overlay_window::OverlayApp {
                             self.editor.zmk_draft.hold_mods,
                             &mod_style,
                             |mask| {
-                                self.editor.zmk_draft.hold_mods = if self.editor.zmk_draft.hold_mods == mask {
-                                    0
-                                } else {
-                                    mask
-                                };
+                                self.editor.zmk_draft.hold_mods =
+                                    if self.editor.zmk_draft.hold_mods == mask {
+                                        0
+                                    } else {
+                                        mask
+                                    };
                                 self.commit_zmk_draft(keyboard, target);
                             },
                         );
@@ -326,7 +334,9 @@ impl crate::overlay_window::OverlayApp {
                     });
                     // A Mod-Tap without a hold modifier has nothing to do
                     // on hold, so the header ghosts it as invalid.
-                    if self.editor.zmk_draft.kind == ZmkBehaviorKind::ModTap && self.editor.zmk_draft.hold_mods == 0 {
+                    if self.editor.zmk_draft.kind == ZmkBehaviorKind::ModTap
+                        && self.editor.zmk_draft.hold_mods == 0
+                    {
                         ui.weak("Select a hold modifier.");
                     }
                 }
@@ -347,10 +357,16 @@ impl crate::overlay_window::OverlayApp {
 
         if with_mods {
             let mod_style = self.paint_style(KEY_UNIT);
-            modifier_toggle_grid(ui, "zmk_mods", self.editor.zmk_draft.modifiers, &mod_style, |mask| {
-                self.editor.zmk_draft.modifiers ^= mask;
-                self.commit_zmk_draft(keyboard, target);
-            });
+            modifier_toggle_grid(
+                ui,
+                "zmk_mods",
+                self.editor.zmk_draft.modifiers,
+                &mod_style,
+                |mask| {
+                    self.editor.zmk_draft.modifiers ^= mask;
+                    self.commit_zmk_draft(keyboard, target);
+                },
+            );
         }
 
         candidate_groups_rows(
@@ -361,8 +377,11 @@ impl crate::overlay_window::OverlayApp {
             &style,
             |_, candidate| {
                 if let KeyAction::Zmk(Behavior::KeyPress(usage)) = &candidate.binding {
-                    self.editor.zmk_draft.usage =
-                        HidUsage::from_parts(usage.page(), usage.id(), self.editor.zmk_draft.modifiers);
+                    self.editor.zmk_draft.usage = HidUsage::from_parts(
+                        usage.page(),
+                        usage.id(),
+                        self.editor.zmk_draft.modifiers,
+                    );
                     self.commit_zmk_draft(keyboard, target);
                 }
             },
@@ -433,12 +452,7 @@ impl crate::overlay_window::OverlayApp {
     }
 
     /// Draws direct-apply behavior grids for command and special keys.
-    fn draw_direct_grid(
-        &mut self,
-        ui: &mut egui::Ui,
-        keyboard: &Keyboard,
-        target: EditTarget,
-    ) {
+    fn draw_direct_grid(&mut self, ui: &mut egui::Ui, keyboard: &Keyboard, target: EditTarget) {
         let kind = self.editor.zmk_draft.kind;
         let staging_set = kind == ZmkBehaviorKind::Backlight && self.editor.zmk_draft.bl_set_staged;
         let is_special = page_of(kind) == Page::Special;
@@ -453,11 +467,7 @@ impl crate::overlay_window::OverlayApp {
                 .filter(|c| keyboard.is_action_supported(&c.binding))
                 .collect()
         };
-        let grid_title = if is_special {
-            "Special"
-        } else {
-            kind.label()
-        };
+        let grid_title = if is_special { "Special" } else { kind.label() };
         let style = self.paint_style(KEY_UNIT);
         titled_group(ui, grid_title, |ui| {
             picker_grid_rows(
@@ -481,7 +491,8 @@ impl crate::overlay_window::OverlayApp {
 
         if staging_set {
             titled_group(ui, "Level", |ui| {
-                let level = ui.add(egui::DragValue::new(&mut self.editor.zmk_draft.bl_value).range(0..=255));
+                let level = ui
+                    .add(egui::DragValue::new(&mut self.editor.zmk_draft.bl_value).range(0..=255));
                 if level.drag_stopped() || level.lost_focus() {
                     let behavior = Behavior::Backlight {
                         command: zmk_catalog::BACKLIGHT_SET_COMMAND,

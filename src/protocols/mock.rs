@@ -6,13 +6,10 @@
 
 use super::{KeyboardDefinition, KeyboardProtocol, WriteSupport};
 use crate::key_action::{KeyAction, KeymapSnapshot};
-use crate::qmk_keycode_labels::constants::{
-    QK_DEF_LAYER, QK_LAYER_TAP_TOGGLE, QK_MOMENTARY, QK_ONE_SHOT_LAYER, QK_TO, QK_TOGGLE_LAYER,
-};
 use qmk_via_api::keycodes::Keycode;
+use qmk_via_api::QmkLayerOp;
 use std::collections::HashMap;
 use std::error::Error;
-use std::ops::Range;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::OnceLock;
 use std::thread;
@@ -198,20 +195,19 @@ fn resolve_keycode(name: &str) -> Result<u16, String> {
 
 fn resolve_layer_shorthand(name: &str) -> Option<u16> {
     let (behavior, argument) = name.split_once('(')?;
-    let layer: u16 = argument.strip_suffix(')')?.trim().parse().ok()?;
+    let layer: u8 = argument.strip_suffix(')')?.trim().parse().ok()?;
 
-    let range: Range<u16> = match behavior.trim() {
-        "MO" => QK_MOMENTARY,
-        "TO" => QK_TO,
-        "TG" => QK_TOGGLE_LAYER,
-        "OSL" => QK_ONE_SHOT_LAYER,
-        "TT" => QK_LAYER_TAP_TOGGLE,
-        "DF" => QK_DEF_LAYER,
+    let op = match behavior.trim() {
+        "MO" => QmkLayerOp::Momentary,
+        "TO" => QmkLayerOp::To,
+        "TG" => QmkLayerOp::Toggle,
+        "OSL" => QmkLayerOp::OneShot,
+        "TT" => QmkLayerOp::TapToggle,
+        "DF" => QmkLayerOp::Default,
         _ => return None,
     };
 
-    let code = range.start.checked_add(layer)?;
-    range.contains(&code).then_some(code)
+    op.encode(layer)
 }
 
 /// Inverts the `Keycode` enum into a name lookup. `Keycode` exposes number-to-variant
@@ -275,8 +271,14 @@ mod tests {
     fn resolves_names_shorthands_and_hex() {
         assert_eq!(resolve_keycode("KC_A"), Ok(Keycode::KC_A as u16));
         assert_eq!(resolve_keycode(" KC_ENTER "), Ok(Keycode::KC_ENTER as u16));
-        assert_eq!(resolve_keycode("MO(1)"), Ok(QK_MOMENTARY.start + 1));
-        assert_eq!(resolve_keycode("TO(2)"), Ok(QK_TO.start + 2));
+        assert_eq!(
+            resolve_keycode("MO(1)"),
+            Ok(QmkLayerOp::Momentary.encode(1).unwrap())
+        );
+        assert_eq!(
+            resolve_keycode("TO(2)"),
+            Ok(QmkLayerOp::To.encode(2).unwrap())
+        );
         assert_eq!(resolve_keycode("0x2004"), Ok(0x2004));
         assert!(resolve_keycode("KC_NOPE").is_err());
         assert!(resolve_keycode("MO(999)").is_err());

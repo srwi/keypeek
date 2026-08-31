@@ -111,8 +111,7 @@ pub fn picker_grid_refs(
         (cols as f32 * KEY_UNIT + (cols.saturating_sub(1)) as f32 * GAP).min(ui.available_width());
     let total_height = rows as f32 * KEY_UNIT + (rows.saturating_sub(1)) as f32 * GAP;
 
-    let (_, space_rect) =
-        ui.allocate_space(egui::vec2(grid_width.max(KEY_UNIT), total_height));
+    let (_, space_rect) = ui.allocate_space(egui::vec2(grid_width.max(KEY_UNIT), total_height));
     let origin = space_rect.min;
 
     for (i, candidate) in candidates.iter().enumerate() {
@@ -323,7 +322,10 @@ pub fn modifier_toggle_row(
         ui.add_space(8.0);
         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
             ui.weak("Hand");
-            if ui.add(egui::Button::new("L").small().selected(!*right)).clicked() {
+            if ui
+                .add(egui::Button::new("L").small().selected(!*right))
+                .clicked()
+            {
                 *right = false;
                 changed = true;
             }
@@ -363,11 +365,7 @@ pub fn modifier_toggle_grid(
         for (i, name) in names.iter().enumerate() {
             let mask = 1 << (row * 4 + i as u8);
             let cell = egui::Rect::from_min_size(
-                origin
-                    + egui::vec2(
-                        i as f32 * (KEY_UNIT + GAP),
-                        row as f32 * (KEY_UNIT + GAP),
-                    ),
+                origin + egui::vec2(i as f32 * (KEY_UNIT + GAP), row as f32 * (KEY_UNIT + GAP)),
                 egui::vec2(KEY_UNIT, KEY_UNIT),
             );
             let key = modifier_chip_key(name, Some(hand));

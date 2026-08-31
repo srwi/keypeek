@@ -162,10 +162,7 @@ pub(super) fn editor_left_panel(
 }
 
 /// The editor's scrolling central panel.
-pub(super) fn editor_central_panel(
-    ui: &mut egui::Ui,
-    content: impl FnOnce(&mut egui::Ui),
-) {
+pub(super) fn editor_central_panel(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui)) {
     egui::CentralPanel::default()
         .frame(egui::Frame::NONE.inner_margin(egui::Margin {
             left: 4,
@@ -438,9 +435,7 @@ fn layer_button(
         false,
         selected,
     );
-    let text = egui::RichText::new(label)
-        .color(colors.font)
-        .size(12.0);
+    let text = egui::RichText::new(label).color(colors.font).size(12.0);
 
     let stroke_width = if selected { 2.0_f32 } else { 1.0_f32 };
     let button = egui::Button::new(text)
@@ -453,7 +448,12 @@ fn layer_button(
     if response.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         let highlight_stroke = egui::Stroke::new(stroke_width, colors.highlight_border());
-        ui.painter().rect_stroke(response.rect, 4.0, highlight_stroke, egui::StrokeKind::Inside);
+        ui.painter().rect_stroke(
+            response.rect,
+            4.0,
+            highlight_stroke,
+            egui::StrokeKind::Inside,
+        );
     }
     response
 }

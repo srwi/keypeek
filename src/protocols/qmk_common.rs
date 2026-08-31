@@ -2,68 +2,18 @@
 
 use crate::key_action::{KeyAction, KeymapSnapshot};
 use qmk_via_api::api::KeyboardApi;
+pub use qmk_via_api::QmkFeatures;
 use std::error::Error;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use qmk_via_api::keycodes::Keycode;
-
-#[derive(Debug, Clone, Default)]
-pub struct QmkFeatures {
-    pub has_backlight: bool,
-    pub has_rgblight: bool,
-    pub has_rgb_matrix: bool,
-    pub has_audio: bool,
-}
-
-impl QmkFeatures {
-    pub fn probe(api: &KeyboardApi) -> Self {
-        Self {
-            has_backlight: api.get_backlight_brightness().is_ok(),
-            has_rgblight: api.get_rgblight_brightness().is_ok(),
-            has_rgb_matrix: api.get_rgb_matrix_brightness().is_ok(),
-            has_audio: api.get_audio_enabled().is_ok(),
-        }
-    }
-
-    pub fn is_keycode_supported(&self, code: u16) -> bool {
-        // Backlight range
-        if (Keycode::QK_BACKLIGHT_ON as u16..=Keycode::QK_BACKLIGHT_TOGGLE_BREATHING as u16)
-            .contains(&code)
-            && !self.has_backlight
-        {
-            return false;
-        }
-        // RGBLight range
-        if (Keycode::QK_UNDERGLOW_TOGGLE as u16..=Keycode::RGB_MODE_TWINKLE as u16).contains(&code)
-            && !self.has_rgblight
-        {
-            return false;
-        }
-        // RGB Matrix range
-        if (Keycode::QK_RGB_MATRIX_ON as u16..=Keycode::QK_RGB_MATRIX_SPEED_DOWN as u16)
-            .contains(&code)
-            && !self.has_rgb_matrix
-        {
-            return false;
-        }
-        // Audio range
-        if (Keycode::QK_AUDIO_ON as u16..=Keycode::QK_AUDIO_VOICE_PREVIOUS as u16).contains(&code)
-            && !self.has_audio
-        {
-            return false;
-        }
-        true
-    }
-
-    pub fn action_filter(&self) -> Option<super::ActionFilter> {
-        let features = self.clone();
-        Some(Arc::new(move |action| match action {
-            KeyAction::Qmk(code) => features.is_keycode_supported(*code),
-            _ => true,
-        }))
-    }
+/// Returns an action filter that disables keycodes not supported by the keyboard's features.
+pub fn qmk_action_filter(features: QmkFeatures) -> Option<super::ActionFilter> {
+    Some(Arc::new(move |action| match action {
+        KeyAction::Qmk(code) => features.is_keycode_supported(*code),
+        _ => true,
+    }))
 }
 
 /// Reads a complete keymap snapshot across all dynamic layers from a QMK/VIA/VIAL keyboard.
@@ -136,5 +86,32 @@ pub(crate) fn qmk_set_key_with_retry(
             Err("Failed to set key: the device did not confirm the write".into())
         }
         Err(e) => Err(format!("Failed to set key: {e}").into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use qmk_via_api::keycodes::Keycode;
+
+    #[test]
+    fn test_qmk_action_filter() {
+        let features = QmkFeatures {
+            has_backlight: false,
+            has_rgblight: true,
+            has_rgb_matrix: false,
+            has_audio: false,
+        };
+
+        let filter = qmk_action_filter(features).expect("filter should be Some");
+        assert!(filter(&KeyAction::Qmk(Keycode::KC_A as u16)));
+        assert!(filter(&KeyAction::Qmk(Keycode::QK_UNDERGLOW_TOGGLE as u16)));
+        assert!(!filter(&KeyAction::Qmk(
+            Keycode::QK_BACKLIGHT_TOGGLE as u16
+        )));
+        assert!(!filter(&KeyAction::Qmk(
+            Keycode::QK_RGB_MATRIX_TOGGLE as u16
+        )));
+        assert!(!filter(&KeyAction::Qmk(Keycode::QK_AUDIO_TOGGLE as u16)));
     }
 }

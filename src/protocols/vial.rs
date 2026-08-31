@@ -1,4 +1,4 @@
-use super::qmk_common::{qmk_read_snapshot, qmk_set_key, QmkFeatures};
+use super::qmk_common::{qmk_action_filter, qmk_read_snapshot, qmk_set_key, QmkFeatures};
 use super::{
     kle_parser, KeyboardDefinition, KeyboardProtocol, RawHidSubscription, SubscriptionSender,
     WriteSupport,
@@ -176,6 +176,6 @@ impl KeyboardProtocol for VialProtocol {
     }
 
     fn action_filter(&self) -> Option<super::ActionFilter> {
-        self.features.action_filter()
+        qmk_action_filter(self.features)
     }
 }
