@@ -1,6 +1,6 @@
 //! Shared transport, feature probing, and key writing utilities for QMK/VIA/VIAL protocols.
 
-use crate::key_action::KeyAction;
+use crate::key_action::{KeyAction, KeymapSnapshot};
 use qmk_via_api::api::KeyboardApi;
 use std::error::Error;
 use std::sync::Arc;
@@ -63,6 +63,51 @@ impl QmkFeatures {
             KeyAction::Qmk(code) => features.is_keycode_supported(*code),
             _ => true,
         }))
+    }
+}
+
+/// Reads a complete keymap snapshot across all dynamic layers from a QMK/VIA/VIAL keyboard.
+pub fn qmk_read_snapshot(
+    api: &KeyboardApi,
+    definition: &super::KeyboardDefinition,
+) -> Result<KeymapSnapshot, Box<dyn Error>> {
+    let layer_count = api
+        .get_layer_count()
+        .map_err(|e| format!("Failed to get layer count: {e}"))? as usize;
+    let (rows, cols) = (definition.rows, definition.cols);
+    let matrix_info = qmk_via_api::api::MatrixInfo {
+        rows: rows as u8,
+        cols: cols as u8,
+    };
+
+    let mut actions = vec![vec![vec![None; cols]; rows]; layer_count];
+    for (layer, layer_actions) in actions.iter_mut().enumerate() {
+        if let Ok(raw_matrix) = api.read_raw_matrix(matrix_info, layer as u8) {
+            for (i, &keycode) in raw_matrix.iter().enumerate() {
+                let row = i / cols;
+                let col = i % cols;
+                layer_actions[row][col] = Some(KeyAction::Qmk(keycode));
+            }
+        }
+    }
+
+    Ok(KeymapSnapshot {
+        layers: crate::key_action::LayerInfo::indexed(layer_count),
+        actions,
+    })
+}
+
+/// Writes one key binding to a QMK/VIA/VIAL keyboard.
+pub fn qmk_set_key(
+    api: &KeyboardApi,
+    layer_index: usize,
+    row: usize,
+    col: usize,
+    action: &KeyAction,
+) -> Result<(), Box<dyn Error>> {
+    match action {
+        KeyAction::Qmk(code) => qmk_set_key_with_retry(api, layer_index, row, col, *code),
+        KeyAction::Zmk(_) => Err("Cannot apply a ZMK behavior to a QMK keyboard".into()),
     }
 }
 

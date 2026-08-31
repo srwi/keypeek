@@ -1,10 +1,10 @@
-use super::qmk_common::{qmk_set_key_with_retry, QmkFeatures};
+use super::qmk_common::{qmk_read_snapshot, qmk_set_key, QmkFeatures};
 use super::{
     kle_parser, KeyboardDefinition, KeyboardProtocol, RawHidSubscription, SubscriptionSender,
     WriteSupport,
 };
 use crate::key_action::{KeyAction, KeymapSnapshot};
-use qmk_via_api::api::{KeyboardApi, MatrixInfo};
+use qmk_via_api::api::KeyboardApi;
 use std::error::Error;
 
 const VIAL_PREFIX: u8 = 0xFE;
@@ -30,39 +30,6 @@ impl VialProtocol {
             .map_err(|e| format!("Failed to connect to device ({vid:04x}:{pid:04x}): {e}"))?;
 
         Self::init_from_api(api, vid, pid)
-    }
-
-    fn layer_count(&self) -> Result<usize, Box<dyn Error>> {
-        let count = self
-            .api
-            .get_layer_count()
-            .map_err(|e| format!("Failed to get layer count: {e}"))?;
-        Ok(count as usize)
-    }
-
-    fn read_snapshot(&self) -> Result<KeymapSnapshot, Box<dyn Error>> {
-        let layers = self.layer_count()?;
-        let (rows, cols) = (self.definition.rows, self.definition.cols);
-        let matrix_info = MatrixInfo {
-            rows: rows as u8,
-            cols: cols as u8,
-        };
-
-        let mut actions = vec![vec![vec![None; cols]; rows]; layers];
-        for (layer, layer_actions) in actions.iter_mut().enumerate() {
-            if let Ok(raw_matrix) = self.api.read_raw_matrix(matrix_info, layer as u8) {
-                for (i, &keycode) in raw_matrix.iter().enumerate() {
-                    let row = i / cols;
-                    let col = i % cols;
-                    layer_actions[row][col] = Some(KeyAction::Qmk(keycode));
-                }
-            }
-        }
-
-        Ok(KeymapSnapshot {
-            layers: crate::key_action::LayerInfo::indexed(layers),
-            actions,
-        })
     }
 
     fn init_from_api(api: KeyboardApi, vid: u16, pid: u16) -> Result<Self, Box<dyn Error>> {
@@ -180,7 +147,7 @@ impl KeyboardProtocol for VialProtocol {
     }
 
     fn read_keymap(&self) -> Result<KeymapSnapshot, Box<dyn Error>> {
-        self.read_snapshot()
+        qmk_read_snapshot(&self.api, &self.definition)
     }
 
     fn hid_read(&self) -> Result<Vec<u8>, Box<dyn Error>> {
@@ -201,12 +168,7 @@ impl KeyboardProtocol for VialProtocol {
         col: usize,
         action: &KeyAction,
     ) -> Result<(), Box<dyn Error>> {
-        match action {
-            KeyAction::Qmk(code) => {
-                qmk_set_key_with_retry(&self.api, layer_index, row, col, *code)
-            }
-            KeyAction::Zmk(_) => Err("Cannot apply a ZMK behavior to a QMK keyboard".into()),
-        }
+        qmk_set_key(&self.api, layer_index, row, col, action)
     }
 
     fn subscription_sender(&self) -> Result<Option<Box<dyn SubscriptionSender>>, Box<dyn Error>> {
