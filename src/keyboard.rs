@@ -136,7 +136,7 @@ fn next_visibility_window(
 }
 
 pub struct Keyboard {
-    pub layout: KeyboardLayout,
+    layout: Mutex<KeyboardLayout>,
     overlay_visibility: Arc<Mutex<VisibilityWindow>>,
     matrix: Arc<Mutex<KeyMatrix>>,
     layer_state: Arc<Mutex<u32>>,
@@ -296,7 +296,7 @@ impl Keyboard {
 
         let action_filter = protocol.action_filter();
         let keyboard = Keyboard {
-            layout,
+            layout: Mutex::new(layout),
             matrix: Arc::clone(&matrix),
             overlay_visibility: Arc::clone(&overlay_visibility),
             layer_state: Arc::clone(&layer_state),
@@ -538,7 +538,8 @@ impl Keyboard {
     /// RAlt is held right now", no matter which key holds it (dedicated key,
     /// home-row mod, One-Shot-Mod, ...).
     fn held_mod_mask(&self) -> u16 {
-        self.layout.keys.iter().fold(0u16, |acc, key| {
+        let guard = self.layout.lock().unwrap();
+        guard.keys.iter().fold(0u16, |acc, key| {
             if !self.is_key_pressed(key.row, key.col) {
                 return acc;
             }
@@ -569,8 +570,12 @@ impl Keyboard {
         *self.config.lock().unwrap() = config;
     }
 
-    pub fn set_layout(&mut self, layout: KeyboardLayout) {
-        self.layout = layout;
+    pub fn layout(&self) -> KeyboardLayout {
+        self.layout.lock().unwrap().clone()
+    }
+
+    pub fn set_layout(&self, layout: KeyboardLayout) {
+        *self.layout.lock().unwrap() = layout;
     }
 }
 

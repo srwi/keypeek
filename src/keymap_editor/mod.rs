@@ -314,10 +314,17 @@ impl crate::overlay_window::OverlayApp {
     }
 
     /// Draws the ZMK session status indicator.
-    fn draw_session_status(&self, ui: &mut egui::Ui) {
+    fn draw_session_status(&mut self, ui: &mut egui::Ui) {
         if self.editor.zmk_session == ZmkSessionState::Opening {
             ui.label("Connecting…");
             ui.add(egui::Spinner::new().size(14.0));
+            return;
+        }
+        if self.editor.zmk_session == ZmkSessionState::Failed {
+            if ui.button("Retry").clicked() {
+                self.editor.zmk_session = ZmkSessionState::Idle;
+                self.editor.error = None;
+            }
             return;
         }
         if !self.editor.zmk_dirty {

@@ -86,7 +86,7 @@ fn page_of(kind: ZmkBehaviorKind) -> Page {
     Page::ALL
         .into_iter()
         .find(|page| page.kinds().contains(&kind))
-        .expect("every behavior kind belongs to a page")
+        .unwrap_or(Page::Keys)
 }
 
 /// Editable parameter state for ZMK behaviors.
@@ -124,8 +124,12 @@ impl Default for ZmkDraft {
 impl ZmkDraft {
     /// Creates draft state from an existing ZMK behavior.
     pub fn from_behavior(behavior: &Behavior) -> Self {
+        let kind = behavior
+            .role()
+            .filter(|&r| Page::ALL.iter().any(|p| p.kinds().contains(&r)))
+            .unwrap_or(ZmkBehaviorKind::KeyPress);
         let mut draft = ZmkDraft {
-            kind: behavior.role().unwrap_or(ZmkBehaviorKind::KeyPress),
+            kind,
             ..Default::default()
         };
         match behavior {
@@ -596,6 +600,8 @@ mod tests {
             K::Bluetooth
         );
         assert_eq!(kind_of(Behavior::MouseScroll { value: 1 }), K::MouseScroll);
+        // Behaviors not assignable through ZMK Studio (e.g. ExternalPower) fall back to KeyPress.
+        assert_eq!(kind_of(Behavior::ExternalPower { value: 0 }), K::KeyPress);
     }
 
     #[test]

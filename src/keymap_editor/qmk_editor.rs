@@ -163,7 +163,7 @@ impl QmkDraft {
 
 /// Encodes a modified keycode: `(mods << 8) | keycode`.
 pub(super) fn encode_combo(mods: u16, keycode: u16) -> Option<u16> {
-    if mods & 0x1F == 0 || keycode > 0xFF {
+    if mods & 0x0F == 0 || keycode > 0xFF {
         return None;
     }
     let code = (mods << 8) | keycode;
@@ -171,14 +171,14 @@ pub(super) fn encode_combo(mods: u16, keycode: u16) -> Option<u16> {
 }
 
 pub(super) fn encode_one_shot_mod(mods: u16) -> Option<u16> {
-    if mods & 0x1F == 0 {
+    if mods & 0x0F == 0 {
         return None;
     }
     Some(QK_ONE_SHOT_MOD.start + (mods & 0x1F))
 }
 
 pub(super) fn encode_mod_tap(mods: u16, keycode: u16) -> Option<u16> {
-    if mods & 0x1F == 0 || keycode > 0xFF {
+    if mods & 0x0F == 0 || keycode > 0xFF {
         return None;
     }
     Some(QK_MOD_TAP.start + (mods << 8) + keycode)
@@ -194,7 +194,7 @@ pub(super) fn encode_layer_tap(layer: usize, keycode: u16) -> Option<u16> {
 
 /// Encodes a Layer-Mod keycode: `LM(layer, mods)`.
 pub(super) fn encode_layer_mod(layer: usize, mods: u16) -> Option<u16> {
-    if layer > 15 || mods & 0x1F == 0 {
+    if layer > 15 || mods & 0x0F == 0 {
         return None;
     }
     Some(QK_LAYER_MOD.start + ((layer as u16) << 5) + (mods & 0x1F))
@@ -260,6 +260,9 @@ fn decode(code: u16) -> QmkDraft {
         {
             if let Some(section) = Section::from_label(group.name) {
                 draft.section = section;
+                if code <= 0xFF {
+                    draft.base_code = code;
+                }
                 return draft;
             }
         }
@@ -313,8 +316,10 @@ impl crate::overlay_window::OverlayApp {
                         if response.changed() {
                             text.retain(|c| c.is_ascii_hexdigit());
                             self.editor.qmk_draft.hex = text;
-                            // Every parsed prefix applies at once; the
-                            // final value sticks as the last write.
+                        }
+                        if response.lost_focus()
+                            || (response.changed() && self.editor.qmk_draft.hex.len() == 4)
+                        {
                             self.commit_qmk_draft(keyboard, target);
                         }
                     });
@@ -613,8 +618,11 @@ mod tests {
         draft.section = Section::OneShot;
         draft.mods = 0;
         assert_eq!(draft.staged(), None);
+        // Having only the right-hand flag without any modifier bit is still invalid.
+        draft.right = true;
+        assert_eq!(draft.staged(), None);
         draft.mods = MOD_LCTL;
-        assert_eq!(draft.staged(), encode_one_shot_mod(MOD_LCTL));
+        assert_eq!(draft.staged(), encode_one_shot_mod(MOD_LCTL | MOD_RIGHT_FLAG));
     }
 
     #[test]
@@ -633,5 +641,10 @@ mod tests {
         );
         assert_eq!(decode(Keycode::QK_AUDIO_ON as u16).section, Section::Audio);
         assert_eq!(decode(Keycode::QK_KB_0 as u16).section, Section::Custom);
+
+        // Basic keys retain their base_code for seamless transition into ModTap/LayerTap/Combo.
+        let a_draft = decode(Keycode::KC_A as u16);
+        assert_eq!(a_draft.section, Section::Basic);
+        assert_eq!(a_draft.base_code, Keycode::KC_A as u16);
     }
 }

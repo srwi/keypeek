@@ -82,10 +82,13 @@ pub fn qmk_read_snapshot(
 
     let mut actions = vec![vec![vec![None; cols]; rows]; layer_count];
     for (layer, layer_actions) in actions.iter_mut().enumerate() {
-        if let Ok(raw_matrix) = api.read_raw_matrix(matrix_info, layer as u8) {
-            for (i, &keycode) in raw_matrix.iter().enumerate() {
-                let row = i / cols;
-                let col = i % cols;
+        let raw_matrix = api
+            .read_raw_matrix(matrix_info, layer as u8)
+            .map_err(|e| format!("Failed to read layer {layer} keymap: {e}"))?;
+        for (i, &keycode) in raw_matrix.iter().enumerate() {
+            let row = i / cols;
+            let col = i % cols;
+            if row < rows && col < cols {
                 layer_actions[row][col] = Some(KeyAction::Qmk(keycode));
             }
         }

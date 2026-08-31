@@ -33,7 +33,8 @@ impl OverlayApp {
             .fade_out(true)
             .title_bar(false)
             .show(ctx, |ui| {
-                let layout_size = keyboard.layout.get_dimensions();
+                let layout = keyboard.layout();
+                let layout_size = layout.get_dimensions();
                 let overlay_space =
                     ui.allocate_space(egui::vec2(layout_size.0 * size, layout_size.1 * size));
                 let overlay_rect = overlay_space.1;
@@ -57,7 +58,7 @@ impl OverlayApp {
                 let shift_held = live_preview_active && keyboard.is_shift_held();
                 let ralt_held = live_preview_active && keyboard.is_ralt_held();
 
-                for key in &keyboard.layout.keys {
+                for key in &layout.keys {
                     let (effective_layer, is_background_key) = match pinned {
                         Some(layer) => (layer as u8, false),
                         None => keyboard.get_effective_key_layer(key.row, key.col),
