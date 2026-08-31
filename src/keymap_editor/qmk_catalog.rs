@@ -228,7 +228,7 @@ pub fn qmk_candidate(code: u16) -> Candidate {
             },
             transparent: true,
         },
-        KeyResolution::Key(key) => Candidate::new(binding, key),
+        KeyResolution::Key(key) => Candidate::new(binding, *key),
         KeyResolution::Unknown => Candidate::new(binding, get_hex_layout_key(code)),
     }
 }

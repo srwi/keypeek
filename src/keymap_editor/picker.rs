@@ -73,14 +73,18 @@ pub fn key_button(
 /// Clicking a key invokes `on_select` with the whole candidate.
 ///
 /// No scroll area of its own: embed inside the pane that owns scrolling.
-pub fn picker_grid_rows(
+/// A scrollable grid of miniature keys from a slice of candidate references.
+pub fn picker_grid_refs(
     ui: &mut egui::Ui,
     id_salt: &str,
-    candidates: &[Candidate],
+    candidates: &[&Candidate],
     selected: Option<&KeyAction>,
     style: &KeyPaintStyle,
     mut on_select: impl FnMut(&Candidate),
 ) {
+    if candidates.is_empty() {
+        return;
+    }
     let cols = ((ui.available_width() + GAP) / (KEY_UNIT + GAP))
         .floor()
         .max(1.0) as usize;
@@ -129,6 +133,37 @@ pub fn picker_grid_rows(
     }
 }
 
+/// A scrollable grid of miniature keys, one per candidate. The currently
+/// assigned `selected` binding is highlighted with the overlay's pressed look.
+/// Clicking a key invokes `on_select` with the whole candidate.
+///
+/// No scroll area of its own: embed inside the pane that owns scrolling.
+pub fn picker_grid_rows(
+    ui: &mut egui::Ui,
+    id_salt: &str,
+    candidates: &[Candidate],
+    selected: Option<&KeyAction>,
+    style: &KeyPaintStyle,
+    on_select: impl FnMut(&Candidate),
+) {
+    let refs: Vec<&Candidate> = candidates.iter().collect();
+    picker_grid_refs(ui, id_salt, &refs, selected, style, on_select);
+}
+
+/// A scrollable grid of miniature keys filtered on-the-fly by a predicate without cloning candidates.
+pub fn picker_grid_filtered(
+    ui: &mut egui::Ui,
+    id_salt: &str,
+    candidates: &[Candidate],
+    filter: impl Fn(&Candidate) -> bool,
+    selected: Option<&KeyAction>,
+    style: &KeyPaintStyle,
+    on_select: impl FnMut(&Candidate),
+) {
+    let refs: Vec<&Candidate> = candidates.iter().filter(|c| filter(c)).collect();
+    picker_grid_refs(ui, id_salt, &refs, selected, style, on_select);
+}
+
 /// A titled group of key candidates, rendered with a header like the usage
 /// picker's category labels.
 pub struct CandidateGroup {
@@ -136,24 +171,25 @@ pub struct CandidateGroup {
     pub candidates: Vec<Candidate>,
 }
 
-/// Titled groups of key grids, one after another — the layout shared by the
-/// usage picker and both editors' layer pages. `selected(gi)` is the binding
-/// highlighted within group `gi` (groups highlight differently, e.g. a staged
-/// selection), and `on_select` receives the group index with the clicked
-/// candidate.
+/// Titled groups of key grids, filtered on-the-fly without cloning candidates.
 pub fn candidate_groups_rows(
     ui: &mut egui::Ui,
     groups: &[CandidateGroup],
+    filter: impl Fn(&Candidate) -> bool,
     selected: impl Fn(usize) -> Option<KeyAction>,
     style: &KeyPaintStyle,
     mut on_select: impl FnMut(usize, &Candidate),
 ) {
     for (gi, group) in groups.iter().enumerate() {
+        let refs: Vec<&Candidate> = group.candidates.iter().filter(|c| filter(c)).collect();
+        if refs.is_empty() {
+            continue;
+        }
         ui.label(group.name);
-        picker_grid_rows(
+        picker_grid_refs(
             ui,
             group.name,
-            &group.candidates,
+            &refs,
             selected(gi).as_ref(),
             style,
             |candidate| on_select(gi, candidate),

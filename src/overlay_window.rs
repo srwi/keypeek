@@ -100,19 +100,20 @@ impl OverlayApp {
             });
     }
 
-    /// Closes the editor window and ends any open ZMK write session on the
+    /// Requests the editor window to close, initiating a ZMK save first if changes
+    /// are pending; otherwise closes immediately.
+    pub(crate) fn request_close_editor(&mut self) {
+        if self.editor.request_close() {
+            if let AppConnectionState::Connected { keyboard } = &self.session.connection {
+                keyboard.end_edit_session();
+            }
+        }
+    }
+
+    /// Closes the editor window immediately and ends any open ZMK write session on the
     /// connected keyboard, if one is present.
     pub(crate) fn close_editor(&mut self) {
-        self.editor.target = None;
-        self.editor.pending = None;
-        self.editor.pending_kind = None;
-        self.editor.queued = None;
-        self.editor.error = None;
-        self.editor.qmk_draft = Default::default();
-        self.editor.zmk_draft = Default::default();
-        self.editor.zmk_dirty = false;
-        self.editor.closing = false;
-        self.editor.zmk_session = crate::keymap_editor::ZmkSessionState::Idle;
+        self.editor.reset();
         if let AppConnectionState::Connected { keyboard } = &self.session.connection {
             keyboard.end_edit_session();
         }

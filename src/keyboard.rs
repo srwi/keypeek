@@ -396,17 +396,14 @@ impl Keyboard {
                 // Commands run once per loop iteration, after the read: writes
                 // and reads never race the same HID handle, and a command waits
                 // at most one `hid_read` timeout.
-                loop {
-                    match command_rx.try_recv() {
-                        Ok(command) => run_keymap_command(
-                            protocol.as_mut(),
-                            command,
-                            &layer_names,
-                            &matrix_clone,
-                            &ui_wake,
-                        ),
-                        Err(_) => break,
-                    }
+                while let Ok(command) = command_rx.try_recv() {
+                    run_keymap_command(
+                        protocol.as_mut(),
+                        command,
+                        &layer_names,
+                        &matrix_clone,
+                        &ui_wake,
+                    );
                 }
             }
         });
@@ -568,7 +565,7 @@ impl Keyboard {
     pub fn is_action_supported(&self, action: &KeyAction) -> bool {
         self.action_filter
             .as_ref()
-            .map_or(true, |filter| filter(action))
+            .is_none_or(|filter| filter(action))
     }
 
     pub fn set_config(&self, config: OverlayConfig) {

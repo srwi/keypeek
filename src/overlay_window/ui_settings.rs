@@ -385,13 +385,7 @@ impl OverlayApp {
         if self.ui.settings_visible && !open {
             self.ui.settings_visible = false;
             self.persist_settings();
-            if self.editor.zmk_dirty {
-                // Unsaved ZMK changes: the editor window saves them while it
-                // closes itself (spinner in its session bar).
-                self.editor.closing = true;
-            } else {
-                self.close_editor();
-            }
+            self.request_close_editor();
             if !self.session.ever_connected {
                 host.request_close();
             }

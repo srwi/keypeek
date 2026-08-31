@@ -88,7 +88,7 @@ impl Section {
         super::qmk_catalog::categories()
             .iter()
             .find(|g| g.name == self.label())
-            .map_or(true, |group| {
+            .is_none_or(|group| {
                 group
                     .candidates
                     .iter()
@@ -294,92 +294,80 @@ impl crate::overlay_window::OverlayApp {
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
         target: EditTarget,
-        draft: &mut QmkDraft,
     ) {
-        // Two-pane layout: the category list on the left drives whatever the
-        // right pane shows (a key grid for catalog categories, parameter forms
-        // for the modifier sections, Layers, and Any).
-        super::editor_panes(
-            ui,
-            "qmk_sections",
-            draft,
-            |ui, draft| {
-                for section in Section::ALL {
-                    if !section.is_supported(keyboard) {
-                        continue;
-                    }
-                    let response =
-                        ui.selectable_value(&mut draft.section, section, section.label());
-                    // Switching sections starts a fresh selection.
-                    if response.changed() {
-                        draft.touched = false;
-                    }
+        super::editor_left_panel(ui, "qmk_sections", |ui| {
+            for s in Section::ALL {
+                if !s.is_supported(keyboard) {
+                    continue;
                 }
-            },
-            |ui, draft| match draft.section {
-                Section::Layers => {
-                    // One page of grouped layer keys, one per real layer; see
-                    // draw_qmk_layer_page.
-                    self.draw_qmk_layer_page(ui, keyboard, target);
+                let response =
+                    ui.selectable_value(&mut self.editor.qmk_draft.section, s, s.label());
+                // Switching sections starts a fresh selection.
+                if response.changed() {
+                    self.editor.qmk_draft.touched = false;
                 }
-                Section::Combo
-                | Section::OneShot
-                | Section::ModTap
-                | Section::LayerTap
-                | Section::LayerMod => self.draw_qmk_mods_page(ui, keyboard, target, draft),
-                Section::Any => {
-                    titled_group(ui, "Keycode", |ui| {
-                        ui.horizontal(|ui| {
-                            ui.label("0x");
-                            let mut text = draft.hex.clone();
-                            let response = ui.add(
-                                egui::TextEdit::singleline(&mut text)
-                                    .desired_width(80.0)
-                                    .char_limit(4),
-                            );
-                            if response.changed() {
-                                text.retain(|c| c.is_ascii_hexdigit());
-                                draft.hex = text;
-                                // Every parsed prefix applies at once; the
-                                // final value sticks as the last write.
-                                self.commit_qmk_draft(keyboard, target, draft);
-                            }
-                        });
-                        if u16::from_str_radix(&draft.hex, 16).is_err() {
-                            ui.weak("Enter a 1–4 digit hex keycode");
+            }
+        });
+
+        let section = self.editor.qmk_draft.section;
+        super::editor_central_panel(ui, |ui| match section {
+            Section::Layers => {
+                // One page of grouped layer keys, one per real layer; see
+                // draw_qmk_layer_page.
+                self.draw_qmk_layer_page(ui, keyboard, target);
+            }
+            Section::Combo
+            | Section::OneShot
+            | Section::ModTap
+            | Section::LayerTap
+            | Section::LayerMod => self.draw_qmk_mods_page(ui, keyboard, target),
+            Section::Any => {
+                titled_group(ui, "Keycode", |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("0x");
+                        let mut text = self.editor.qmk_draft.hex.clone();
+                        let response = ui.add(
+                            egui::TextEdit::singleline(&mut text)
+                                .desired_width(80.0)
+                                .char_limit(4),
+                        );
+                        if response.changed() {
+                            text.retain(|c| c.is_ascii_hexdigit());
+                            self.editor.qmk_draft.hex = text;
+                            // Every parsed prefix applies at once; the
+                            // final value sticks as the last write.
+                            self.commit_qmk_draft(keyboard, target);
                         }
                     });
-                }
-                _ => {
-                    if let Some(group) = super::qmk_catalog::categories()
-                        .iter()
-                        .find(|g| g.name == draft.section.label())
-                    {
-                        let filtered_candidates: Vec<super::picker::Candidate> = group
-                            .candidates
-                            .iter()
-                            .filter(|c| keyboard.is_action_supported(&c.binding))
-                            .cloned()
-                            .collect();
-                        let style = self.paint_style(KEY_UNIT);
-                        titled_group(ui, group.name, |ui| {
-                            picker_grid_rows(
-                                ui,
-                                group.name,
-                                &filtered_candidates,
-                                keyboard
-                                    .get_action(target.layer_index, target.row, target.col)
-                                    .as_ref(),
-                                &style,
-                                |candidate| {
-                                    self.apply_write(keyboard, target, candidate.binding.clone());
-                                },
-                            );
-                        });
+                    if u16::from_str_radix(&self.editor.qmk_draft.hex, 16).is_err() {
+                        ui.weak("Enter a 1–4 digit hex keycode");
                     }
+                });
+            }
+            _ => {
+                if let Some(group) = super::qmk_catalog::categories()
+                    .iter()
+                    .find(|g| g.name == section.label())
+                {
+                    let style = self.paint_style(KEY_UNIT);
+                    titled_group(ui, group.name, |ui| {
+                        super::picker::picker_grid_filtered(
+                            ui,
+                            group.name,
+                            &group.candidates,
+                            |c| keyboard.is_action_supported(&c.binding),
+                            keyboard
+                                .get_action(target.layer_index, target.row, target.col)
+                                .as_ref(),
+                            &style,
+                            |candidate| {
+                                self.apply_write(keyboard, target, candidate.binding.clone());
+                            },
+                        );
+                    });
                 }
-            },
-        );
+            }
+        });
     }
 
     /// The layer page: every layer keycode kind as one framed group with one
@@ -414,27 +402,27 @@ impl crate::overlay_window::OverlayApp {
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
         target: EditTarget,
-        draft: &mut QmkDraft,
     ) {
-        if draft.section.has_layer() {
-            let (group, staged_code) = match draft.section {
+        let section = self.editor.qmk_draft.section;
+        if section.has_layer() {
+            let (group, staged_code) = match section {
                 Section::LayerTap => (
                     super::qmk_catalog::layer_tap_group(
                         keyboard.layer_infos().len(),
-                        draft.base_code,
+                        self.editor.qmk_draft.base_code,
                     ),
                     QK_LAYER_TAP.start
-                        + ((draft.mod_tap_layer.min(15) as u16) << 8)
-                        + draft.base_code,
+                        + ((self.editor.qmk_draft.mod_tap_layer.min(15) as u16) << 8)
+                        + self.editor.qmk_draft.base_code,
                 ),
                 Section::LayerMod => (
                     super::qmk_catalog::layer_mod_group(
                         keyboard.layer_infos().len(),
-                        draft.mod_value(),
+                        self.editor.qmk_draft.mod_value(),
                     ),
                     QK_LAYER_MOD.start
-                        + ((draft.mod_tap_layer.min(15) as u16) << 5)
-                        + (draft.mod_value() & 0x1F),
+                        + ((self.editor.qmk_draft.mod_tap_layer.min(15) as u16) << 5)
+                        + (self.editor.qmk_draft.mod_value() & 0x1F),
                 ),
                 _ => unreachable!(),
             };
@@ -448,36 +436,36 @@ impl crate::overlay_window::OverlayApp {
                     &style,
                     |candidate| {
                         if let KeyAction::Qmk(code) = &candidate.binding {
-                            draft.mod_tap_layer = match draft.section {
+                            self.editor.qmk_draft.mod_tap_layer = match section {
                                 Section::LayerTap => ((code - QK_LAYER_TAP.start) >> 8) as usize,
                                 Section::LayerMod => ((code - QK_LAYER_MOD.start) >> 5) as usize,
                                 _ => 0,
                             };
-                            self.commit_qmk_draft(keyboard, target, draft);
+                            self.commit_qmk_draft(keyboard, target);
                         }
                     },
                 );
             });
         }
 
-        if draft.section.has_mods() {
+        if section.has_mods() {
             let mod_style = self.paint_style(KEY_UNIT);
             titled_group(ui, "Modifiers", |ui| {
                 if modifier_toggle_row(
                     ui,
                     "qmk_mods",
-                    &mut draft.mods,
-                    &mut draft.right,
+                    &mut self.editor.qmk_draft.mods,
+                    &mut self.editor.qmk_draft.right,
                     &mod_style,
                 ) {
-                    self.commit_qmk_draft(keyboard, target, draft);
+                    self.commit_qmk_draft(keyboard, target);
                 }
             });
         }
 
-        if draft.section.has_tap_key() {
+        if section.has_tap_key() {
             titled_group(ui, "Tap/base key (8-bit basic only)", |ui| {
-                self.draw_base_picker(ui, keyboard, target, draft);
+                self.draw_base_picker(ui, keyboard, target);
             });
         }
     }
@@ -485,18 +473,10 @@ impl crate::overlay_window::OverlayApp {
     /// Marks the draft touched and applies its staged keycode when it is a
     /// complete, changed binding. QMK writes are immediate, so a valid pick
     /// applies at once — there is no explicit Apply step.
-    fn commit_qmk_draft(&mut self, keyboard: &Keyboard, target: EditTarget, draft: &mut QmkDraft) {
-        draft.touched = true;
-        if let Some(code) = draft.staged() {
-            let action = KeyAction::Qmk(code);
-            if keyboard
-                .get_action(target.layer_index, target.row, target.col)
-                .as_ref()
-                != Some(&action)
-            {
-                self.apply_write(keyboard, target, action);
-            }
-        }
+    fn commit_qmk_draft(&mut self, keyboard: &Keyboard, target: EditTarget) {
+        self.editor.qmk_draft.touched = true;
+        let staged = self.editor.qmk_draft.staged().map(KeyAction::Qmk);
+        self.commit_staged(keyboard, target, staged);
     }
 
     fn draw_base_picker(
@@ -504,13 +484,12 @@ impl crate::overlay_window::OverlayApp {
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
         target: EditTarget,
-        draft: &mut QmkDraft,
     ) {
         let candidates: Vec<Candidate> = (0x00u16..=0xFF)
             .filter(|&code| get_layout_key(code).is_some())
             .map(qmk_candidate)
             .collect();
-        let selected = KeyAction::Qmk(draft.base_code);
+        let selected = KeyAction::Qmk(self.editor.qmk_draft.base_code);
         let style = self.paint_style(KEY_UNIT);
         picker_grid_rows(
             ui,
@@ -520,8 +499,8 @@ impl crate::overlay_window::OverlayApp {
             &style,
             |candidate| {
                 if let KeyAction::Qmk(code) = &candidate.binding {
-                    draft.base_code = *code;
-                    self.commit_qmk_draft(keyboard, target, draft);
+                    self.editor.qmk_draft.base_code = *code;
+                    self.commit_qmk_draft(keyboard, target);
                 }
             },
         );
@@ -558,8 +537,10 @@ mod tests {
         ] {
             let code = encode_layer(kind, layer).unwrap();
             assert_eq!(code, expected_start + layer as u16);
-            let mut draft = QmkDraft::default();
-            draft.section = Section::Layers;
+            let draft = QmkDraft {
+                section: Section::Layers,
+                ..Default::default()
+            };
             assert_round_trips(draft, code);
         }
         assert!(encode_layer(LayerKind::Mo, 32).is_none());
@@ -569,8 +550,10 @@ mod tests {
     fn mod_combo_round_trips() {
         let code = encode_combo(MOD_LSFT, 0x2A).unwrap(); // LSFT(Backspace)
         assert_eq!(code, (MOD_LSFT << 8) | 0x2A);
-        let mut draft = QmkDraft::default();
-        draft.section = Section::Combo;
+        let draft = QmkDraft {
+            section: Section::Combo,
+            ..Default::default()
+        };
         assert_round_trips(draft, code);
         assert_eq!(decode(code).base_code, 0x2A);
         assert!(decode(code).mods & MOD_LSFT != 0);
@@ -585,8 +568,10 @@ mod tests {
     fn one_shot_mod_round_trips() {
         let code = encode_one_shot_mod(MOD_LCTL | MOD_LSFT).unwrap();
         assert_eq!(code, QK_ONE_SHOT_MOD.start + (MOD_LCTL | MOD_LSFT));
-        let mut draft = QmkDraft::default();
-        draft.section = Section::OneShot;
+        let draft = QmkDraft {
+            section: Section::OneShot,
+            ..Default::default()
+        };
         assert_round_trips(draft, code);
         assert_eq!(decode(code).mods, MOD_LCTL | MOD_LSFT);
         assert!(encode_one_shot_mod(0).is_none());
@@ -595,8 +580,10 @@ mod tests {
     #[test]
     fn mod_tap_round_trips() {
         let code = encode_mod_tap(MOD_LSFT | MOD_LALT, 0x04).unwrap(); // MT(LSFT|LALT, A)
-        let mut draft = QmkDraft::default();
-        draft.section = Section::ModTap;
+        let draft = QmkDraft {
+            section: Section::ModTap,
+            ..Default::default()
+        };
         assert_round_trips(draft, code);
         assert_eq!(decode(code).base_code, 0x04);
         assert_eq!(decode(code).mods, MOD_LSFT | MOD_LALT);
@@ -607,8 +594,10 @@ mod tests {
     #[test]
     fn layer_tap_round_trips() {
         let code = encode_layer_tap(2, 0x1C).unwrap(); // LT(2, Enter)
-        let mut draft = QmkDraft::default();
-        draft.section = Section::LayerTap;
+        let draft = QmkDraft {
+            section: Section::LayerTap,
+            ..Default::default()
+        };
         assert_round_trips(draft, code);
         assert_eq!(decode(code).mod_tap_layer, 2);
         assert_eq!(decode(code).base_code, 0x1C);
@@ -619,8 +608,10 @@ mod tests {
     #[test]
     fn layer_mod_round_trips() {
         let code = encode_layer_mod(3, MOD_LSFT | MOD_LCTL).unwrap(); // LM(3, LSFT|LCTL)
-        let mut draft = QmkDraft::default();
-        draft.section = Section::LayerMod;
+        let draft = QmkDraft {
+            section: Section::LayerMod,
+            ..Default::default()
+        };
         assert_round_trips(draft, code);
         assert_eq!(decode(code).mod_tap_layer, 3);
         assert_eq!(decode(code).mods, MOD_LSFT | MOD_LCTL);
@@ -632,9 +623,11 @@ mod tests {
     fn staged_requires_every_argument() {
         // A modifier encoding without modifiers or without a tap key is
         // mid-selection, not a bindable keycode.
-        let mut draft = QmkDraft::default();
-        draft.section = Section::ModTap;
-        draft.base_code = 0x04;
+        let mut draft = QmkDraft {
+            section: Section::ModTap,
+            base_code: 0x04,
+            ..Default::default()
+        };
         assert_eq!(draft.staged(), None);
         draft.mods = MOD_LSFT;
         assert_eq!(draft.staged(), encode_mod_tap(MOD_LSFT, 0x04));

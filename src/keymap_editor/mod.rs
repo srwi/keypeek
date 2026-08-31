@@ -77,8 +77,8 @@ pub struct EditorState {
     pub closing: bool,
 }
 
-impl EditorState {
-    pub fn new() -> Self {
+impl Default for EditorState {
+    fn default() -> Self {
         Self {
             target: None,
             pending: None,
@@ -94,27 +94,68 @@ impl EditorState {
     }
 }
 
+impl EditorState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Resets all editor fields back to their default closed/idle state.
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    /// Handles a close request: if there are unsaved ZMK changes, marks the editor
+    /// closing so it saves before dismissing; otherwise resets to closed immediately.
+    /// Returns `true` if the editor is now fully closed.
+    pub fn request_close(&mut self) -> bool {
+        self.error = None;
+        if self.zmk_dirty {
+            self.closing = true;
+            false
+        } else {
+            self.reset();
+            true
+        }
+    }
+
+    /// Retargets the editor to a new key on the given keyboard, updating the drafts
+    /// to reflect the current key binding.
+    pub fn retarget(&mut self, keyboard: &Keyboard, target: EditTarget) {
+        self.target = Some(target);
+        self.error = None;
+        if self.zmk_session == ZmkSessionState::Failed {
+            self.zmk_session = ZmkSessionState::Idle;
+        }
+        match keyboard.get_action(target.layer_index, target.row, target.col) {
+            Some(KeyAction::Qmk(code)) => {
+                self.qmk_draft = QmkDraft::from_keycode(code);
+                self.zmk_draft = Default::default();
+            }
+            Some(KeyAction::Zmk(behavior)) => {
+                self.zmk_draft = ZmkDraft::from_behavior(&behavior);
+                self.qmk_draft = Default::default();
+            }
+            _ => {
+                self.qmk_draft = Default::default();
+                self.zmk_draft = Default::default();
+            }
+        }
+    }
+}
+
 /// Pixels width of the left category sidebar in the editor.
 const SIDEBAR_WIDTH: f32 = 110.0;
 /// Margin reserved on the right of the central pane so the vertical scrollbar track
 /// never touches or overlaps the titled group outline borders.
 const SCROLLBAR_GUTTER: f32 = 8.0;
 
-/// The editor's two-pane layout, shared by the QMK and ZMK editors: a
-/// fixed-width, non-resizable left list of entries and a scrolling central
-/// pane, both filling the window instead of growing it. `state` is the draft
-/// both panes edit; `left` runs first, since the central pane reads what it
-/// selects.
-fn editor_panes<D>(
+/// The editor's left category sidebar panel.
+pub(super) fn editor_left_panel(
     ui: &mut egui::Ui,
     left_id: &str,
-    state: &mut D,
-    left: impl FnOnce(&mut egui::Ui, &mut D),
-    central: impl FnOnce(&mut egui::Ui, &mut D),
+    content: impl FnOnce(&mut egui::Ui),
 ) {
     let left_id = egui::Id::new(left_id);
-    // No separator line between the panes: the central pane's group outlines
-    // carry the visual separation.
     egui::Panel::left(left_id)
         .resizable(false)
         .exact_size(SIDEBAR_WIDTH)
@@ -127,12 +168,16 @@ fn editor_panes<D>(
         }))
         .show_inside(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
-                    left(ui, state);
-                });
+                ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), content);
             });
         });
+}
 
+/// The editor's scrolling central panel.
+pub(super) fn editor_central_panel(
+    ui: &mut egui::Ui,
+    content: impl FnOnce(&mut egui::Ui),
+) {
     egui::CentralPanel::default()
         .frame(egui::Frame::NONE.inner_margin(egui::Margin {
             left: 4,
@@ -146,7 +191,7 @@ fn editor_panes<D>(
                 .show(ui, |ui| {
                     let content_width = (ui.available_width() - SCROLLBAR_GUTTER).max(100.0);
                     ui.set_max_width(content_width);
-                    central(ui, state);
+                    content(ui);
                 });
         });
 }
@@ -205,9 +250,7 @@ impl crate::overlay_window::OverlayApp {
             match (write_support, action.as_ref()) {
                 (WriteSupport::Immediate, Some(KeyAction::Qmk(_))) => {
                     ui.add_space(8.0);
-                    let mut draft = self.editor.qmk_draft.clone();
-                    self.draw_qmk_editor_body(ui, keyboard, target, &mut draft);
-                    self.editor.qmk_draft = draft;
+                    self.draw_qmk_editor_body(ui, keyboard, target);
                 }
                 (WriteSupport::Session, Some(KeyAction::Zmk(_))) => {
                     ui.add_space(8.0);
@@ -216,9 +259,7 @@ impl crate::overlay_window::OverlayApp {
                     // accepts them.
                     let session_ready = self.editor.zmk_session == ZmkSessionState::Ready;
                     ui.add_enabled_ui(session_ready, |ui| {
-                        let mut draft = self.editor.zmk_draft.clone();
-                        self.draw_zmk_editor_body(ui, keyboard, target, &mut draft);
-                        self.editor.zmk_draft = draft;
+                        self.draw_zmk_editor_body(ui, keyboard, target);
                     });
                 }
                 _ => {
@@ -229,7 +270,25 @@ impl crate::overlay_window::OverlayApp {
         });
 
         if !open {
-            self.on_close_request();
+            self.request_close_editor();
+        }
+    }
+
+    /// Applies a staged binding if it is complete and differs from the current keymap.
+    fn commit_staged(
+        &mut self,
+        keyboard: &Keyboard,
+        target: EditTarget,
+        staged: Option<KeyAction>,
+    ) {
+        if let Some(action) = staged {
+            if keyboard
+                .get_action(target.layer_index, target.row, target.col)
+                .as_ref()
+                != Some(&action)
+            {
+                self.apply_write(keyboard, target, action);
+            }
         }
     }
 
@@ -266,7 +325,7 @@ impl crate::overlay_window::OverlayApp {
                         row: target.row,
                         col: target.col,
                     };
-                    self.retarget_editor(keyboard, new_target);
+                    self.editor.retarget(keyboard, new_target);
                     return new_target;
                 }
             }
@@ -276,35 +335,7 @@ impl crate::overlay_window::OverlayApp {
     }
 
     pub(crate) fn retarget_editor(&mut self, keyboard: &Keyboard, target: EditTarget) {
-        self.editor.target = Some(target);
-        self.editor.error = None;
-        if self.editor.zmk_session == ZmkSessionState::Failed {
-            self.editor.zmk_session = ZmkSessionState::Idle;
-        }
-        match keyboard.get_action(target.layer_index, target.row, target.col) {
-            Some(KeyAction::Qmk(code)) => {
-                self.editor.qmk_draft = QmkDraft::from_keycode(code);
-            }
-            Some(KeyAction::Zmk(behavior)) => {
-                self.editor.zmk_draft = ZmkDraft::from_behavior(&behavior);
-            }
-            _ => {
-                self.editor.qmk_draft = Default::default();
-                self.editor.zmk_draft = Default::default();
-            }
-        }
-    }
-
-    /// Handles the window's close button. ZMK sessions save first: the
-    /// window stays up (spinner in the bar) until the save lands, then
-    /// dismisses itself. A failed save revives the window with the error.
-    fn on_close_request(&mut self) {
-        self.editor.error = None;
-        if self.editor.zmk_dirty {
-            self.editor.closing = true;
-        } else {
-            self.close_editor();
-        }
+        self.editor.retarget(keyboard, target);
     }
 
     /// The session status, floated into the header's top-right corner: a
@@ -481,6 +512,41 @@ mod tests {
                 assert!(!resp_selected.clicked());
             });
         });
+    }
+
+    #[test]
+    fn editor_state_request_close_when_clean_resets_immediately() {
+        let mut state = EditorState::new();
+        state.target = Some(EditTarget {
+            layer_index: 1,
+            row: 0,
+            col: 0,
+        });
+        state.zmk_dirty = false;
+        assert!(state.request_close());
+        assert_eq!(state.target, None);
+        assert!(!state.closing);
+    }
+
+    #[test]
+    fn editor_state_request_close_when_dirty_arms_closing() {
+        let mut state = EditorState::new();
+        state.target = Some(EditTarget {
+            layer_index: 1,
+            row: 0,
+            col: 0,
+        });
+        state.zmk_dirty = true;
+        assert!(!state.request_close());
+        assert_eq!(
+            state.target,
+            Some(EditTarget {
+                layer_index: 1,
+                row: 0,
+                col: 0
+            })
+        );
+        assert!(state.closing);
     }
 }
 

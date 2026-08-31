@@ -17,7 +17,7 @@ impl KeyAction {
         match self {
             KeyAction::Qmk(code) => match crate::qmk_keycode_labels::resolve_qmk_key(*code) {
                 crate::qmk_keycode_labels::KeyResolution::Transparent => None,
-                crate::qmk_keycode_labels::KeyResolution::Key(key) => Some(key),
+                crate::qmk_keycode_labels::KeyResolution::Key(key) => Some(*key),
                 crate::qmk_keycode_labels::KeyResolution::Unknown => {
                     Some(crate::qmk_keycode_labels::get_hex_layout_key(*code))
                 }

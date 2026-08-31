@@ -255,18 +255,10 @@ impl crate::overlay_window::OverlayApp {
     /// Marks the draft touched and applies its staged behavior when it is a
     /// complete, changed binding. Valid picks apply at once; ZMK writes are
     /// session changes tracked by the save bar.
-    fn commit_zmk_draft(&mut self, keyboard: &Keyboard, target: EditTarget, draft: &mut ZmkDraft) {
-        draft.touched = true;
-        if let Some(behavior) = draft.staged() {
-            let action = KeyAction::Zmk(behavior);
-            if keyboard
-                .get_action(target.layer_index, target.row, target.col)
-                .as_ref()
-                != Some(&action)
-            {
-                self.apply_write(keyboard, target, action);
-            }
-        }
+    fn commit_zmk_draft(&mut self, keyboard: &Keyboard, target: EditTarget) {
+        self.editor.zmk_draft.touched = true;
+        let staged = self.editor.zmk_draft.staged().map(KeyAction::Zmk);
+        self.commit_staged(keyboard, target, staged);
     }
 
     pub(super) fn draw_zmk_editor_body(
@@ -274,112 +266,108 @@ impl crate::overlay_window::OverlayApp {
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
         target: EditTarget,
-        draft: &mut ZmkDraft,
     ) {
         let layer_infos = keyboard.layer_infos();
 
         // If the current draft kind is not supported on this keyboard, switch to the first supported one.
-        if !keyboard.is_action_supported(&KeyAction::Zmk(zmk_catalog::sample_behavior(draft.kind))) {
-            draft.kind = Page::ALL
+        if !keyboard.is_action_supported(&KeyAction::Zmk(zmk_catalog::sample_behavior(self.editor.zmk_draft.kind))) {
+            self.editor.zmk_draft.kind = Page::ALL
                 .iter()
                 .find_map(|page| page.supported_kinds(keyboard).into_iter().next())
                 .unwrap_or(ZmkBehaviorKind::KeyPress);
-            draft.bl_set_staged = false;
-            draft.touched = false;
+            self.editor.zmk_draft.bl_set_staged = false;
+            self.editor.zmk_draft.touched = false;
         }
 
         // Two-pane layout: every behavior kind lives in the left panel under
         // its group header; the right pane holds the selected page. The
         // parameterless behaviors share one "Special" entry whose pane is a
         // key grid.
-        super::editor_panes(
-            ui,
-            "zmk_kinds",
-            draft,
-            |ui, draft| {
-                for page in Page::ALL {
-                    let kinds = page.supported_kinds(keyboard);
-                    if kinds.is_empty() {
-                        continue;
-                    }
-                    if matches!(page, Page::Keys | Page::Mods | Page::Commands) {
-                        ui.weak(page.label());
-                        for kind in kinds {
-                            let response =
-                                ui.selectable_value(&mut draft.kind, kind, kind.label());
-                            // Switching behavior kinds leaves any staged
-                            // Backlight Set behind and starts a fresh
-                            // selection.
-                            if response.changed() {
-                                draft.bl_set_staged = false;
-                                draft.touched = false;
-                            }
-                        }
-                    } else {
+        super::editor_left_panel(ui, "zmk_kinds", |ui| {
+            for page in Page::ALL {
+                let kinds = page.supported_kinds(keyboard);
+                if kinds.is_empty() {
+                    continue;
+                }
+                if matches!(page, Page::Keys | Page::Mods | Page::Commands) {
+                    ui.weak(page.label());
+                    for kind in kinds {
                         let response =
-                            ui.selectable_label(page_of(draft.kind) == page, page.label());
-                        if response.clicked() {
-                            draft.kind = kinds[0];
-                            draft.bl_set_staged = false;
-                            draft.touched = false;
+                            ui.selectable_value(&mut self.editor.zmk_draft.kind, kind, kind.label());
+                        // Switching behavior kinds leaves any staged
+                        // Backlight Set behind and starts a fresh
+                        // selection.
+                        if response.changed() {
+                            self.editor.zmk_draft.bl_set_staged = false;
+                            self.editor.zmk_draft.touched = false;
                         }
                     }
-                    ui.add_space(4.0);
-                }
-            },
-            |ui, draft| {
-                match page_of(draft.kind) {
-                    Page::Special | Page::Commands => {
-                        // Every parameterless behavior and command option is a
-                        // key here; clicking applies it directly.
-                        self.draw_direct_grid(ui, keyboard, target, draft);
-                    }
-                    Page::Keys => {
-                        // One argument, one group: the usage's modifier toggles
-                        // and key grid are tightly coupled, so they share the
-                        // boundary.
-                        titled_group(ui, "Key", |ui| {
-                            self.draw_usage_picker(ui, keyboard, target, draft, true);
-                        });
-                    }
-                    Page::Layers => {
-                        // One page of grouped layer keys; see draw_zmk_layer_page.
-                        self.draw_zmk_layer_page(ui, keyboard, target, draft, &layer_infos);
-                    }
-                    Page::Mods => {
-                        // Two distinct arguments, two groups: the hold-side
-                        // modifier (single choice for standard ZMK &mt), and
-                        // the tap-side usage (whose own modifier toggles stay
-                        // inside the tap group).
-                        let mod_style = self.paint_style(KEY_UNIT);
-                        titled_group(ui, "Hold modifier", |ui| {
-                            modifier_toggle_grid(
-                                ui,
-                                "zmk_hold_mod",
-                                draft.hold_mods,
-                                &mod_style,
-                                |mask| {
-                                    draft.hold_mods = if draft.hold_mods == mask {
-                                        0
-                                    } else {
-                                        mask
-                                    };
-                                    self.commit_zmk_draft(keyboard, target, draft);
-                                },
-                            );
-                        });
-                        titled_group(ui, "Tap key", |ui| {
-                            self.draw_usage_picker(ui, keyboard, target, draft, true);
-                        });
-                        // A Mod-Tap without a hold modifier has nothing to do
-                        // on hold, so the header ghosts it as invalid.
-                        if draft.kind == ZmkBehaviorKind::ModTap && draft.hold_mods == 0 {
-                            ui.weak("Select a hold modifier.");
-                        }
+                } else {
+                    let response =
+                        ui.selectable_label(page_of(self.editor.zmk_draft.kind) == page, page.label());
+                    if response.clicked() {
+                        self.editor.zmk_draft.kind = kinds[0];
+                        self.editor.zmk_draft.bl_set_staged = false;
+                        self.editor.zmk_draft.touched = false;
                     }
                 }
-            },
-        );
+                ui.add_space(4.0);
+            }
+        });
+
+        let current_page = page_of(self.editor.zmk_draft.kind);
+        super::editor_central_panel(ui, |ui| {
+            match current_page {
+                Page::Special | Page::Commands => {
+                    // Every parameterless behavior and command option is a
+                    // key here; clicking applies it directly.
+                    self.draw_direct_grid(ui, keyboard, target);
+                }
+                Page::Keys => {
+                    // One argument, one group: the usage's modifier toggles
+                    // and key grid are tightly coupled, so they share the
+                    // boundary.
+                    titled_group(ui, "Key", |ui| {
+                        self.draw_usage_picker(ui, keyboard, target, true);
+                    });
+                }
+                Page::Layers => {
+                    // One page of grouped layer keys; see draw_zmk_layer_page.
+                    self.draw_zmk_layer_page(ui, keyboard, target, &layer_infos);
+                }
+                Page::Mods => {
+                    // Two distinct arguments, two groups: the hold-side
+                    // modifier (single choice for standard ZMK &mt), and
+                    // the tap-side usage (whose own modifier toggles stay
+                    // inside the tap group).
+                    let mod_style = self.paint_style(KEY_UNIT);
+                    titled_group(ui, "Hold modifier", |ui| {
+                        modifier_toggle_grid(
+                            ui,
+                            "zmk_hold_mod",
+                            self.editor.zmk_draft.hold_mods,
+                            &mod_style,
+                            |mask| {
+                                self.editor.zmk_draft.hold_mods = if self.editor.zmk_draft.hold_mods == mask {
+                                    0
+                                } else {
+                                    mask
+                                };
+                                self.commit_zmk_draft(keyboard, target);
+                            },
+                        );
+                    });
+                    titled_group(ui, "Tap key", |ui| {
+                        self.draw_usage_picker(ui, keyboard, target, true);
+                    });
+                    // A Mod-Tap without a hold modifier has nothing to do
+                    // on hold, so the header ghosts it as invalid.
+                    if self.editor.zmk_draft.kind == ZmkBehaviorKind::ModTap && self.editor.zmk_draft.hold_mods == 0 {
+                        ui.weak("Select a hold modifier.");
+                    }
+                }
+            }
+        });
     }
 
     /// The usage-page key grid (with optional modifier toggles). Stages the
@@ -391,48 +379,35 @@ impl crate::overlay_window::OverlayApp {
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
         target: EditTarget,
-        draft: &mut ZmkDraft,
         with_mods: bool,
     ) {
         // The usage-page categories stay as headers inside one shared scroll
         // region; the key-shaped cells come from the shared picker grid.
-        let selected = KeyAction::Zmk(Behavior::KeyPress(draft.usage.base()));
+        let selected = KeyAction::Zmk(Behavior::KeyPress(self.editor.zmk_draft.usage.base()));
         let style = self.paint_style(KEY_UNIT);
 
         if with_mods {
             let mod_style = self.paint_style(KEY_UNIT);
-            modifier_toggle_grid(ui, "zmk_mods", draft.modifiers, &mod_style, |mask| {
-                draft.modifiers ^= mask;
-                self.commit_zmk_draft(keyboard, target, draft);
+            modifier_toggle_grid(ui, "zmk_mods", self.editor.zmk_draft.modifiers, &mod_style, |mask| {
+                self.editor.zmk_draft.modifiers ^= mask;
+                self.commit_zmk_draft(keyboard, target);
             });
         }
 
         // No inner scroll area: the surrounding editor pane already scrolls,
         // so categories lay out flat inside it.
-        let categories = zmk_catalog::categories();
-        let filtered_categories: Vec<super::picker::CandidateGroup> = categories
-            .iter()
-            .map(|group| super::picker::CandidateGroup {
-                name: group.name,
-                candidates: group
-                    .candidates
-                    .iter()
-                    .filter(|c| keyboard.is_action_supported(&c.binding))
-                    .cloned()
-                    .collect(),
-            })
-            .filter(|group| !group.candidates.is_empty())
-            .collect();
         candidate_groups_rows(
             ui,
-            &filtered_categories,
+            zmk_catalog::categories(),
+            |c| keyboard.is_action_supported(&c.binding),
             |_| Some(selected.clone()),
             &style,
             |_, candidate| {
                 // The base usage is staged; the draft's modifiers ride along.
                 if let KeyAction::Zmk(Behavior::KeyPress(usage)) = &candidate.binding {
-                    draft.usage = HidUsage::from_parts(usage.page(), usage.id(), draft.modifiers);
-                    self.commit_zmk_draft(keyboard, target, draft);
+                    self.editor.zmk_draft.usage =
+                        HidUsage::from_parts(usage.page(), usage.id(), self.editor.zmk_draft.modifiers);
+                    self.commit_zmk_draft(keyboard, target);
                 }
             },
         );
@@ -448,23 +423,26 @@ impl crate::overlay_window::OverlayApp {
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
         target: EditTarget,
-        draft: &mut ZmkDraft,
         layer_infos: &[crate::key_action::LayerInfo],
     ) {
         let layer_names: Vec<String> = layer_infos
             .iter()
             .map(|info| info.name.clone().unwrap_or_default())
             .collect();
-        let tap = HidUsage::from_parts(draft.usage.page(), draft.usage.id(), draft.modifiers);
+        let tap = HidUsage::from_parts(
+            self.editor.zmk_draft.usage.page(),
+            self.editor.zmk_draft.usage.id(),
+            self.editor.zmk_draft.modifiers,
+        );
         let style = self.paint_style(KEY_UNIT);
         let kinds = Page::Layers.supported_kinds(keyboard);
         let groups = zmk_catalog::layer_groups(&kinds, layer_infos, &layer_names, tap);
 
         // Per-group highlight: the staged Layer-Tap key, or the key matching
         // the current binding.
-        let staged_tap = if draft.kind == ZmkBehaviorKind::LayerTap {
+        let staged_tap = if self.editor.zmk_draft.kind == ZmkBehaviorKind::LayerTap {
             Some(KeyAction::Zmk(Behavior::LayerTap {
-                layer_id: draft.layer_id,
+                layer_id: self.editor.zmk_draft.layer_id,
                 tap,
             }))
         } else {
@@ -486,25 +464,25 @@ impl crate::overlay_window::OverlayApp {
                     // current tap key; the tap-key group below retunes the
                     // tap side.
                     if let Some(layer_id) = behavior_layer_id(behavior) {
-                        draft.kind = ZmkBehaviorKind::LayerTap;
-                        draft.layer_id = layer_id;
-                        self.commit_zmk_draft(keyboard, target, draft);
+                        self.editor.zmk_draft.kind = ZmkBehaviorKind::LayerTap;
+                        self.editor.zmk_draft.layer_id = layer_id;
+                        self.commit_zmk_draft(keyboard, target);
                     }
                 } else {
-                    draft.kind = kind;
+                    self.editor.zmk_draft.kind = kind;
                     if let Some(layer_id) = behavior_layer_id(behavior) {
-                        draft.layer_id = layer_id;
+                        self.editor.zmk_draft.layer_id = layer_id;
                     }
                     self.apply_write(keyboard, target, candidate.binding.clone());
                 }
             }
         });
 
-        if draft.kind == ZmkBehaviorKind::LayerTap {
+        if self.editor.zmk_draft.kind == ZmkBehaviorKind::LayerTap {
             // The staged tap side is one distinct argument: usage + its
             // modifier toggles share the group.
             titled_group(ui, "Tap key", |ui| {
-                self.draw_usage_picker(ui, keyboard, target, draft, true);
+                self.draw_usage_picker(ui, keyboard, target, true);
             });
         }
     }
@@ -520,18 +498,18 @@ impl crate::overlay_window::OverlayApp {
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
         target: EditTarget,
-        draft: &mut ZmkDraft,
     ) {
-        let staging_set = draft.kind == ZmkBehaviorKind::Backlight && draft.bl_set_staged;
-        let is_special = page_of(draft.kind) == Page::Special;
+        let kind = self.editor.zmk_draft.kind;
+        let staging_set = kind == ZmkBehaviorKind::Backlight && self.editor.zmk_draft.bl_set_staged;
+        let is_special = page_of(kind) == Page::Special;
         let candidates: Vec<Candidate> = if is_special {
             Page::Special
                 .supported_kinds(keyboard)
                 .into_iter()
-                .map(|kind| zmk_catalog::behavior_candidate(&zmk_catalog::sample_behavior(kind), &[]))
+                .map(|k| zmk_catalog::behavior_candidate(&zmk_catalog::sample_behavior(k), &[]))
                 .collect()
         } else {
-            zmk_catalog::command_candidates(draft.kind, draft.bl_value)
+            zmk_catalog::command_candidates(kind, self.editor.zmk_draft.bl_value)
                 .into_iter()
                 .filter(|c| keyboard.is_action_supported(&c.binding))
                 .collect()
@@ -539,13 +517,13 @@ impl crate::overlay_window::OverlayApp {
         let grid_title = if is_special {
             "Special"
         } else {
-            draft.kind.label()
+            kind.label()
         };
         let style = self.paint_style(KEY_UNIT);
         titled_group(ui, grid_title, |ui| {
             picker_grid_rows(
                 ui,
-                draft.kind.label(),
+                kind.label(),
                 &candidates,
                 keyboard
                     .get_action(target.layer_index, target.row, target.col)
@@ -553,10 +531,10 @@ impl crate::overlay_window::OverlayApp {
                 &style,
                 |candidate| {
                     if is_backlight_set(&candidate.binding) {
-                        draft.bl_set_staged = true;
+                        self.editor.zmk_draft.bl_set_staged = true;
                         return;
                     }
-                    draft.bl_set_staged = false;
+                    self.editor.zmk_draft.bl_set_staged = false;
                     self.apply_write(keyboard, target, candidate.binding.clone());
                 },
             );
@@ -568,11 +546,11 @@ impl crate::overlay_window::OverlayApp {
             // tuned rather than picked, so the binding commits when the drag
             // or the text entry finishes instead of on every frame it changes.
             titled_group(ui, "Level", |ui| {
-                let level = ui.add(egui::DragValue::new(&mut draft.bl_value).range(0..=255));
+                let level = ui.add(egui::DragValue::new(&mut self.editor.zmk_draft.bl_value).range(0..=255));
                 if level.drag_stopped() || level.lost_focus() {
                     let behavior = Behavior::Backlight {
                         command: zmk_catalog::BACKLIGHT_SET_COMMAND,
-                        value: draft.bl_value,
+                        value: self.editor.zmk_draft.bl_value,
                     };
                     self.apply_write(keyboard, target, KeyAction::Zmk(behavior));
                 }
@@ -706,10 +684,12 @@ mod tests {
 
     #[test]
     fn mod_tap_without_hold_modifier_is_invalid() {
-        let mut draft = ZmkDraft::default();
-        draft.kind = ZmkBehaviorKind::ModTap;
-        draft.hold_mods = 0;
-        draft.touched = true;
+        let mut draft = ZmkDraft {
+            kind: ZmkBehaviorKind::ModTap,
+            hold_mods: 0,
+            touched: true,
+            ..Default::default()
+        };
         assert_eq!(draft.staged(), None);
         draft.hold_mods = MOD_LSFT;
         assert_eq!(

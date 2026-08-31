@@ -10,7 +10,7 @@ pub enum KeyResolution {
     /// Transparent slot that falls through to lower layers.
     Transparent,
     /// A recognized QMK key with defined labels, symbols, and layout properties.
-    Key(LayoutKey),
+    Key(Box<LayoutKey>),
     /// Unrecognized/custom firmware keycode with no defined semantic mapping.
     Unknown,
 }
@@ -25,7 +25,7 @@ pub fn resolve_qmk_key(bytes: u16) -> KeyResolution {
         .or_else(|| get_layer_layout_key(bytes))
         .or_else(|| get_advanced_layout_key(bytes))
     {
-        KeyResolution::Key(key)
+        KeyResolution::Key(Box::new(key))
     } else {
         KeyResolution::Unknown
     }
@@ -34,7 +34,7 @@ pub fn resolve_qmk_key(bytes: u16) -> KeyResolution {
 /// Convenience helper to obtain a `LayoutKey` if the keycode is a valid, recognized key.
 pub fn get_layout_key(bytes: u16) -> Option<LayoutKey> {
     match resolve_qmk_key(bytes) {
-        KeyResolution::Key(key) => Some(key),
+        KeyResolution::Key(key) => Some(*key),
         _ => None,
     }
 }

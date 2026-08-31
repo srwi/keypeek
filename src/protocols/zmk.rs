@@ -109,9 +109,12 @@ impl ZmkProtocol {
 /// for a keycode not supported by this keyboard) keep the session open so the
 /// next write does not pay the slow reconnection and catalog fetch penalty.
 fn should_drop_session(err: &(dyn Error + 'static)) -> bool {
-    if let Some(client_err) = err.downcast_ref::<ClientError>() {
-        match client_err {
-            ClientError::SetLayerBindingFailed(_)
+    let Some(client_err) = err.downcast_ref::<ClientError>() else {
+        return true;
+    };
+    !matches!(
+        client_err,
+        ClientError::SetLayerBindingFailed(_)
             | ClientError::SaveChangesFailed(_)
             | ClientError::SetActivePhysicalLayoutFailed(_)
             | ClientError::MoveLayerFailed(_)
@@ -121,12 +124,8 @@ fn should_drop_session(err: &(dyn Error + 'static)) -> bool {
             | ClientError::SetLayerPropsFailed(_)
             | ClientError::InvalidLayerOrPosition { .. }
             | ClientError::MissingBehaviorRole(_)
-            | ClientError::BehaviorIdOutOfRange { .. } => false,
-            _ => true,
-        }
-    } else {
-        true
-    }
+            | ClientError::BehaviorIdOutOfRange { .. }
+    )
 }
 
 fn open_zmk_hid(vid: u16, pid: u16) -> Result<HidDevice, String> {
@@ -267,7 +266,7 @@ impl KeyboardProtocol for ZmkProtocol {
                     }
                     metadata
                         .get(&role)
-                        .map_or(true, |sets| behavior.matches_metadata(sets))
+                        .is_none_or(|sets| behavior.matches_metadata(sets))
                 }
                 None => true,
             },
