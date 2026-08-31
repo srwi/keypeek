@@ -132,30 +132,26 @@ impl ZmkDraft {
             kind,
             ..Default::default()
         };
+        if let Some(layer_id) = behavior.layer_id() {
+            draft.layer_id = layer_id;
+        }
         match behavior {
             Behavior::KeyPress(usage) | Behavior::KeyToggle(usage) | Behavior::StickyKey(usage) => {
                 draft.usage = usage.base();
                 draft.modifiers = usage.modifiers();
             }
-            Behavior::MomentaryLayer { layer_id }
-            | Behavior::ToggleLayer { layer_id }
-            | Behavior::ToLayer { layer_id }
-            | Behavior::StickyLayer { layer_id } => {
-                draft.layer_id = *layer_id;
-            }
-            Behavior::LayerTap { layer_id, tap } => {
-                draft.layer_id = *layer_id;
+            Behavior::LayerTap { tap, .. } => {
                 draft.usage = tap.base();
                 draft.modifiers = tap.modifiers();
             }
             Behavior::ModTap { hold, tap } => {
-                draft.hold_mods = hold_mod_mask(hold);
+                draft.hold_mods = hold.modifier_mask();
                 draft.usage = tap.base();
                 draft.modifiers = tap.modifiers();
             }
-            Behavior::Backlight { command, value } => {
-                draft.bl_value = *value;
-                draft.bl_set_staged = *command == zmk_catalog::BACKLIGHT_SET_COMMAND;
+            Behavior::Backlight(zmk_studio_api::BacklightCommand::Set(value)) => {
+                draft.bl_value = *value as u32;
+                draft.bl_set_staged = true;
             }
             _ => {}
         }
@@ -171,7 +167,7 @@ impl ZmkDraft {
             K::KeyToggle => Behavior::KeyToggle(usage),
             K::StickyKey => Behavior::StickyKey(usage),
             K::ModTap => Behavior::ModTap {
-                hold: hold_usage(self.hold_mods),
+                hold: HidUsage::from_modifier_mask(self.hold_mods),
                 tap: usage,
             },
             K::LayerTap => Behavior::LayerTap {
@@ -192,32 +188,6 @@ impl ZmkDraft {
             ZmkBehaviorKind::ModTap if self.hold_mods != 0 => Some(self.to_behavior()),
             _ => None,
         }
-    }
-}
-
-/// Extracts the modifier bitmask from a Mod-Tap hold usage.
-fn hold_mod_mask(hold: &HidUsage) -> u8 {
-    if hold.modifiers() != 0 {
-        return hold.modifiers();
-    }
-    // HID modifier usages span 0xE0..=0xE7.
-    if (0xE0..=0xE7).contains(&hold.id()) {
-        1 << (hold.id() - 0xE0)
-    } else {
-        0
-    }
-}
-
-/// Encodes a modifier bitmask into a Mod-Tap hold usage.
-fn hold_usage(hold_mods: u8) -> HidUsage {
-    if hold_mods.count_ones() == 1 {
-        HidUsage::from_parts(
-            HID_USAGE_KEYBOARD,
-            0xE0 + hold_mods.trailing_zeros() as u16,
-            0,
-        )
-    } else {
-        HidUsage::from_parts(HID_USAGE_KEYBOARD, 0, hold_mods)
     }
 }
 
@@ -429,14 +399,14 @@ impl crate::overlay_window::OverlayApp {
             let kind = kinds[gi];
             if let KeyAction::Zmk(behavior) = &candidate.binding {
                 if kind == ZmkBehaviorKind::LayerTap {
-                    if let Some(layer_id) = behavior_layer_id(behavior) {
+                    if let Some(layer_id) = behavior.layer_id() {
                         self.editor.zmk_draft.kind = ZmkBehaviorKind::LayerTap;
                         self.editor.zmk_draft.layer_id = layer_id;
                         self.commit_zmk_draft(keyboard, target);
                     }
                 } else {
                     self.editor.zmk_draft.kind = kind;
-                    if let Some(layer_id) = behavior_layer_id(behavior) {
+                    if let Some(layer_id) = behavior.layer_id() {
                         self.editor.zmk_draft.layer_id = layer_id;
                     }
                     self.apply_write(keyboard, target, candidate.binding.clone());
@@ -494,10 +464,9 @@ impl crate::overlay_window::OverlayApp {
                 let level = ui
                     .add(egui::DragValue::new(&mut self.editor.zmk_draft.bl_value).range(0..=255));
                 if level.drag_stopped() || level.lost_focus() {
-                    let behavior = Behavior::Backlight {
-                        command: zmk_catalog::BACKLIGHT_SET_COMMAND,
-                        value: self.editor.zmk_draft.bl_value,
-                    };
+                    let behavior = Behavior::Backlight(zmk_studio_api::BacklightCommand::Set(
+                        self.editor.zmk_draft.bl_value as u8,
+                    ));
                     self.apply_write(keyboard, target, KeyAction::Zmk(behavior));
                 }
             });
@@ -509,23 +478,10 @@ impl crate::overlay_window::OverlayApp {
 fn is_backlight_set(binding: &KeyAction) -> bool {
     matches!(
         binding,
-        KeyAction::Zmk(Behavior::Backlight {
-            command: zmk_catalog::BACKLIGHT_SET_COMMAND,
-            ..
-        })
+        KeyAction::Zmk(Behavior::Backlight(zmk_studio_api::BacklightCommand::Set(
+            _
+        )))
     )
-}
-
-/// Returns the target layer ID of a layer behavior.
-fn behavior_layer_id(behavior: &Behavior) -> Option<u32> {
-    match behavior {
-        Behavior::MomentaryLayer { layer_id }
-        | Behavior::ToggleLayer { layer_id }
-        | Behavior::ToLayer { layer_id }
-        | Behavior::StickyLayer { layer_id }
-        | Behavior::LayerTap { layer_id, .. } => Some(*layer_id),
-        _ => None,
-    }
 }
 
 #[cfg(test)]
@@ -604,15 +560,22 @@ mod tests {
         assert_eq!(kind_of(Behavior::Transparent), K::Transparent);
         assert_eq!(kind_of(Behavior::CapsWord), K::CapsWord);
         assert_eq!(
-            kind_of(Behavior::Bluetooth {
-                command: 3,
-                value: 2
-            }),
+            kind_of(Behavior::Bluetooth(
+                zmk_studio_api::BluetoothCommand::Select(2)
+            )),
             K::Bluetooth
         );
-        assert_eq!(kind_of(Behavior::MouseScroll { value: 1 }), K::MouseScroll);
+        assert_eq!(
+            kind_of(Behavior::MouseScroll { x: 0, y: 1 }),
+            K::MouseScroll
+        );
         // Behaviors not assignable through ZMK Studio (e.g. ExternalPower) fall back to KeyPress.
-        assert_eq!(kind_of(Behavior::ExternalPower { value: 0 }), K::KeyPress);
+        assert_eq!(
+            kind_of(Behavior::ExternalPower(
+                zmk_studio_api::ExternalPowerCommand::Off
+            )),
+            K::KeyPress
+        );
     }
 
     #[test]
@@ -641,7 +604,7 @@ mod tests {
         assert_eq!(
             draft.staged(),
             Some(Behavior::ModTap {
-                hold: hold_usage(MOD_LSFT),
+                hold: HidUsage::from_modifier_mask(MOD_LSFT),
                 tap: draft.usage.base(),
             })
         );

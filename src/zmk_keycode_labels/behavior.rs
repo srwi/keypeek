@@ -1,5 +1,8 @@
 use crate::layout_key::{behavior_names, BorderStyle, KeycodeKind, Label, LayoutKey};
-use zmk_studio_api::{Behavior, BehaviorParam, HidUsage};
+use zmk_studio_api::{
+    BacklightCommand, Behavior, BehaviorParam, BluetoothCommand, ExternalPowerCommand, HidUsage,
+    MouseButton, OutputSelection, UnderglowCommand,
+};
 
 use super::hid_usage::hid_usage_to_layout_key;
 
@@ -79,122 +82,143 @@ pub fn behavior_to_layout_key(behavior: &Behavior, layer_names: &[String]) -> Op
             tap: Label::with_short("Grave Esc", "G/E"),
             ..Default::default()
         }),
-        Behavior::Bluetooth { command, value } => {
-            let label = match *command {
-                0 => Label::new("BT Clr"),
-                1 => Label::new("BT Nxt"),
-                2 => Label::new("BT Prv"),
-                3 => Label::with_short(format!("BT Sel {}", value), format!("BT{}", value)),
-                4 => Label::with_short("BT Clr All", "BTClr"),
-                5 => Label::with_short(format!("BT Disc {}", value), format!("BTD{}", value)),
-                n => Label::new(format!("BT {}", n)),
+        Behavior::Bluetooth(cmd) => {
+            let label = match cmd {
+                BluetoothCommand::Clear => Label::new("BT Clr"),
+                BluetoothCommand::Next => Label::new("BT Nxt"),
+                BluetoothCommand::Prev => Label::new("BT Prv"),
+                BluetoothCommand::Select(n) => {
+                    Label::with_short(format!("BT Sel {n}"), format!("BT{n}"))
+                }
+                BluetoothCommand::ClearAll => Label::with_short("BT Clr All", "BTClr"),
+                BluetoothCommand::Disconnect(n) => {
+                    Label::with_short(format!("BT Disc {n}"), format!("BTD{n}"))
+                }
+                BluetoothCommand::Other { command, value: 0 } => {
+                    Label::new(format!("BT {command}"))
+                }
+                BluetoothCommand::Other { command, value } => {
+                    Label::new(format!("BT {command} {value}"))
+                }
             };
             Some(LayoutKey {
                 tap: label,
                 ..Default::default()
             })
         }
-        Behavior::OutputSelection { value } => {
-            let label = match *value {
-                0 => Label::with_short("Out Tog", "OutTg"),
-                1 => Label::new("Out USB"),
-                2 => Label::new("Out BLE"),
-                3 => Label::with_short("Out None", "OutNo"),
-                n => Label::new(format!("Out {}", n)),
+        Behavior::OutputSelection(out) => {
+            let label = match out {
+                OutputSelection::Toggle => Label::with_short("Out Tog", "OutTg"),
+                OutputSelection::Usb => Label::new("Out USB"),
+                OutputSelection::Ble => Label::new("Out BLE"),
+                OutputSelection::None => Label::with_short("Out None", "OutNo"),
+                OutputSelection::Other(n) => Label::new(format!("Out {n}")),
             };
             Some(LayoutKey {
                 tap: label,
                 ..Default::default()
             })
         }
-        Behavior::ExternalPower { value } => {
-            let label = match *value {
-                0 => Label::with_short("ExtPwr Off", "EPOff"),
-                1 => Label::with_short("ExtPwr On", "EPOn"),
-                2 => Label::with_short("ExtPwr Tog", "EPTog"),
-                n => Label::with_short(format!("ExtPwr {}", n), format!("EP{}", n)),
+        Behavior::ExternalPower(ep) => {
+            let label = match ep {
+                ExternalPowerCommand::Off => Label::with_short("ExtPwr Off", "EPOff"),
+                ExternalPowerCommand::On => Label::with_short("ExtPwr On", "EPOn"),
+                ExternalPowerCommand::Toggle => Label::with_short("ExtPwr Tog", "EPTog"),
+                ExternalPowerCommand::Other(n) => {
+                    Label::with_short(format!("ExtPwr {n}"), format!("EP{n}"))
+                }
             };
             Some(LayoutKey {
                 tap: label,
                 ..Default::default()
             })
         }
-        Behavior::Backlight { command, value } => {
-            let label = match *command {
-                0 => Label::new("BL On"),
-                1 => Label::new("BL Off"),
-                2 => Label::new("BL Tog"),
-                3 => Label::with_short("BL Inc", "BL+"),
-                4 => Label::with_short("BL Dec", "BL-"),
-                5 => Label::with_short("BL Cycle", "BLCyc"),
-                6 => Label::with_short(format!("BL Set {}", value), format!("BL{}", value)),
-                n => Label::new(format!("BL {}", n)),
+        Behavior::Backlight(bl) => {
+            let label = match bl {
+                BacklightCommand::On => Label::new("BL On"),
+                BacklightCommand::Off => Label::new("BL Off"),
+                BacklightCommand::Toggle => Label::new("BL Tog"),
+                BacklightCommand::Inc => Label::with_short("BL Inc", "BL+"),
+                BacklightCommand::Dec => Label::with_short("BL Dec", "BL-"),
+                BacklightCommand::Cycle => Label::with_short("BL Cycle", "BLCyc"),
+                BacklightCommand::Set(n) => {
+                    Label::with_short(format!("BL Set {n}"), format!("BL{n}"))
+                }
+                BacklightCommand::Other { command, value: 0 } => {
+                    Label::new(format!("BL {command}"))
+                }
+                BacklightCommand::Other { command, value } => {
+                    Label::new(format!("BL {command} {value}"))
+                }
             };
             Some(LayoutKey {
                 tap: label,
                 ..Default::default()
             })
         }
-        Behavior::Underglow { command, .. } => {
-            let label = match *command {
-                0 => Label::new("RGB Tog"),
-                1 => Label::new("RGB On"),
-                2 => Label::new("RGB Off"),
-                3 => Label::with_short("Hue +", "Hue+"),
-                4 => Label::with_short("Hue -", "Hue-"),
-                5 => Label::with_short("Sat +", "Sat+"),
-                6 => Label::with_short("Sat -", "Sat-"),
-                7 => Label::with_short("Bright +", "Bri+"),
-                8 => Label::with_short("Bright -", "Bri-"),
-                9 => Label::with_short("Speed +", "Spd+"),
-                10 => Label::with_short("Speed -", "Spd-"),
-                11 => Label::with_short("Effect +", "Eff+"),
-                12 => Label::with_short("Effect -", "Eff-"),
-                13 => Label::with_short("Effect Set", "EffS"),
-                14 => Label::with_short("RGB Color", "Color"),
-                n => Label::new(format!("RGB {}", n)),
+        Behavior::Underglow(ug) => {
+            let label = match ug {
+                UnderglowCommand::Toggle => Label::new("RGB Tog"),
+                UnderglowCommand::On => Label::new("RGB On"),
+                UnderglowCommand::Off => Label::new("RGB Off"),
+                UnderglowCommand::HueInc => Label::with_short("Hue +", "Hue+"),
+                UnderglowCommand::HueDec => Label::with_short("Hue -", "Hue-"),
+                UnderglowCommand::SatInc => Label::with_short("Sat +", "Sat+"),
+                UnderglowCommand::SatDec => Label::with_short("Sat -", "Sat-"),
+                UnderglowCommand::BrightInc => Label::with_short("Bright +", "Bri+"),
+                UnderglowCommand::BrightDec => Label::with_short("Bright -", "Bri-"),
+                UnderglowCommand::SpeedInc => Label::with_short("Speed +", "Spd+"),
+                UnderglowCommand::SpeedDec => Label::with_short("Speed -", "Spd-"),
+                UnderglowCommand::EffectInc => Label::with_short("Effect +", "Eff+"),
+                UnderglowCommand::EffectDec => Label::with_short("Effect -", "Eff-"),
+                UnderglowCommand::EffectSet => Label::with_short("Effect Set", "EffS"),
+                UnderglowCommand::Color => Label::with_short("RGB Color", "Color"),
+                UnderglowCommand::Other { command, value: 0 } => {
+                    Label::new(format!("RGB {command}"))
+                }
+                UnderglowCommand::Other { command, value } => {
+                    Label::new(format!("RGB {command} {value}"))
+                }
             };
             Some(LayoutKey {
                 tap: label,
                 ..Default::default()
             })
         }
-        Behavior::MouseKeyPress { value } => {
-            let label = match *value {
-                1 => Label::with_short("L Click", "LClk"),
-                2 => Label::with_short("R Click", "RClk"),
-                4 => Label::with_short("M Click", "MClk"),
-                8 => Label::with_short("Mouse 4", "MB4"),
-                16 => Label::with_short("Mouse 5", "MB5"),
-                n => Label::with_short(format!("Mouse {}", n), format!("M{}", n)),
+        Behavior::MouseKeyPress(btn) => {
+            let label = match btn {
+                MouseButton::Left => Label::with_short("L Click", "LClk"),
+                MouseButton::Right => Label::with_short("R Click", "RClk"),
+                MouseButton::Middle => Label::with_short("M Click", "MClk"),
+                MouseButton::Button4 => Label::with_short("Mouse 4", "MB4"),
+                MouseButton::Button5 => Label::with_short("Mouse 5", "MB5"),
+                MouseButton::Other(n) => Label::with_short(format!("Mouse {n}"), format!("M{n}")),
             };
             Some(LayoutKey {
                 tap: label,
                 ..Default::default()
             })
         }
-        Behavior::MouseMove { value } => {
-            let (x, y) = decode_mouse_xy(*value);
+        Behavior::MouseMove { x, y } => {
             let label = match (x.signum(), y.signum()) {
                 (0, -1) => Label::with_short("Mouse Up", "MsUp"),
                 (0, 1) => Label::with_short("Mouse Down", "MsDn"),
                 (-1, 0) => Label::with_short("Mouse Left", "MsLt"),
                 (1, 0) => Label::with_short("Mouse Right", "MsRt"),
-                _ => Label::with_short(format!("Move {}", value), format!("Mv{}", value)),
+                _ => Label::with_short(format!("Move ({x}, {y})"), format!("Mv {x},{y}")),
             };
             Some(LayoutKey {
                 tap: label,
                 ..Default::default()
             })
         }
-        Behavior::MouseScroll { value } => {
-            let (x, y) = decode_mouse_xy(*value);
+        Behavior::MouseScroll { x, y } => {
             let label = match (x.signum(), y.signum()) {
                 (0, 1) => Label::with_short("Scroll Up", "ScrUp"),
                 (0, -1) => Label::with_short("Scroll Down", "ScrDn"),
                 (-1, 0) => Label::with_short("Scroll Left", "ScrLt"),
                 (1, 0) => Label::with_short("Scroll Right", "ScrRt"),
-                _ => Label::with_short(format!("Scroll {}", value), format!("Scr{}", value)),
+                _ => Label::with_short(format!("Scroll ({x}, {y})"), format!("Scr {x},{y}")),
             };
             Some(LayoutKey {
                 tap: label,
@@ -358,13 +382,6 @@ fn param_summary(
 
     let parts: Vec<String> = [param1, param2].into_iter().filter_map(text).collect();
     (!parts.is_empty()).then(|| Label::new(parts.join(" ")))
-}
-
-/// Decode a ZMK pointing value: `(x << 16) | (y & 0xFFFF)` (dt-bindings/zmk/pointing.h).
-fn decode_mouse_xy(value: u32) -> (i16, i16) {
-    let x = ((value >> 16) & 0xFFFF) as i16;
-    let y = (value & 0xFFFF) as i16;
-    (x, y)
 }
 
 /// Build a pure layer-switch key: the target layer is the centered label and
