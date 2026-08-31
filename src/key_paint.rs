@@ -205,7 +205,7 @@ pub fn paint(
             center,
             angle,
             display.colors.border,
-            display.colors.font,
+            display.colors.font.gamma_multiply(0.7),
         );
     }
 
@@ -223,7 +223,7 @@ pub fn paint(
             center,
             angle,
             display.colors.border,
-            display.colors.font,
+            display.colors.font.gamma_multiply(0.7),
         );
     }
 
@@ -276,9 +276,11 @@ fn generate_label_galleys(
     style: &KeyPaintStyle,
 ) -> LabelGalleys {
     let (symbol, text) = generate_tap_galleys(ui, display, rect, font, style);
-    let color = display.colors.font;
-    let behavior = generate_strip_galley(ui, display.key.behavior.as_ref(), rect, color, style);
-    let argument = generate_strip_galley(ui, display.key.argument.as_ref(), rect, color, style);
+    let strip_color = display.colors.font.gamma_multiply(0.7);
+    let behavior =
+        generate_strip_galley(ui, display.key.behavior.as_ref(), rect, strip_color, style);
+    let argument =
+        generate_strip_galley(ui, display.key.argument.as_ref(), rect, strip_color, style);
     LabelGalleys {
         symbol,
         text,
@@ -578,13 +580,8 @@ fn paint_strip(
     );
     if let Some(galley) = galley {
         let pos = strip.center() - galley.rect.center().to_vec2();
-        ui.painter().add(rotated_text_shape(
-            pos,
-            galley,
-            font_color.gamma_multiply(0.7),
-            center,
-            angle,
-        ));
+        ui.painter()
+            .add(rotated_text_shape(pos, galley, font_color, center, angle));
     }
 }
 

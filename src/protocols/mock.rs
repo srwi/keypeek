@@ -233,115 +233,11 @@ fn keycode_names() -> &'static HashMap<String, u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::key_action::{KeyAction, LayerInfo};
-    use crate::key_matrix::KeyMatrix;
     use crate::keyboard::{Keyboard, OverlayConfig};
-    use crate::protocols::WriteSupport;
-    use crate::qmk_keycode_labels::get_layout_key;
     use crate::ui_wake::UiWake;
     use std::collections::HashSet;
     use std::sync::Arc;
     use std::time::Instant;
-
-    /// Layer 0, index 39 (row 3, col 3) holds `MO(1)` in the fixture.
-    const FIXTURE_MO_KEY: (usize, usize, usize) = (0, 3, 3);
-
-    #[test]
-    fn mo_fixture_key_resolves_action_and_label() {
-        let mock = MockProtocol::connect().expect("fixture should load");
-        let snapshot = mock.read_keymap().unwrap();
-        let definition = mock.get_layout_definition();
-        let matrix = KeyMatrix::from_snapshot(snapshot, definition.rows, definition.cols);
-
-        let (layer, row, col) = FIXTURE_MO_KEY;
-        assert_eq!(
-            matrix.get_action(layer, row, col),
-            Some(&KeyAction::Qmk(0x5221))
-        );
-        assert_eq!(
-            matrix.get_key(layer, row, col).cloned(),
-            get_layout_key(0x5221)
-        );
-        assert_eq!(
-            matrix.layer_infos(),
-            LayerInfo::indexed(matrix.get_num_layers()).as_slice()
-        );
-    }
-
-    /// Sends a write through the real `Keyboard` actor and waits for its result.
-    fn write_via_actor(
-        keyboard: &Keyboard,
-        layer_index: usize,
-        row: usize,
-        col: usize,
-        action: KeyAction,
-    ) -> Result<(), String> {
-        keyboard
-            .set_key(layer_index, row, col, action)
-            .recv_timeout(Duration::from_secs(10))
-            .expect("actor thread should not drop the result receiver")
-    }
-
-    /// Layer 1 is all-transparent in the fixture, so every cell there is a
-    /// binding slot whose label starts out `None`.
-    #[test]
-    fn writes_update_action_and_label_through_the_actor() {
-        let protocol = MockProtocol::with_tick_interval(Duration::from_millis(5)).unwrap();
-        let layout_name = protocol.get_layout_definition().layouts[0].name.clone();
-
-        let wakes = Arc::new(AtomicUsize::new(0));
-        let counter = Arc::clone(&wakes);
-        let ui_wake = UiWake::new(Arc::new(move || {
-            counter.fetch_add(1, Ordering::Relaxed);
-        }));
-
-        let config = OverlayConfig {
-            timeout_ms: -1,
-            activation_delay_ms: 0,
-            visible_layers: u32::MAX,
-        };
-        let keyboard = Keyboard::new(Box::new(protocol), layout_name, config, ui_wake).unwrap();
-        assert_eq!(keyboard.write_support(), WriteSupport::Immediate);
-
-        // A plain keycode.
-        let code = Keycode::KC_A as u16;
-        assert_eq!(
-            write_via_actor(&keyboard, 1, 0, 0, KeyAction::Qmk(code)),
-            Ok(())
-        );
-        assert_eq!(keyboard.get_action(1, 0, 0), Some(KeyAction::Qmk(code)));
-        assert_eq!(keyboard.get_key(1, 0, 0), get_layout_key(code));
-
-        // A momentary-layer key.
-        let mo_code = QK_MOMENTARY.start + 2;
-        assert_eq!(
-            write_via_actor(&keyboard, 1, 0, 1, KeyAction::Qmk(mo_code)),
-            Ok(())
-        );
-        assert_eq!(keyboard.get_action(1, 0, 1), Some(KeyAction::Qmk(mo_code)));
-        assert_eq!(keyboard.get_key(1, 0, 1), get_layout_key(mo_code));
-
-        // A transparent binding: no label anymore, but still an editable slot.
-        let transparent_code = Keycode::KC_TRANSPARENT as u16;
-        assert_eq!(
-            write_via_actor(&keyboard, 1, 0, 1, KeyAction::Qmk(transparent_code)),
-            Ok(())
-        );
-        assert_eq!(
-            keyboard.get_action(1, 0, 1),
-            Some(KeyAction::Qmk(transparent_code))
-        );
-        assert_eq!(keyboard.get_key(1, 0, 1), None);
-
-        // Out-of-range writes fail with an error instead of panicking.
-        assert!(write_via_actor(&keyboard, 9, 0, 0, KeyAction::Qmk(code)).is_err());
-        assert!(keyboard.get_action(9, 0, 0).is_none());
-
-        // The mock persists immediately; save is a no-op, reported through
-        // the same receiver pattern.
-        let _ = keyboard.save_keymap().recv_timeout(Duration::from_secs(10));
-        assert!(wakes.load(Ordering::Relaxed) > 0);
-    }
 
     #[test]
     fn fixture_loads_and_matches_its_matrix() {

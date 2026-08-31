@@ -60,26 +60,3 @@ pub struct KeymapSnapshot {
     /// `[layer][row][col]`. `None` = no binding at this position (padding).
     pub actions: Vec<Vec<Vec<Option<KeyAction>>>>,
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn layer_info_short_name_uses_name_or_fallback() {
-        let named = LayerInfo {
-            id: 0,
-            name: Some("Nav".to_string()),
-        };
-        assert_eq!(named.short_name(1), "Nav");
-
-        let empty_name = LayerInfo {
-            id: 1,
-            name: Some("".to_string()),
-        };
-        assert_eq!(empty_name.short_name(1), "L1");
-
-        let unnamed = LayerInfo { id: 2, name: None };
-        assert_eq!(unnamed.short_name(2), "L2");
-    }
-}

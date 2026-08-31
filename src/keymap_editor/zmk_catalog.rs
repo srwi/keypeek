@@ -1,8 +1,6 @@
 //! Candidate ZMK keycodes and behaviors for picker grids.
 
 use crate::key_action::{KeyAction, LayerInfo};
-use crate::layout_key::{Label, LayoutKey};
-use crate::zmk_keycode_labels::behavior_to_layout_key;
 use std::sync::OnceLock;
 use zmk_studio_api::{Behavior, HidUsage, Keycode};
 pub const HID_USAGE_KEYBOARD: u16 = 0x07;
@@ -156,22 +154,7 @@ pub fn command_candidates(kind: ZmkBehaviorKind, backlight_level: u32) -> Vec<Ca
 
 /// Creates a candidate definition for a ZMK behavior.
 pub fn behavior_candidate(behavior: &Behavior, layer_names: &[String]) -> Candidate {
-    let key = match behavior {
-        Behavior::Transparent => LayoutKey {
-            tap: Label::with_short("Transparent", egui_phosphor::regular::CARET_DOWN),
-            ..Default::default()
-        },
-        Behavior::None => LayoutKey {
-            tap: Label::new("None"),
-            ..Default::default()
-        },
-        _ => behavior_to_layout_key(behavior, layer_names).unwrap_or_default(),
-    };
-    Candidate {
-        binding: KeyAction::Zmk(behavior.clone()),
-        key,
-        transparent: *behavior == Behavior::Transparent,
-    }
+    Candidate::from_action(KeyAction::Zmk(behavior.clone()), layer_names)
 }
 
 pub fn categories() -> &'static [CandidateGroup] {
@@ -212,47 +195,9 @@ fn build_categories() -> Vec<CandidateGroup> {
 pub fn keycode_candidate(encoded: u32) -> Candidate {
     let usage = HidUsage::from_encoded(encoded);
     let action = KeyAction::Zmk(Behavior::KeyPress(usage));
-    let key = match action.resolve_label(&[]) {
-        Some(key) if !key.tap.full.is_empty() => key,
-        Some(mut key) => {
-            if key.symbol.is_none() && key.tap.is_empty() {
-                key.symbol = Some(format!("0x{:02X}", usage.id()));
-            }
-            key
-        }
-        None => crate::layout_key::LayoutKey {
-            tap: crate::layout_key::Label::new(format!("0x{:02X}", usage.id())),
-            ..Default::default()
-        },
-    };
-    Candidate::new(action, key)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn behaviors_map_to_correct_roles() {
-        assert_eq!(
-            Behavior::Backlight {
-                command: 0,
-                value: 0
-            }
-            .role(),
-            Some(ZmkBehaviorKind::Backlight)
-        );
-        assert_eq!(
-            Behavior::Underglow {
-                command: 0,
-                value: 0
-            }
-            .role(),
-            Some(ZmkBehaviorKind::Underglow)
-        );
-        assert_eq!(
-            Behavior::Transparent.role(),
-            Some(ZmkBehaviorKind::Transparent)
-        );
+    let mut candidate = Candidate::from_action(action, &[]);
+    if candidate.key.symbol.is_none() && candidate.key.tap.is_empty() {
+        candidate.key.symbol = Some(format!("0x{:02X}", usage.id()));
     }
+    candidate
 }

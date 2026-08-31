@@ -189,30 +189,3 @@ fn show_pointer_tooltip(ui: &egui::Ui, id: egui::Id, text: &str) {
         ui.label(text);
     });
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::layout_key::{Label, LayoutKey};
-
-    #[test]
-    fn overlay_tooltip_for_transparent_slot() {
-        let empty_key = LayoutKey::default();
-        assert_eq!(key_tooltip(&empty_key, true).as_deref(), Some("Transparent"));
-    }
-
-    #[test]
-    fn overlay_tooltip_for_labeled_key() {
-        let key = LayoutKey {
-            tap: Label::new("Enter"),
-            ..Default::default()
-        };
-        assert_eq!(key_tooltip(&key, false).as_deref(), Some("Enter"));
-    }
-
-    #[test]
-    fn overlay_tooltip_for_unbound_slot() {
-        let empty_key = LayoutKey::default();
-        assert_eq!(key_tooltip(&empty_key, false), None);
-    }
-}

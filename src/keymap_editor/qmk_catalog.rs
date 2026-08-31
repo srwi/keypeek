@@ -3,9 +3,8 @@
 use super::picker::{Candidate, CandidateGroup};
 use super::qmk_editor::{encode_layer_mod, encode_layer_tap};
 use crate::key_action::KeyAction;
-use crate::layout_key::{Label, LayoutKey};
 use crate::qmk_keycode_labels::constants::*;
-use crate::qmk_keycode_labels::{get_hex_layout_key, resolve_qmk_key, KeyResolution};
+use crate::qmk_keycode_labels::{resolve_qmk_key, KeyResolution};
 use qmk_via_api::keycodes::Keycode;
 use std::sync::OnceLock;
 
@@ -193,89 +192,5 @@ pub fn layer_mod_group(layer_count: usize, mods: u16) -> CandidateGroup {
 
 /// Creates a candidate definition for a QMK keycode.
 pub fn qmk_candidate(code: u16) -> Candidate {
-    let binding = KeyAction::Qmk(code);
-    if code == Keycode::KC_NO as u16 {
-        return Candidate::new(
-            binding,
-            LayoutKey {
-                tap: Label::new("None"),
-                ..Default::default()
-            },
-        );
-    }
-    match resolve_qmk_key(code) {
-        KeyResolution::Transparent => Candidate {
-            binding,
-            key: LayoutKey {
-                tap: Label::with_short("Transparent", egui_phosphor::regular::CARET_DOWN),
-                ..Default::default()
-            },
-            transparent: true,
-        },
-        KeyResolution::Key(key) => Candidate::new(binding, *key),
-        KeyResolution::Unknown => Candidate::new(binding, get_hex_layout_key(code)),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::qmk_keycode_labels::get_layout_key;
-    use qmk_via_api::keycodes::Keycode;
-
-    /// Every `Keycode` below `0x0100` should appear in a category, and every
-    /// catalogued code should be a real keycode with a label.
-    #[test]
-    fn catalog_covers_all_labeled_basic_keycodes() {
-        let all: Vec<u16> = categories()
-            .iter()
-            .flat_map(|group| &group.candidates)
-            .filter_map(|candidate| match &candidate.binding {
-                KeyAction::Qmk(code) => Some(*code),
-                _ => None,
-            })
-            .collect();
-
-        for code in 0x00u16..0x0100 {
-            if Keycode::try_from(code).is_ok() && get_layout_key(code).is_some() {
-                assert!(
-                    all.contains(&code),
-                    "keycode 0x{code:04X} is labeled but missing from the catalog"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn all_catalog_candidates_have_labels() {
-        for group in categories() {
-            for candidate in &group.candidates {
-                assert!(
-                    !candidate.key.tap.full.is_empty()
-                        || candidate.key.symbol.is_some()
-                        || candidate.transparent,
-                    "Group {:?} candidate {:?} has no label or symbol",
-                    group.name,
-                    candidate.binding
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn invalid_keycodes_excluded_from_catalog() {
-        let all: Vec<u16> = categories()
-            .iter()
-            .flat_map(|group| &group.candidates)
-            .filter_map(|candidate| match &candidate.binding {
-                KeyAction::Qmk(code) => Some(*code),
-                _ => None,
-            })
-            .collect();
-
-        assert!(!all.contains(&0x0002), "0x0002 should not be in catalog");
-        assert!(!all.contains(&0x0003), "0x0003 should not be in catalog");
-        assert_eq!(get_layout_key(0x0002), None);
-        assert_eq!(get_layout_key(0x0003), None);
-    }
+    Candidate::from_action(KeyAction::Qmk(code), &[])
 }

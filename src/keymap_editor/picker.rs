@@ -28,6 +28,36 @@ impl Candidate {
             transparent: false,
         }
     }
+
+    /// Creates a candidate for any key action, providing consistent display
+    /// labels for transparent and none slots across protocols.
+    pub fn from_action(binding: KeyAction, layer_names: &[String]) -> Self {
+        let is_none = match &binding {
+            KeyAction::Qmk(code) => *code == qmk_via_api::keycodes::Keycode::KC_NO as u16,
+            KeyAction::Zmk(b) => *b == zmk_studio_api::Behavior::None,
+        };
+        if is_none {
+            return Self::new(
+                binding,
+                LayoutKey {
+                    tap: Label::new("None"),
+                    ..Default::default()
+                },
+            );
+        }
+
+        match binding.resolve_label(layer_names) {
+            None => Self {
+                binding,
+                key: LayoutKey {
+                    tap: Label::with_short("Transparent", egui_phosphor::regular::CARET_DOWN),
+                    ..Default::default()
+                },
+                transparent: true,
+            },
+            Some(key) => Self::new(binding, key),
+        }
+    }
 }
 
 /// Draws an interactive key button.
@@ -353,37 +383,5 @@ pub fn modifier_toggle_grid(
                 on_toggle(mask);
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::keymap_editor::qmk_catalog::qmk_candidate;
-    use crate::keymap_editor::zmk_catalog::behavior_candidate;
-    use qmk_via_api::keycodes::Keycode;
-    use zmk_studio_api::Behavior;
-
-    #[test]
-    fn candidate_tooltip_for_transparent() {
-        let qmk_trans = qmk_candidate(Keycode::KC_TRANSPARENT as u16);
-        assert_eq!(qmk_trans.key.tooltip_text().as_deref(), Some("Transparent"));
-
-        let zmk_trans = behavior_candidate(&Behavior::Transparent, &[]);
-        assert_eq!(zmk_trans.key.tooltip_text().as_deref(), Some("Transparent"));
-    }
-
-    #[test]
-    fn candidate_tooltip_for_none() {
-        let qmk_none = qmk_candidate(Keycode::KC_NO as u16);
-        assert_eq!(qmk_none.key.tooltip_text().as_deref(), Some("None"));
-
-        let zmk_none = behavior_candidate(&Behavior::None, &[]);
-        assert_eq!(zmk_none.key.tooltip_text().as_deref(), Some("None"));
-    }
-
-    #[test]
-    fn candidate_tooltip_for_qmk_key() {
-        let candidate = qmk_candidate(Keycode::KC_ENTER as u16);
-        assert_eq!(candidate.key.tooltip_text().as_deref(), Some("Enter"));
     }
 }

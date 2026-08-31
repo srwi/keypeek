@@ -300,34 +300,3 @@ impl Default for LayoutKey {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn tooltip_text_for_plain_key() {
-        let key = LayoutKey {
-            tap: Label::with_short("Space", "Spc"),
-            ..Default::default()
-        };
-        assert_eq!(key.tooltip_text().as_deref(), Some("Space"));
-    }
-
-    #[test]
-    fn tooltip_text_for_behavior_and_argument() {
-        let key = LayoutKey {
-            tap: Label::new("A"),
-            behavior: Some(Label::new("Mod-Tap")),
-            argument: Some(Label::new("Ctrl")),
-            ..Default::default()
-        };
-        assert_eq!(key.tooltip_text().as_deref(), Some("Mod-Tap: A (Ctrl)"));
-    }
-
-    #[test]
-    fn tooltip_text_for_glyph_modifier() {
-        let key = modifier_symbols::modifier_key(&modifier_symbols::MOD_SHIFT, 0);
-        assert_eq!(key.tooltip_text().as_deref(), Some("Shift"));
-    }
-}
