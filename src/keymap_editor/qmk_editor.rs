@@ -36,6 +36,9 @@ pub enum Section {
     Any,
 }
 
+use qmk_via_api::keycodes::{Keycode, KeycodeCategory};
+use qmk_via_api::{QmkKeycode, QmkModMask};
+
 impl Section {
     const ALL: [Section; 15] = [
         Section::Basic,
@@ -54,6 +57,34 @@ impl Section {
         Section::LayerMod,
         Section::Any,
     ];
+
+    pub const fn category(&self) -> Option<KeycodeCategory> {
+        match self {
+            Section::Basic => Some(KeycodeCategory::Basic),
+            Section::Media => Some(KeycodeCategory::Media),
+            Section::Special => Some(KeycodeCategory::Special),
+            Section::Backlight => Some(KeycodeCategory::Backlight),
+            Section::Rgblight => Some(KeycodeCategory::Rgblight),
+            Section::RgbMatrix => Some(KeycodeCategory::RgbMatrix),
+            Section::Audio => Some(KeycodeCategory::Audio),
+            Section::Custom => Some(KeycodeCategory::Custom),
+            _ => None,
+        }
+    }
+
+    pub const fn from_category(cat: KeycodeCategory) -> Option<Section> {
+        match cat {
+            KeycodeCategory::Basic => Some(Section::Basic),
+            KeycodeCategory::Media => Some(Section::Media),
+            KeycodeCategory::Special => Some(Section::Special),
+            KeycodeCategory::Backlight => Some(Section::Backlight),
+            KeycodeCategory::Rgblight => Some(Section::Rgblight),
+            KeycodeCategory::RgbMatrix => Some(Section::RgbMatrix),
+            KeycodeCategory::Audio => Some(Section::Audio),
+            KeycodeCategory::Custom => Some(Section::Custom),
+        }
+    }
+
     fn label(&self) -> &'static str {
         match self {
             Section::Basic => "Basic",
@@ -74,20 +105,14 @@ impl Section {
         }
     }
 
-    fn from_label(label: &str) -> Option<Section> {
-        Self::ALL.iter().copied().find(|s| s.label() == label)
-    }
-
     fn is_supported(&self, keyboard: &Keyboard) -> bool {
-        super::qmk_catalog::categories()
-            .iter()
-            .find(|g| g.name == self.label())
-            .is_none_or(|group| {
-                group
-                    .candidates
-                    .iter()
-                    .any(|c| keyboard.is_action_supported(&c.binding))
-            })
+        match self.category() {
+            Some(cat) => super::qmk_catalog::category(cat)
+                .candidates
+                .iter()
+                .any(|c| keyboard.is_action_supported(&c.binding)),
+            None => true,
+        }
     }
 
     fn has_layer(&self) -> bool {
@@ -105,8 +130,6 @@ impl Section {
         matches!(self, Section::Combo | Section::ModTap | Section::LayerTap)
     }
 }
-
-use qmk_via_api::{QmkKeycode, QmkModMask};
 
 /// Editable parameter state for QMK keycodes.
 #[derive(Clone)]
@@ -214,13 +237,12 @@ fn decode(code: u16) -> QmkDraft {
         _ => {}
     }
 
-    for group in super::qmk_catalog::categories() {
-        if group
-            .candidates
+    for &cat in &KeycodeCategory::ALL {
+        if Keycode::all_in_category(cat)
             .iter()
-            .any(|c| c.binding == KeyAction::Qmk(code))
+            .any(|&k| k as u16 == code)
         {
-            if let Some(section) = Section::from_label(group.name) {
+            if let Some(section) = Section::from_category(cat) {
                 draft.section = section;
                 if code <= 0xFF {
                     draft.base_code = code;
@@ -244,6 +266,7 @@ impl crate::overlay_window::OverlayApp {
         keyboard: &Keyboard,
         target: EditTarget,
     ) {
+        let style = self.paint_style(KEY_UNIT);
         super::editor_left_panel(ui, "qmk_sections", |ui| {
             for s in Section::ALL {
                 if !s.is_supported(keyboard) {
@@ -258,13 +281,13 @@ impl crate::overlay_window::OverlayApp {
             Section::Layers => {
                 // One page of grouped layer keys, one per real layer; see
                 // draw_qmk_layer_page.
-                self.draw_qmk_layer_page(ui, keyboard, target);
+                self.draw_qmk_layer_page(ui, keyboard, target, &style);
             }
             Section::Combo
             | Section::OneShot
             | Section::ModTap
             | Section::LayerTap
-            | Section::LayerMod => self.draw_qmk_mods_page(ui, keyboard, target),
+            | Section::LayerMod => self.draw_qmk_mods_page(ui, keyboard, target, &style),
             Section::Any => {
                 titled_group(ui, "Keycode", |ui| {
                     ui.horizontal(|ui| {
@@ -291,11 +314,8 @@ impl crate::overlay_window::OverlayApp {
                 });
             }
             _ => {
-                if let Some(group) = super::qmk_catalog::categories()
-                    .iter()
-                    .find(|g| g.name == section.label())
-                {
-                    let style = self.paint_style(KEY_UNIT);
+                if let Some(cat) = section.category() {
+                    let group = super::qmk_catalog::category(cat);
                     titled_group(ui, group.name, |ui| {
                         super::picker::picker_grid_filtered(
                             ui,
@@ -317,16 +337,21 @@ impl crate::overlay_window::OverlayApp {
     }
 
     /// Draws the layer key selection page.
-    fn draw_qmk_layer_page(&mut self, ui: &mut egui::Ui, keyboard: &Keyboard, target: EditTarget) {
+    fn draw_qmk_layer_page(
+        &mut self,
+        ui: &mut egui::Ui,
+        keyboard: &Keyboard,
+        target: EditTarget,
+        style: &crate::key_paint::KeyPaintStyle,
+    ) {
         let layer_count = keyboard.layer_infos().len();
         let groups = super::qmk_catalog::layer_groups(layer_count);
         let selected = keyboard.get_action(target.layer_index, target.row, target.col);
-        let style = self.paint_style(KEY_UNIT);
         framed_candidate_groups_rows(
             ui,
             &groups,
             |_| selected.clone(),
-            &style,
+            style,
             |_, candidate| {
                 self.apply_write(keyboard, target, candidate.binding.clone());
             },
@@ -334,7 +359,13 @@ impl crate::overlay_window::OverlayApp {
     }
 
     /// Draws the parameter controls for composite modifier and layer keycodes.
-    fn draw_qmk_mods_page(&mut self, ui: &mut egui::Ui, keyboard: &Keyboard, target: EditTarget) {
+    fn draw_qmk_mods_page(
+        &mut self,
+        ui: &mut egui::Ui,
+        keyboard: &Keyboard,
+        target: EditTarget,
+        style: &crate::key_paint::KeyPaintStyle,
+    ) {
         let section = self.editor.qmk_draft.section;
         if section.has_layer() {
             let layer = self.editor.qmk_draft.mod_tap_layer.min(15) as u8;
@@ -355,14 +386,13 @@ impl crate::overlay_window::OverlayApp {
                 ),
                 _ => unreachable!(),
             };
-            let style = self.paint_style(KEY_UNIT);
             titled_group(ui, "Layer", |ui| {
                 picker_grid_rows(
                     ui,
                     "qmk_layer",
                     &group.candidates,
                     staged_code.map(KeyAction::Qmk).as_ref(),
-                    &style,
+                    style,
                     |candidate| {
                         if let KeyAction::Qmk(code) = &candidate.binding {
                             match QmkKeycode::from_u16(*code) {
@@ -382,14 +412,13 @@ impl crate::overlay_window::OverlayApp {
         }
 
         if section.has_mods() {
-            let mod_style = self.paint_style(KEY_UNIT);
             titled_group(ui, "Modifiers", |ui| {
                 if modifier_toggle_row(
                     ui,
                     "qmk_mods",
                     &mut self.editor.qmk_draft.mods,
                     &mut self.editor.qmk_draft.right,
-                    &mod_style,
+                    style,
                 ) {
                     self.commit_qmk_draft(keyboard, target);
                 }
@@ -398,7 +427,7 @@ impl crate::overlay_window::OverlayApp {
 
         if section.has_tap_key() {
             titled_group(ui, "Tap/base key (8-bit basic only)", |ui| {
-                self.draw_base_picker(ui, keyboard, target);
+                self.draw_base_picker(ui, keyboard, target, style);
             });
         }
     }
@@ -409,19 +438,24 @@ impl crate::overlay_window::OverlayApp {
         self.commit_staged(keyboard, target, staged);
     }
 
-    fn draw_base_picker(&mut self, ui: &mut egui::Ui, keyboard: &Keyboard, target: EditTarget) {
+    fn draw_base_picker(
+        &mut self,
+        ui: &mut egui::Ui,
+        keyboard: &Keyboard,
+        target: EditTarget,
+        style: &crate::key_paint::KeyPaintStyle,
+    ) {
         let candidates: Vec<Candidate> = (0x00u16..=0xFF)
             .filter(|&code| get_layout_key(code).is_some())
             .map(qmk_candidate)
             .collect();
         let selected = KeyAction::Qmk(self.editor.qmk_draft.base_code);
-        let style = self.paint_style(KEY_UNIT);
         picker_grid_rows(
             ui,
             "qmk_base",
             &candidates,
             Some(&selected),
-            &style,
+            style,
             |candidate| {
                 if let KeyAction::Qmk(code) = &candidate.binding {
                     self.editor.qmk_draft.base_code = *code;

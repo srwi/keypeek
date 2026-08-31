@@ -34,6 +34,15 @@ pub fn categories() -> &'static [CandidateGroup] {
     })
 }
 
+/// Returns the candidate group for a specific QMK keycode category.
+pub fn category(cat: KeycodeCategory) -> &'static CandidateGroup {
+    let index = KeycodeCategory::ALL
+        .iter()
+        .position(|&c| c == cat)
+        .expect("all categories are indexed");
+    &categories()[index]
+}
+
 /// Returns candidate groups for all supported layer keycode types.
 pub fn layer_groups(layer_count: usize) -> Vec<CandidateGroup> {
     QmkLayerOp::ALL

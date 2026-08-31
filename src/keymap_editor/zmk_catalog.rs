@@ -1,9 +1,9 @@
 //! Candidate ZMK keycodes and behaviors for picker grids.
 
+use super::picker::{Candidate, CandidateGroup};
 use crate::key_action::{KeyAction, LayerInfo};
 use std::sync::OnceLock;
 use zmk_studio_api::{Behavior, HidUsage, Keycode};
-use super::picker::{Candidate, CandidateGroup};
 
 pub use zmk_studio_api::BehaviorRole as ZmkBehaviorKind;
 
@@ -50,7 +50,8 @@ pub fn layer_groups(
 pub fn command_candidates(kind: ZmkBehaviorKind, backlight_level: u32) -> Vec<Candidate> {
     let mut behaviors = kind.standard_candidates();
     for behavior in &mut behaviors {
-        if let Behavior::Backlight(zmk_studio_api::BacklightCommand::Set(ref mut level)) = behavior {
+        if let Behavior::Backlight(zmk_studio_api::BacklightCommand::Set(ref mut level)) = behavior
+        {
             *level = backlight_level as u8;
         }
     }

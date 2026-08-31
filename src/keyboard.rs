@@ -424,14 +424,14 @@ impl Keyboard {
         self.overlay_visibility.lock().unwrap().changes_in(now)
     }
 
-    pub fn get_effective_key_layer(&self, row: usize, col: usize) -> (u8, bool) {
-        let layer_state = *self.layer_state.lock().unwrap();
-        let default_layer_state = *self.default_layer_state.lock().unwrap();
-        let matrix = self.matrix.lock().unwrap();
+    fn effective_layer_from_matrix(
+        matrix: &KeyMatrix,
+        layer_state: u32,
+        default_layer_state: u32,
+        row: usize,
+        col: usize,
+    ) -> (u8, bool) {
         let num_layers = matrix.get_num_layers().min(32);
-
-        // Track if there is any active momentary layer above the effective layer
-        // (i.e, key should be shown as background key)
         let mut active_layer_above = false;
 
         for i in (1..num_layers).rev() {
@@ -447,6 +447,13 @@ impl Keyboard {
         }
 
         (0, active_layer_above)
+    }
+
+    pub fn get_effective_key_layer(&self, row: usize, col: usize) -> (u8, bool) {
+        let layer_state = *self.layer_state.lock().unwrap();
+        let default_layer_state = *self.default_layer_state.lock().unwrap();
+        let matrix = self.matrix.lock().unwrap();
+        Self::effective_layer_from_matrix(&matrix, layer_state, default_layer_state, row, col)
     }
 
     pub fn get_key(&self, layer: usize, row: usize, col: usize) -> Option<LayoutKey> {
@@ -539,12 +546,22 @@ impl Keyboard {
     /// home-row mod, One-Shot-Mod, ...).
     fn held_mod_mask(&self) -> u16 {
         let guard = self.layout.lock().unwrap();
+        let matrix = self.matrix.lock().unwrap();
+        let layer_state = *self.layer_state.lock().unwrap();
+        let default_layer_state = *self.default_layer_state.lock().unwrap();
+
         guard.keys.iter().fold(0u16, |acc, key| {
-            if !self.is_key_pressed(key.row, key.col) {
+            if !matrix.is_pressed(key.row, key.col) {
                 return acc;
             }
-            let (effective_layer, _) = self.get_effective_key_layer(key.row, key.col);
-            let mask = self
+            let (effective_layer, _) = Self::effective_layer_from_matrix(
+                &matrix,
+                layer_state,
+                default_layer_state,
+                key.row,
+                key.col,
+            );
+            let mask = matrix
                 .get_key(effective_layer as usize, key.row, key.col)
                 .and_then(|k| k.mod_mask)
                 .unwrap_or(0);

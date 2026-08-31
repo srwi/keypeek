@@ -44,14 +44,18 @@ pub enum ZmkSessionState {
     Failed,
 }
 
+/// Active background operation and its kind.
+pub struct PendingTask {
+    pub kind: PendingKind,
+    pub receiver: mpsc::Receiver<Result<(), String>>,
+}
+
 /// Editor window state, owned by `OverlayApp`.
 pub struct EditorState {
     /// Active target key, or `None` when the window is closed.
     pub target: Option<EditTarget>,
-    /// Active background operation receiver.
-    pub pending: Option<mpsc::Receiver<Result<(), String>>>,
-    /// Type of the active background operation.
-    pub pending_kind: Option<PendingKind>,
+    /// Active background operation.
+    pub pending: Option<PendingTask>,
     /// Queued write operation to send when the current operation completes.
     pub queued: Option<(EditTarget, KeyAction)>,
     /// Error message to display in the window.
@@ -73,7 +77,6 @@ impl Default for EditorState {
         Self {
             target: None,
             pending: None,
-            pending_kind: None,
             queued: None,
             error: None,
             qmk_draft: QmkDraft::default(),
@@ -93,6 +96,24 @@ impl EditorState {
     /// Resets the editor state to default values.
     pub fn reset(&mut self) {
         *self = Self::default();
+    }
+
+    /// Starts a background operation and clears any previous error.
+    pub fn start_task(&mut self, kind: PendingKind, receiver: mpsc::Receiver<Result<(), String>>) {
+        self.pending = Some(PendingTask { kind, receiver });
+        self.error = None;
+    }
+
+    /// Clears the active background task and records an error, cancelling queued and closing states.
+    pub fn fail_task(&mut self, error: impl Into<String>) {
+        if let Some(task) = self.pending.take() {
+            if task.kind == PendingKind::Open {
+                self.zmk_session = ZmkSessionState::Failed;
+            }
+        }
+        self.queued = None;
+        self.closing = false;
+        self.error = Some(error.into());
     }
 
     /// Requests window close. If ZMK has unsaved changes, starts a save operation
@@ -340,9 +361,8 @@ impl crate::overlay_window::OverlayApp {
         if self.editor.pending.is_some() {
             return;
         }
-        self.editor.pending = Some(keyboard.save_keymap());
-        self.editor.pending_kind = Some(PendingKind::Save);
-        self.editor.error = None;
+        self.editor
+            .start_task(PendingKind::Save, keyboard.save_keymap());
     }
 
     /// Starts the ZMK Studio session connection if idle.
@@ -351,9 +371,8 @@ impl crate::overlay_window::OverlayApp {
             return;
         }
         self.editor.zmk_session = ZmkSessionState::Opening;
-        self.editor.pending = Some(keyboard.open_edit_session());
-        self.editor.pending_kind = Some(PendingKind::Open);
-        self.editor.error = None;
+        self.editor
+            .start_task(PendingKind::Open, keyboard.open_edit_session());
     }
 
     /// Sends a write command to the device, or queues it if an operation is in progress.
@@ -362,25 +381,18 @@ impl crate::overlay_window::OverlayApp {
             self.editor.queued = Some((target, action));
             return;
         }
-        let is_session = matches!(action, KeyAction::Zmk(_));
         let receiver = keyboard.set_key(target.layer_index, target.row, target.col, action);
-        self.editor.pending = Some(receiver);
-        if is_session {
-            self.editor.pending_kind = Some(PendingKind::Set);
-        }
-        self.editor.error = None;
+        self.editor.start_task(PendingKind::Set, receiver);
     }
 
     /// Polls active background operations and processes queued write commands.
     fn poll_pending_write(&mut self, ctx: &egui::Context, keyboard: &Keyboard) {
-        let Some(receiver) = &self.editor.pending else {
+        let Some(task) = &self.editor.pending else {
             return;
         };
-        let kind = self.editor.pending_kind;
-        match receiver.try_recv() {
+        match task.receiver.try_recv() {
             Ok(Ok(())) => {
-                self.editor.pending = None;
-                self.editor.pending_kind = None;
+                let kind = self.editor.pending.take().map(|t| t.kind);
                 match kind {
                     Some(PendingKind::Open) => self.editor.zmk_session = ZmkSessionState::Ready,
                     Some(PendingKind::Set) => self.editor.zmk_dirty = true,
@@ -399,24 +411,13 @@ impl crate::overlay_window::OverlayApp {
                 }
             }
             Ok(Err(e)) => {
-                if kind == Some(PendingKind::Open) {
-                    self.editor.zmk_session = ZmkSessionState::Failed;
-                }
-                self.editor.pending = None;
-                self.editor.pending_kind = None;
-                self.editor.queued = None;
-                self.editor.closing = false;
-                self.editor.error = Some(e);
+                self.editor.fail_task(e);
             }
             Err(mpsc::TryRecvError::Empty) => {
                 ctx.request_repaint();
             }
             Err(mpsc::TryRecvError::Disconnected) => {
-                self.editor.pending = None;
-                self.editor.pending_kind = None;
-                self.editor.queued = None;
-                self.editor.closing = false;
-                self.editor.error = Some("Connection lost".to_string());
+                self.editor.fail_task("Connection lost");
             }
         }
     }
