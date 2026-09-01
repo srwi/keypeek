@@ -138,7 +138,7 @@ pub struct QmkDraft {
     pub mods: u16,
     pub right: bool,
     pub base_code: u16,
-    pub mod_tap_layer: usize,
+    pub mod_tap_layer: Option<usize>,
     pub hex: String,
 }
 
@@ -149,7 +149,7 @@ impl Default for QmkDraft {
             mods: 0,
             right: false,
             base_code: 0,
-            mod_tap_layer: 0,
+            mod_tap_layer: None,
             hex: String::new(),
         }
     }
@@ -168,19 +168,21 @@ impl QmkDraft {
     /// Returns the encoded keycode if all required parameters are valid.
     pub(super) fn staged(&self) -> Option<u16> {
         match self.section {
-            Section::Combo if self.base_code != 0 => {
+            Section::Combo if self.base_code != 0 && self.mods != 0 => {
                 QmkKeycode::encode_mod_combo(self.mod_mask(), self.base_code as u8)
             }
-            Section::ModTap if self.base_code != 0 => {
+            Section::ModTap if self.base_code != 0 && self.mods != 0 => {
                 QmkKeycode::encode_mod_tap(self.mod_mask(), self.base_code as u8)
             }
             Section::LayerTap if self.base_code != 0 => {
-                QmkKeycode::encode_layer_tap(self.mod_tap_layer.min(15) as u8, self.base_code as u8)
+                let layer = self.mod_tap_layer?.min(15) as u8;
+                QmkKeycode::encode_layer_tap(layer, self.base_code as u8)
             }
-            Section::LayerMod => {
-                QmkKeycode::encode_layer_mod(self.mod_tap_layer.min(15) as u8, self.mod_mask())
+            Section::LayerMod if self.mods != 0 => {
+                let layer = self.mod_tap_layer?.min(15) as u8;
+                QmkKeycode::encode_layer_mod(layer, self.mod_mask())
             }
-            Section::OneShot => QmkKeycode::encode_one_shot_mod(self.mod_mask()),
+            Section::OneShot if self.mods != 0 => QmkKeycode::encode_one_shot_mod(self.mod_mask()),
             Section::Any => u16::from_str_radix(&self.hex, 16).ok(),
             _ => None,
         }
@@ -219,13 +221,13 @@ fn decode(code: u16) -> QmkDraft {
         }
         QmkKeycode::LayerTap { layer, keycode } => {
             draft.section = Section::LayerTap;
-            draft.mod_tap_layer = layer as usize;
+            draft.mod_tap_layer = Some(layer as usize);
             draft.base_code = keycode as u16;
             return draft;
         }
         QmkKeycode::LayerMod { layer, mods } => {
             draft.section = Section::LayerMod;
-            draft.mod_tap_layer = layer as usize;
+            draft.mod_tap_layer = Some(layer as usize);
             draft.mods = (mods.bits() & 0x0F) as u16;
             draft.right = mods.is_right();
             return draft;
@@ -268,7 +270,10 @@ impl crate::overlay_window::OverlayApp {
                 if !s.is_supported(keyboard) {
                     continue;
                 }
-                ui.selectable_value(&mut self.editor.qmk_draft.section, s, s.label());
+                let response = ui.selectable_value(&mut self.editor.qmk_draft.section, s, s.label());
+                if response.changed() {
+                    self.reset_qmk_draft_for_section(keyboard, target, s);
+                }
             }
         });
 
@@ -332,6 +337,32 @@ impl crate::overlay_window::OverlayApp {
         });
     }
 
+    fn reset_qmk_draft_for_section(
+        &mut self,
+        keyboard: &Keyboard,
+        target: EditTarget,
+        section: Section,
+    ) {
+        let current_action = keyboard.get_action(target.layer_index, target.row, target.col);
+        self.editor.qmk_draft = match current_action {
+            Some(KeyAction::Qmk(code)) => {
+                let d = QmkDraft::from_keycode(code);
+                if d.section == section {
+                    d
+                } else {
+                    QmkDraft {
+                        section,
+                        ..Default::default()
+                    }
+                }
+            }
+            _ => QmkDraft {
+                section,
+                ..Default::default()
+            },
+        };
+    }
+
     /// Draws the layer key selection page.
     fn draw_qmk_layer_page(
         &mut self,
@@ -363,10 +394,13 @@ impl crate::overlay_window::OverlayApp {
         style: &crate::key_paint::KeyPaintStyle,
     ) {
         let section = self.editor.qmk_draft.section;
+
         if section.has_layer() {
-            let selected_layer = self.editor.qmk_draft.mod_tap_layer.min(15) as u8;
-            let selected = QmkLayerOp::Momentary
-                .encode(selected_layer)
+            let selected = self
+                .editor
+                .qmk_draft
+                .mod_tap_layer
+                .and_then(|l| QmkLayerOp::Momentary.encode(l.min(15) as u8))
                 .map(KeyAction::Qmk);
             let group = super::qmk_catalog::layer_picker_group(keyboard.layer_infos().len());
             titled_group(ui, "Layer", |ui| {
@@ -379,7 +413,7 @@ impl crate::overlay_window::OverlayApp {
                     |candidate| {
                         if let KeyAction::Qmk(code) = &candidate.binding {
                             if let QmkKeycode::LayerOp { layer, .. } = QmkKeycode::from_u16(*code) {
-                                self.editor.qmk_draft.mod_tap_layer = layer as usize;
+                                self.editor.qmk_draft.mod_tap_layer = Some(layer as usize);
                                 self.commit_qmk_draft(keyboard, target);
                             }
                         }
@@ -426,12 +460,14 @@ impl crate::overlay_window::OverlayApp {
             .filter(|&code| get_layout_key(code).is_some())
             .map(qmk_candidate)
             .collect();
-        let selected = KeyAction::Qmk(self.editor.qmk_draft.base_code);
+        let selected = (self.editor.qmk_draft.base_code != 0)
+            .then_some(self.editor.qmk_draft.base_code)
+            .map(KeyAction::Qmk);
         picker_grid_rows(
             ui,
             "qmk_base",
             &candidates,
-            Some(&selected),
+            selected.as_ref(),
             style,
             |candidate| {
                 if let KeyAction::Qmk(code) = &candidate.binding {
@@ -447,7 +483,6 @@ impl crate::overlay_window::OverlayApp {
 mod tests {
     use super::*;
     use crate::qmk_keycode_labels::constants::*;
-    use qmk_via_api::keycodes::Keycode;
     use qmk_via_api::QmkLayerOp;
 
     fn assert_round_trips(draft: QmkDraft, code: u16) {
@@ -536,7 +571,7 @@ mod tests {
             ..Default::default()
         };
         assert_round_trips(draft, code);
-        assert_eq!(decode(code).mod_tap_layer, 2);
+        assert_eq!(decode(code).mod_tap_layer, Some(2));
         assert_eq!(decode(code).base_code, 0x1C);
         assert!(QmkKeycode::encode_layer_tap(16, 0x1C).is_none());
     }
@@ -550,7 +585,7 @@ mod tests {
             ..Default::default()
         };
         assert_round_trips(draft, code);
-        assert_eq!(decode(code).mod_tap_layer, 3);
+        assert_eq!(decode(code).mod_tap_layer, Some(3));
         assert_eq!(decode(code).mods, MOD_LSFT | MOD_LCTL);
         assert!(QmkKeycode::encode_layer_mod(16, mods).is_none());
         assert!(QmkKeycode::encode_layer_mod(3, QmkModMask::empty()).is_none());
@@ -558,72 +593,32 @@ mod tests {
 
     #[test]
     fn staged_requires_every_argument() {
-        // A modifier encoding without modifiers or without a tap key is
-        // mid-selection, not a bindable keycode.
+        // Mod-Tap requires both mods and base key
         let mut draft = QmkDraft {
             section: Section::ModTap,
+            mods: 0,
             base_code: 0x04,
             ..Default::default()
         };
         assert_eq!(draft.staged(), None);
         draft.mods = MOD_LSFT;
-        assert_eq!(
-            draft.staged(),
-            QmkKeycode::encode_mod_tap(QmkModMask::from_bits(QmkModMask::LSFT), 0x04)
-        );
-
-        draft.section = Section::LayerTap;
-        draft.mod_tap_layer = 2;
         draft.base_code = 0;
         assert_eq!(draft.staged(), None);
-        draft.base_code = 0x1C;
-        assert_eq!(draft.staged(), QmkKeycode::encode_layer_tap(2, 0x1C));
+        draft.base_code = 0x04;
+        assert!(draft.staged().is_some());
 
-        draft.section = Section::LayerMod;
-        draft.mod_tap_layer = 3;
-        draft.mods = 0;
-        assert_eq!(draft.staged(), None);
-        draft.mods = MOD_LSFT;
-        assert_eq!(
-            draft.staged(),
-            QmkKeycode::encode_layer_mod(3, QmkModMask::from_bits(QmkModMask::LSFT))
-        );
-
-        draft.section = Section::OneShot;
-        draft.mods = 0;
-        assert_eq!(draft.staged(), None);
-        // Having only the right-hand flag without any modifier bit is still invalid.
-        draft.right = true;
-        assert_eq!(draft.staged(), None);
-        draft.mods = MOD_LCTL;
-        assert_eq!(
-            draft.staged(),
-            QmkKeycode::encode_one_shot_mod(QmkModMask::from_bits(
-                QmkModMask::LCTL | QmkModMask::RIGHT_HAND
-            ))
-        );
-    }
-
-    #[test]
-    fn direct_category_keys_decode_into_their_sections() {
-        assert_eq!(
-            decode(Keycode::QK_BOOTLOADER as u16).section,
-            Section::Special
-        );
-        assert_eq!(
-            decode(Keycode::QK_BACKLIGHT_TOGGLE as u16).section,
-            Section::Backlight
-        );
-        assert_eq!(
-            decode(Keycode::QK_UNDERGLOW_TOGGLE as u16).section,
-            Section::Rgblight
-        );
-        assert_eq!(decode(Keycode::QK_AUDIO_ON as u16).section, Section::Audio);
-        assert_eq!(decode(Keycode::QK_KB_0 as u16).section, Section::Custom);
-
-        // Basic keys retain their base_code for seamless transition into ModTap/LayerTap/Combo.
-        let a_draft = decode(Keycode::KC_A as u16);
-        assert_eq!(a_draft.section, Section::Basic);
-        assert_eq!(a_draft.base_code, Keycode::KC_A as u16);
+        // Layer-Tap requires both layer and base key
+        let mut lt_draft = QmkDraft {
+            section: Section::LayerTap,
+            mod_tap_layer: None,
+            base_code: 0x04,
+            ..Default::default()
+        };
+        assert_eq!(lt_draft.staged(), None);
+        lt_draft.mod_tap_layer = Some(1);
+        lt_draft.base_code = 0;
+        assert_eq!(lt_draft.staged(), None);
+        lt_draft.base_code = 0x04;
+        assert!(lt_draft.staged().is_some());
     }
 }

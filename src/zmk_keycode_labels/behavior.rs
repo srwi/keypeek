@@ -259,19 +259,21 @@ pub fn behavior_to_layout_key(behavior: &Behavior, layer_names: &[String]) -> Op
     }
 }
 
+fn mod_mask_to_glyphs(m: u8) -> Label {
+    modifier_symbols::glyphs(
+        m & (MOD_LCTL | MOD_RCTL) != 0,
+        m & (MOD_LSFT | MOD_RSFT) != 0,
+        m & (MOD_LALT | MOD_RALT) != 0,
+        m & (MOD_LGUI | MOD_RGUI) != 0,
+    )
+}
+
 fn layer_tap_layout_key(layer_id: u32, tap: HidUsage, behavior: Option<Label>) -> LayoutKey {
     let tap_key = hid_usage_to_layout_key(tap);
     let mod_mask = tap.modifier_mask();
-    let argument = tap_key.argument.or_else(|| {
-        (mod_mask != 0).then(|| {
-            modifier_symbols::glyphs(
-                mod_mask & (MOD_LCTL | MOD_RCTL) != 0,
-                mod_mask & (MOD_LSFT | MOD_RSFT) != 0,
-                mod_mask & (MOD_LALT | MOD_RALT) != 0,
-                mod_mask & (MOD_LGUI | MOD_RGUI) != 0,
-            )
-        })
-    });
+    let argument = tap_key
+        .argument
+        .or_else(|| (mod_mask != 0).then(|| mod_mask_to_glyphs(mod_mask)));
     LayoutKey {
         tap: tap_key.tap,
         behavior,
@@ -295,13 +297,7 @@ fn hold_tap_layout_key(hold: HidUsage, tap: HidUsage, behavior: Option<Label>) -
     } else if let Some(sym) = hold_key.symbol {
         Label::new(sym)
     } else if hold.modifier_mask() != 0 {
-        let m = hold.modifier_mask();
-        modifier_symbols::glyphs(
-            m & (MOD_LCTL | MOD_RCTL) != 0,
-            m & (MOD_LSFT | MOD_RSFT) != 0,
-            m & (MOD_LALT | MOD_RALT) != 0,
-            m & (MOD_LGUI | MOD_RGUI) != 0,
-        )
+        mod_mask_to_glyphs(hold.modifier_mask())
     } else {
         hold_key.tap
     };

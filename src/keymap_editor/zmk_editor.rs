@@ -93,14 +93,14 @@ fn page_of(kind: ZmkBehaviorKind) -> Page {
 #[derive(Clone)]
 pub struct ZmkDraft {
     pub kind: ZmkBehaviorKind,
-    /// Base HID usage.
-    pub usage: HidUsage,
+    /// Base HID usage, or None if unselected.
+    pub usage: Option<HidUsage>,
     /// Modifier mask for key press behaviors.
     pub modifiers: u8,
     /// Held modifier mask for Mod-Tap behaviors.
     pub hold_mods: u8,
     /// Target layer ID for layer behaviors.
-    pub layer_id: u32,
+    pub layer_id: Option<u32>,
     /// Brightness level for Backlight Set commands.
     pub bl_value: u32,
     /// Indicates whether Backlight Set is staged.
@@ -111,10 +111,10 @@ impl Default for ZmkDraft {
     fn default() -> Self {
         Self {
             kind: ZmkBehaviorKind::KeyPress,
-            usage: HidUsage::from_parts(HID_USAGE_KEYBOARD, 0x04, 0),
+            usage: None,
             modifiers: 0,
-            hold_mods: MOD_LSFT,
-            layer_id: 0,
+            hold_mods: 0,
+            layer_id: None,
             bl_value: 0,
             bl_set_staged: false,
         }
@@ -122,6 +122,12 @@ impl Default for ZmkDraft {
 }
 
 impl ZmkDraft {
+    /// Returns the combined HID usage with draft modifiers applied, if selected.
+    pub fn tap_usage(&self) -> Option<HidUsage> {
+        self.usage
+            .map(|u| HidUsage::from_parts(u.page(), u.id(), self.modifiers))
+    }
+
     /// Creates draft state from an existing ZMK behavior.
     pub fn from_behavior(behavior: &Behavior) -> Self {
         let kind = behavior
@@ -130,23 +136,21 @@ impl ZmkDraft {
             .unwrap_or(ZmkBehaviorKind::KeyPress);
         let mut draft = ZmkDraft {
             kind,
+            layer_id: behavior.layer_id(),
             ..Default::default()
         };
-        if let Some(layer_id) = behavior.layer_id() {
-            draft.layer_id = layer_id;
-        }
         match behavior {
             Behavior::KeyPress(usage) | Behavior::KeyToggle(usage) | Behavior::StickyKey(usage) => {
-                draft.usage = usage.base();
+                draft.usage = Some(usage.base());
                 draft.modifiers = usage.modifiers();
             }
             Behavior::LayerTap { tap, .. } => {
-                draft.usage = tap.base();
+                draft.usage = Some(tap.base());
                 draft.modifiers = tap.modifiers();
             }
             Behavior::ModTap { hold, tap } => {
                 draft.hold_mods = hold.modifier_mask();
-                draft.usage = tap.base();
+                draft.usage = Some(tap.base());
                 draft.modifiers = tap.modifiers();
             }
             Behavior::Backlight(zmk_studio_api::BacklightCommand::Set(value)) => {
@@ -160,18 +164,18 @@ impl ZmkDraft {
 
     /// Returns the encoded Behavior if all required parameters are valid.
     pub fn staged(&self) -> Option<Behavior> {
-        let usage = HidUsage::from_parts(self.usage.page(), self.usage.id(), self.modifiers);
+        let tap_usage = self.tap_usage();
         match self.kind {
-            ZmkBehaviorKind::KeyPress => Some(Behavior::KeyPress(usage)),
-            ZmkBehaviorKind::KeyToggle => Some(Behavior::KeyToggle(usage)),
-            ZmkBehaviorKind::StickyKey => Some(Behavior::StickyKey(usage)),
-            ZmkBehaviorKind::LayerTap => Some(Behavior::LayerTap {
-                layer_id: self.layer_id,
-                tap: usage,
-            }),
-            ZmkBehaviorKind::ModTap if self.hold_mods != 0 => Some(Behavior::ModTap {
+            ZmkBehaviorKind::KeyPress => tap_usage.map(Behavior::KeyPress),
+            ZmkBehaviorKind::KeyToggle => tap_usage.map(Behavior::KeyToggle),
+            ZmkBehaviorKind::StickyKey => tap_usage.map(Behavior::StickyKey),
+            ZmkBehaviorKind::LayerTap => match (self.layer_id, tap_usage) {
+                (Some(layer_id), Some(tap)) => Some(Behavior::LayerTap { layer_id, tap }),
+                _ => None,
+            },
+            ZmkBehaviorKind::ModTap if self.hold_mods != 0 => tap_usage.map(|tap| Behavior::ModTap {
                 hold: HidUsage::from_modifier_mask(self.hold_mods),
-                tap: usage,
+                tap,
             }),
             _ => None,
         }
@@ -198,15 +202,17 @@ impl crate::overlay_window::OverlayApp {
         if !keyboard.is_action_supported(&KeyAction::Zmk(zmk_catalog::sample_behavior(
             self.editor.zmk_draft.kind,
         ))) {
-            self.editor.zmk_draft.kind = Page::ALL
+            if let Some(first) = Page::ALL
                 .iter()
-                .find_map(|page| page.supported_kinds(keyboard).next())
-                .unwrap_or(ZmkBehaviorKind::KeyPress);
+                .flat_map(|p| p.supported_kinds(keyboard))
+                .next()
+            {
+                self.editor.zmk_draft.kind = first;
+            }
             self.editor.zmk_draft.bl_set_staged = false;
         }
 
-        // Two-pane layout: every behavior kind lives in the left panel under
-        // its group header; the right pane holds the selected page. The
+        // Left pane: grouped behavior-kind selector. Direct-apply and
         // parameterless behaviors share one "Special" entry whose pane is a
         // key grid.
         super::editor_left_panel(ui, "zmk_kinds", |ui| {
@@ -223,10 +229,8 @@ impl crate::overlay_window::OverlayApp {
                             kind,
                             kind.label(),
                         );
-                        // Switching behavior kinds leaves any staged
-                        // Backlight Set behind.
                         if response.changed() {
-                            self.editor.zmk_draft.bl_set_staged = false;
+                            self.reset_zmk_draft_for_kind(keyboard, target, kind);
                         }
                     }
                 } else {
@@ -237,7 +241,7 @@ impl crate::overlay_window::OverlayApp {
                     );
                     if response.clicked() {
                         self.editor.zmk_draft.kind = first_kind;
-                        self.editor.zmk_draft.bl_set_staged = false;
+                        self.reset_zmk_draft_for_kind(keyboard, target, first_kind);
                     }
                 }
                 ui.add_space(4.0);
@@ -257,7 +261,7 @@ impl crate::overlay_window::OverlayApp {
                     // and key grid are tightly coupled, so they share the
                     // boundary.
                     titled_group(ui, "Key", |ui| {
-                        self.draw_usage_picker(ui, keyboard, target, true, &style);
+                        self.draw_usage_picker(ui, keyboard, target, &style);
                     });
                 }
                 Page::Layers => {
@@ -287,7 +291,7 @@ impl crate::overlay_window::OverlayApp {
                         );
                     });
                     titled_group(ui, "Tap key", |ui| {
-                        self.draw_usage_picker(ui, keyboard, target, true, &style);
+                        self.draw_usage_picker(ui, keyboard, target, &style);
                     });
                     // A Mod-Tap without a hold modifier has nothing to do
                     // on hold, so the header ghosts it as invalid.
@@ -301,43 +305,61 @@ impl crate::overlay_window::OverlayApp {
         });
     }
 
+    fn reset_zmk_draft_for_kind(
+        &mut self,
+        keyboard: &Keyboard,
+        target: EditTarget,
+        kind: ZmkBehaviorKind,
+    ) {
+        self.editor.zmk_draft.bl_set_staged = false;
+        let current_action = keyboard.get_action(target.layer_index, target.row, target.col);
+        self.editor.zmk_draft = match current_action {
+            Some(KeyAction::Zmk(b)) if b.role() == Some(kind) => ZmkDraft::from_behavior(&b),
+            _ => ZmkDraft {
+                kind,
+                ..Default::default()
+            },
+        };
+    }
+
     /// Draws the HID usage picker grid.
     fn draw_usage_picker(
         &mut self,
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
         target: EditTarget,
-        with_mods: bool,
         style: &crate::key_paint::KeyPaintStyle,
     ) {
-        let selected = KeyAction::Zmk(Behavior::KeyPress(self.editor.zmk_draft.usage.base()));
+        let selected = self
+            .editor
+            .zmk_draft
+            .usage
+            .map(|u| KeyAction::Zmk(Behavior::KeyPress(u)));
 
-        if with_mods {
-            modifier_toggle_grid(
-                ui,
-                "zmk_mods",
-                self.editor.zmk_draft.modifiers,
-                style,
-                |mask| {
-                    self.editor.zmk_draft.modifiers ^= mask;
-                    self.commit_zmk_draft(keyboard, target);
-                },
-            );
-        }
+        modifier_toggle_grid(
+            ui,
+            "zmk_mods",
+            self.editor.zmk_draft.modifiers,
+            style,
+            |mask| {
+                self.editor.zmk_draft.modifiers ^= mask;
+                self.commit_zmk_draft(keyboard, target);
+            },
+        );
 
         candidate_groups_rows(
             ui,
             zmk_catalog::categories(),
             |c| keyboard.is_action_supported(&c.binding),
-            |_| Some(selected.clone()),
+            |_| selected.clone(),
             style,
             |_, candidate| {
                 if let KeyAction::Zmk(Behavior::KeyPress(usage)) = &candidate.binding {
-                    self.editor.zmk_draft.usage = HidUsage::from_parts(
+                    self.editor.zmk_draft.usage = Some(HidUsage::from_parts(
                         usage.page(),
                         usage.id(),
                         self.editor.zmk_draft.modifiers,
-                    );
+                    ));
                     self.commit_zmk_draft(keyboard, target);
                 }
             },
@@ -357,29 +379,14 @@ impl crate::overlay_window::OverlayApp {
             .iter()
             .map(|info| info.name.clone().unwrap_or_default())
             .collect();
-        let tap = HidUsage::from_parts(
-            self.editor.zmk_draft.usage.page(),
-            self.editor.zmk_draft.usage.id(),
-            self.editor.zmk_draft.modifiers,
-        );
+        let tap = self.editor.zmk_draft.tap_usage().unwrap_or_else(|| {
+            HidUsage::from_parts(HID_USAGE_KEYBOARD, 0x04, 0)
+        });
         let kinds: Vec<_> = Page::Layers.supported_kinds(keyboard).collect();
         let groups = zmk_catalog::layer_groups(&kinds, layer_infos, &layer_names, tap);
 
-        let staged_tap = if self.editor.zmk_draft.kind == ZmkBehaviorKind::LayerTap {
-            Some(KeyAction::Zmk(Behavior::LayerTap {
-                layer_id: self.editor.zmk_draft.layer_id,
-                tap,
-            }))
-        } else {
-            None
-        };
-        let selected = |gi: usize| {
-            if kinds[gi] == ZmkBehaviorKind::LayerTap {
-                staged_tap.clone()
-            } else {
-                keyboard.get_action(target.layer_index, target.row, target.col)
-            }
-        };
+        let current_action = keyboard.get_action(target.layer_index, target.row, target.col);
+        let selected = |_| current_action.clone();
 
         framed_candidate_groups_rows(ui, &groups, selected, style, |gi, candidate| {
             let kind = kinds[gi];
@@ -387,14 +394,12 @@ impl crate::overlay_window::OverlayApp {
                 if kind == ZmkBehaviorKind::LayerTap {
                     if let Some(layer_id) = behavior.layer_id() {
                         self.editor.zmk_draft.kind = ZmkBehaviorKind::LayerTap;
-                        self.editor.zmk_draft.layer_id = layer_id;
+                        self.editor.zmk_draft.layer_id = Some(layer_id);
                         self.commit_zmk_draft(keyboard, target);
                     }
                 } else {
                     self.editor.zmk_draft.kind = kind;
-                    if let Some(layer_id) = behavior.layer_id() {
-                        self.editor.zmk_draft.layer_id = layer_id;
-                    }
+                    self.editor.zmk_draft.layer_id = behavior.layer_id();
                     self.apply_write(keyboard, target, candidate.binding.clone());
                 }
             }
@@ -402,7 +407,7 @@ impl crate::overlay_window::OverlayApp {
 
         if self.editor.zmk_draft.kind == ZmkBehaviorKind::LayerTap {
             titled_group(ui, "Tap key", |ui| {
-                self.draw_usage_picker(ui, keyboard, target, true, style);
+                self.draw_usage_picker(ui, keyboard, target, style);
             });
         }
     }
@@ -518,13 +523,11 @@ mod tests {
         assert_eq!(draft.hold_mods, MOD_LCTL | MOD_RSFT);
         assert_eq!(draft.staged(), Some(behavior));
     }
-
     #[test]
     fn single_mod_hold_stays_a_modifier_usage() {
-        // One selected bit encodes back as the bare modifier usage the
-        // firmware writes for plain mod-taps, not as a masked usage.
         let draft = ZmkDraft {
             kind: ZmkBehaviorKind::ModTap,
+            usage: Some(HidUsage::from_parts(HID_USAGE_KEYBOARD, 0x04, 0)),
             hold_mods: MOD_RALT,
             ..Default::default()
         };
@@ -541,8 +544,6 @@ mod tests {
     fn retarget_opens_the_matching_page() {
         use ZmkBehaviorKind as K;
         let kind_of = |behavior: Behavior| ZmkDraft::from_behavior(&behavior).kind;
-        // Layer and command kinds apply from their page's grids, so the draft
-        // only records which page to open on retarget.
         assert_eq!(
             kind_of(Behavior::MomentaryLayer { layer_id: 2 }),
             K::MomentaryLayer
@@ -560,7 +561,6 @@ mod tests {
             kind_of(Behavior::MouseScroll { x: 0, y: 1 }),
             K::MouseScroll
         );
-        // Behaviors not assignable through ZMK Studio (e.g. ExternalPower) fall back to KeyPress.
         assert_eq!(
             kind_of(Behavior::ExternalPower(
                 zmk_studio_api::ExternalPowerCommand::Off
@@ -571,32 +571,54 @@ mod tests {
 
     #[test]
     fn layer_tap_stages_layer_and_tap_side() {
-        // The layer page stages a Layer-Tap's layer; the tap picker below
-        // applies the finished binding from the draft.
         let draft = ZmkDraft::from_behavior(&Behavior::LayerTap {
             layer_id: 3,
             tap: HidUsage::from_parts(HID_USAGE_KEYBOARD, 0x1C, MOD_LSFT),
         });
         assert_eq!(draft.kind, ZmkBehaviorKind::LayerTap);
-        assert_eq!(draft.layer_id, 3);
-        assert_eq!(draft.usage.id(), 0x1C);
+        assert_eq!(draft.layer_id, Some(3));
+        assert_eq!(draft.usage.unwrap().id(), 0x1C);
         assert_eq!(draft.modifiers, MOD_LSFT);
     }
 
     #[test]
-    fn mod_tap_without_hold_modifier_is_invalid() {
+    fn mod_tap_requires_both_hold_and_tap() {
         let mut draft = ZmkDraft {
             kind: ZmkBehaviorKind::ModTap,
+            usage: None,
             hold_mods: 0,
             ..Default::default()
         };
         assert_eq!(draft.staged(), None);
         draft.hold_mods = MOD_LSFT;
+        assert_eq!(draft.staged(), None); // Still missing tap usage
+        draft.usage = Some(HidUsage::from_parts(HID_USAGE_KEYBOARD, 0x04, 0));
         assert_eq!(
             draft.staged(),
             Some(Behavior::ModTap {
                 hold: HidUsage::from_modifier_mask(MOD_LSFT),
-                tap: draft.usage.base(),
+                tap: HidUsage::from_parts(HID_USAGE_KEYBOARD, 0x04, 0),
+            })
+        );
+    }
+
+    #[test]
+    fn layer_tap_requires_both_layer_and_tap() {
+        let mut draft = ZmkDraft {
+            kind: ZmkBehaviorKind::LayerTap,
+            usage: None,
+            layer_id: None,
+            ..Default::default()
+        };
+        assert_eq!(draft.staged(), None);
+        draft.layer_id = Some(2);
+        assert_eq!(draft.staged(), None); // Still missing tap usage
+        draft.usage = Some(HidUsage::from_parts(HID_USAGE_KEYBOARD, 0x04, 0));
+        assert_eq!(
+            draft.staged(),
+            Some(Behavior::LayerTap {
+                layer_id: 2,
+                tap: HidUsage::from_parts(HID_USAGE_KEYBOARD, 0x04, 0),
             })
         );
     }
