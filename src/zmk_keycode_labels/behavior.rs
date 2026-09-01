@@ -1,7 +1,9 @@
+use crate::layout_key::modifier_symbols;
 use crate::layout_key::{behavior_names, BorderStyle, KeycodeKind, Label, LayoutKey};
 use zmk_studio_api::{
     BacklightCommand, Behavior, BehaviorParam, BluetoothCommand, ExternalPowerCommand, HidUsage,
-    MouseButton, OutputSelection, UnderglowCommand,
+    MouseButton, OutputSelection, UnderglowCommand, MOD_LALT, MOD_LCTL, MOD_LGUI, MOD_LSFT,
+    MOD_RALT, MOD_RCTL, MOD_RGUI, MOD_RSFT,
 };
 
 use super::hid_usage::hid_usage_to_layout_key;
@@ -45,6 +47,7 @@ pub fn behavior_to_layout_key(behavior: &Behavior, layer_names: &[String]) -> Op
             Some(LayoutKey {
                 tap: key.tap,
                 behavior: Some(behavior_names::STICKY_KEY.label()),
+                argument: key.argument,
                 shifted: key.shifted,
                 ralt: key.ralt,
                 ralt_shifted: key.ralt_shifted,
@@ -258,9 +261,21 @@ pub fn behavior_to_layout_key(behavior: &Behavior, layer_names: &[String]) -> Op
 
 fn layer_tap_layout_key(layer_id: u32, tap: HidUsage, behavior: Option<Label>) -> LayoutKey {
     let tap_key = hid_usage_to_layout_key(tap);
+    let mod_mask = tap.modifier_mask();
+    let argument = tap_key.argument.or_else(|| {
+        (mod_mask != 0).then(|| {
+            modifier_symbols::glyphs(
+                mod_mask & (MOD_LCTL | MOD_RCTL) != 0,
+                mod_mask & (MOD_LSFT | MOD_RSFT) != 0,
+                mod_mask & (MOD_LALT | MOD_RALT) != 0,
+                mod_mask & (MOD_LGUI | MOD_RGUI) != 0,
+            )
+        })
+    });
     LayoutKey {
         tap: tap_key.tap,
         behavior,
+        argument,
         shifted: tap_key.shifted,
         ralt: tap_key.ralt,
         ralt_shifted: tap_key.ralt_shifted,
@@ -275,9 +290,20 @@ fn layer_tap_layout_key(layer_id: u32, tap: HidUsage, behavior: Option<Label>) -
 fn hold_tap_layout_key(hold: HidUsage, tap: HidUsage, behavior: Option<Label>) -> LayoutKey {
     let hold_key = hid_usage_to_layout_key(hold);
     let tap_key = hid_usage_to_layout_key(tap);
-    let hold_label = match hold_key.symbol {
-        Some(sym) => Label::new(sym),
-        None => hold_key.tap,
+    let hold_label = if let Some(arg) = hold_key.argument {
+        arg
+    } else if let Some(sym) = hold_key.symbol {
+        Label::new(sym)
+    } else if hold.modifier_mask() != 0 {
+        let m = hold.modifier_mask();
+        modifier_symbols::glyphs(
+            m & (MOD_LCTL | MOD_RCTL) != 0,
+            m & (MOD_LSFT | MOD_RSFT) != 0,
+            m & (MOD_LALT | MOD_RALT) != 0,
+            m & (MOD_LGUI | MOD_RGUI) != 0,
+        )
+    } else {
+        hold_key.tap
     };
     LayoutKey {
         tap: tap_key.tap,

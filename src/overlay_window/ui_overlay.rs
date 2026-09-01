@@ -191,6 +191,6 @@ fn show_pointer_tooltip(ui: &egui::Ui, id: egui::Id, text: &str) {
     )
     .gap(12.0)
     .show(|ui| {
-        ui.label(text);
+        ui.add(egui::Label::new(text).wrap_mode(egui::TextWrapMode::Extend));
     });
 }

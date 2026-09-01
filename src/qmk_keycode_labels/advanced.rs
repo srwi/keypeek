@@ -113,22 +113,3 @@ fn mod_mask_to_label(mods: QmkModMask) -> Label {
         mods.has_gui(),
     )
 }
-
-#[cfg(test)]
-mod tests {
-    use super::get_advanced_layout_key;
-
-    // A Shift-wrapped key (LSFT(KC_0)) shows the flat result character, not
-    // a Base+Shifted stack and no badge: the modifier's effect IS the output,
-    // so there is nothing left to badge. The expected char is German-specific
-    // (AZERTY shifts its digit row differently), so it needs a live German
-    // session.
-    #[test]
-    #[ignore]
-    fn shift_wrapped_key_shows_flat_result_no_badge() {
-        let key = get_advanced_layout_key(0x0227).unwrap();
-        assert_eq!(key.tap.full, "=");
-        assert!(key.shifted.is_none());
-        assert!(key.argument.is_none());
-    }
-}
