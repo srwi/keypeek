@@ -453,7 +453,7 @@ fn keycode_label(keycode: &Keycode) -> Option<LayoutKey> {
             ..Default::default()
         }),
         Keycode::KP_NUMLOCK => Some(LayoutKey {
-            tap: Label::with_short("Num\nLock", "NumLk"),
+            tap: Label::with_short("Num Lock", "NumLk"),
             ..Default::default()
         }),
         Keycode::KP_DIVIDE => Some(LayoutKey {

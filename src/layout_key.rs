@@ -75,9 +75,14 @@ pub mod modifier_symbols {
     /// Build a standalone modifier key: glyph modifiers go in `symbol`, text names in `tap`.
     /// `mod_mask` is `HELD_MOD_SHIFT`/`HELD_MOD_RALT`, or 0. See their doc comments.
     pub fn modifier_key(m: &ModName, mod_mask: u16) -> super::LayoutKey {
+        let is_sym = is_glyph(m.full);
         super::LayoutKey {
-            tap: super::Label::with_short(m.name, m.short),
-            symbol: is_glyph(m.full).then(|| m.full.to_string()),
+            tap: if is_sym {
+                super::Label::new(m.name)
+            } else {
+                super::Label::with_short(m.name, m.short)
+            },
+            symbol: is_sym.then(|| m.full.to_string()),
             kind: super::KeycodeKind::Modifier,
             mod_mask: (mod_mask != 0).then_some(mod_mask),
             ..Default::default()

@@ -4,7 +4,7 @@ use super::picker::{Candidate, CandidateGroup};
 use crate::key_action::KeyAction;
 use crate::qmk_keycode_labels::{resolve_qmk_key, KeyResolution};
 use qmk_via_api::keycodes::{Keycode, KeycodeCategory};
-use qmk_via_api::{QmkKeycode, QmkLayerOp, QmkModMask};
+use qmk_via_api::QmkLayerOp;
 use std::sync::OnceLock;
 
 fn candidate_group(name: &'static str, codes: impl IntoIterator<Item = u16>) -> CandidateGroup {
@@ -57,30 +57,14 @@ pub fn layer_groups(layer_count: usize) -> Vec<CandidateGroup> {
         .collect()
 }
 
-/// Returns a candidate group for selecting a Layer-Tap layer.
-pub fn layer_tap_group(layer_count: usize, tap_code: u16) -> CandidateGroup {
+/// Returns a candidate group for selecting a layer (L0..L15).
+pub fn layer_picker_group(layer_count: usize) -> CandidateGroup {
     CandidateGroup {
         name: "Layer",
         candidates: (0..layer_count.min(16))
             .filter_map(|layer| {
-                let visual = qmk_candidate(QmkLayerOp::Momentary.encode(layer as u8)?).key;
-                let lt_code = QmkKeycode::encode_layer_tap(layer as u8, tap_code as u8)?;
-                Some(Candidate::new(KeyAction::Qmk(lt_code), visual))
-            })
-            .collect(),
-    }
-}
-
-/// Returns a candidate group for selecting a Layer-Mod layer.
-pub fn layer_mod_group(layer_count: usize, mods: u16) -> CandidateGroup {
-    CandidateGroup {
-        name: "Layer",
-        candidates: (0..layer_count.min(16))
-            .filter_map(|layer| {
-                let visual = qmk_candidate(QmkLayerOp::Momentary.encode(layer as u8)?).key;
-                let lm_code =
-                    QmkKeycode::encode_layer_mod(layer as u8, QmkModMask::from_bits(mods as u8))?;
-                Some(Candidate::new(KeyAction::Qmk(lm_code), visual))
+                let mo_code = QmkLayerOp::Momentary.encode(layer as u8)?;
+                Some(qmk_candidate(mo_code))
             })
             .collect(),
     }

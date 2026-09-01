@@ -434,7 +434,7 @@ fn get_basic_layout_key_static(keycode: Keycode) -> Option<LayoutKey> {
             ..Default::default()
         }),
         Keycode::KC_NUM_LOCK => Some(LayoutKey {
-            tap: Label::with_short("Num\nLock", "NumLk"),
+            tap: Label::with_short("Num Lock", "NumLk"),
             ..Default::default()
         }),
         Keycode::KC_KP_SLASH => Some(LayoutKey {

@@ -409,18 +409,34 @@ fn fit_text_galley(
     style: &KeyPaintStyle,
 ) -> Option<std::sync::Arc<egui::Galley>> {
     let (max_width, max_height) = (max.x, max.y);
-    let create_galley =
-        |text: String, fid: egui::FontId| ui.painter().layout_no_wrap(text, fid, color);
-    let fits_width = |galley: &std::sync::Arc<egui::Galley>| galley.rect.width() <= max_width;
+    let create_galley = |text: &str, fid: egui::FontId| {
+        let mut job = egui::text::LayoutJob {
+            halign: egui::Align::Center,
+            ..Default::default()
+        };
+        job.append(text, 0.0, egui::TextFormat::simple(fid, color));
+        ui.painter().layout_job(job)
+    };
+    let fits = |galley: &std::sync::Arc<egui::Galley>| {
+        galley.rect.width() <= max_width && galley.rect.height() <= max_height
+    };
 
-    let full_galley = create_galley(full.to_string(), font.clone());
-    if fits_width(&full_galley) {
+    let full_galley = create_galley(full, font.clone());
+    if fits(&full_galley) {
         return Some(full_galley);
     }
 
+    if !full.contains('\n') && full.matches(' ').count() == 1 {
+        let wrapped = full.replacen(' ', "\n", 1);
+        let wrapped_galley = create_galley(&wrapped, font.clone());
+        if fits(&wrapped_galley) {
+            return Some(wrapped_galley);
+        }
+    }
+
     let mut truncated = if let Some(short) = short {
-        let short_galley = create_galley(short.to_string(), font.clone());
-        if fits_width(&short_galley) {
+        let short_galley = create_galley(short, font.clone());
+        if fits(&short_galley) {
             return Some(short_galley);
         }
         short.to_string()
@@ -429,8 +445,8 @@ fn fit_text_galley(
     };
 
     if style.auto_fit_before_ellipsis {
-        let fit_text = short.unwrap_or(full).to_string();
-        let fit_galley = create_galley(fit_text.clone(), font.clone());
+        let fit_text = short.unwrap_or(full);
+        let fit_galley = create_galley(fit_text, font.clone());
         let width_scale = if fit_galley.rect.width() > 0.0 {
             max_width / fit_galley.rect.width()
         } else {
@@ -451,8 +467,8 @@ fn fit_text_galley(
     while truncated.len() > 1 {
         truncated.pop();
         let truncated_with_ellipsis = format!("{}...", truncated);
-        let truncated_galley = create_galley(truncated_with_ellipsis, font.clone());
-        if fits_width(&truncated_galley) {
+        let truncated_galley = create_galley(&truncated_with_ellipsis, font.clone());
+        if fits(&truncated_galley) {
             return Some(truncated_galley);
         }
     }

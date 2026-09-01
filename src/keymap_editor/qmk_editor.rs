@@ -37,7 +37,7 @@ pub enum Section {
 }
 
 use qmk_via_api::keycodes::{Keycode, KeycodeCategory};
-use qmk_via_api::{QmkKeycode, QmkModMask};
+use qmk_via_api::{QmkKeycode, QmkLayerOp, QmkModMask};
 
 impl Section {
     const ALL: [Section; 15] = [
@@ -163,10 +163,6 @@ impl QmkDraft {
 
     fn mod_mask(&self) -> QmkModMask {
         QmkModMask::from_bits((self.mods & 0x0F) as u8).with_right(self.right)
-    }
-
-    fn mod_value(&self) -> u16 {
-        self.mod_mask().bits() as u16
     }
 
     /// Returns the encoded keycode if all required parameters are valid.
@@ -368,43 +364,24 @@ impl crate::overlay_window::OverlayApp {
     ) {
         let section = self.editor.qmk_draft.section;
         if section.has_layer() {
-            let layer = self.editor.qmk_draft.mod_tap_layer.min(15) as u8;
-            let (group, staged_code) = match section {
-                Section::LayerTap => (
-                    super::qmk_catalog::layer_tap_group(
-                        keyboard.layer_infos().len(),
-                        self.editor.qmk_draft.base_code,
-                    ),
-                    QmkKeycode::encode_layer_tap(layer, self.editor.qmk_draft.base_code as u8),
-                ),
-                Section::LayerMod => (
-                    super::qmk_catalog::layer_mod_group(
-                        keyboard.layer_infos().len(),
-                        self.editor.qmk_draft.mod_value(),
-                    ),
-                    QmkKeycode::encode_layer_mod(layer, self.editor.qmk_draft.mod_mask()),
-                ),
-                _ => unreachable!(),
-            };
+            let selected_layer = self.editor.qmk_draft.mod_tap_layer.min(15) as u8;
+            let selected = QmkLayerOp::Momentary
+                .encode(selected_layer)
+                .map(KeyAction::Qmk);
+            let group = super::qmk_catalog::layer_picker_group(keyboard.layer_infos().len());
             titled_group(ui, "Layer", |ui| {
                 picker_grid_rows(
                     ui,
                     "qmk_layer",
                     &group.candidates,
-                    staged_code.map(KeyAction::Qmk).as_ref(),
+                    selected.as_ref(),
                     style,
                     |candidate| {
                         if let KeyAction::Qmk(code) = &candidate.binding {
-                            match QmkKeycode::from_u16(*code) {
-                                QmkKeycode::LayerTap { layer, .. } => {
-                                    self.editor.qmk_draft.mod_tap_layer = layer as usize;
-                                }
-                                QmkKeycode::LayerMod { layer, .. } => {
-                                    self.editor.qmk_draft.mod_tap_layer = layer as usize;
-                                }
-                                _ => {}
+                            if let QmkKeycode::LayerOp { layer, .. } = QmkKeycode::from_u16(*code) {
+                                self.editor.qmk_draft.mod_tap_layer = layer as usize;
+                                self.commit_qmk_draft(keyboard, target);
                             }
-                            self.commit_qmk_draft(keyboard, target);
                         }
                     },
                 );
