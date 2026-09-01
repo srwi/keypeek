@@ -50,6 +50,14 @@ pub struct PendingTask {
     pub receiver: mpsc::Receiver<Result<(), String>>,
 }
 
+/// Blocking overlay state for connecting, saving, or failed operations.
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum EditorOverlay {
+    Connecting,
+    Saving,
+    Failed,
+}
+
 /// Editor window state, owned by `OverlayApp`.
 pub struct EditorState {
     /// Active target key, or `None` when the window is closed.
@@ -98,10 +106,32 @@ impl EditorState {
         *self = Self::default();
     }
 
+    /// Returns the active blocking overlay state, if any.
+    pub fn overlay(&self) -> Option<EditorOverlay> {
+        if self.closing {
+            Some(EditorOverlay::Saving)
+        } else if self.zmk_session == ZmkSessionState::Opening {
+            Some(EditorOverlay::Connecting)
+        } else if self.zmk_session == ZmkSessionState::Failed {
+            Some(EditorOverlay::Failed)
+        } else {
+            None
+        }
+    }
+
     /// Starts a background operation and clears any previous error.
     pub fn start_task(&mut self, kind: PendingKind, receiver: mpsc::Receiver<Result<(), String>>) {
         self.pending = Some(PendingTask { kind, receiver });
         self.error = None;
+    }
+
+    /// Updates session or dirty flags upon successful completion of a background operation.
+    pub fn complete_task(&mut self, kind: PendingKind) {
+        match kind {
+            PendingKind::Open => self.zmk_session = ZmkSessionState::Ready,
+            PendingKind::Set => self.zmk_dirty = true,
+            PendingKind::Save => self.zmk_dirty = false,
+        }
     }
 
     /// Clears the active background task and records an error, cancelling queued and closing states.
@@ -221,10 +251,16 @@ impl crate::overlay_window::OverlayApp {
         }
 
         let closing = self.editor.closing;
-        let mut window = Window::new("Edit key")
+        let title = if self.editor.zmk_dirty {
+            "Edit key (Unsaved changes)"
+        } else {
+            "Edit key"
+        };
+        let mut window = Window::new(title)
+            .id(egui::Id::new("edit_key_window"))
             .resizable(true)
-            .default_size(egui::vec2(480.0, 620.0))
-            .min_size(egui::vec2(440.0, 320.0));
+            .default_size(egui::vec2(425.0, 475.0))
+            .min_size(egui::vec2(420.0, 320.0));
         let mut open = true;
         if !closing {
             window = window.open(&mut open);
@@ -235,31 +271,29 @@ impl crate::overlay_window::OverlayApp {
                 ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
             }
 
-            let target = self.draw_editor_header(ui, keyboard, target);
+            let is_enabled = self.editor.overlay().is_none();
+            ui.add_enabled_ui(is_enabled, |ui| {
+                let target = self.draw_editor_header(ui, keyboard, target);
 
-            // Disable input while saving before close.
-            if closing {
-                ui.disable();
-            }
-            let action = keyboard.get_action(target.layer_index, target.row, target.col);
-            let write_support = keyboard.write_support();
-            match (write_support, action.as_ref()) {
-                (WriteSupport::Immediate, Some(KeyAction::Qmk(_))) => {
-                    ui.add_space(8.0);
-                    self.draw_qmk_editor_body(ui, keyboard, target);
-                }
-                (WriteSupport::Session, Some(KeyAction::Zmk(_))) => {
-                    ui.add_space(8.0);
-                    let session_ready = self.editor.zmk_session == ZmkSessionState::Ready;
-                    ui.add_enabled_ui(session_ready, |ui| {
+                let action = keyboard.get_action(target.layer_index, target.row, target.col);
+                let write_support = keyboard.write_support();
+                match (write_support, action.as_ref()) {
+                    (WriteSupport::Immediate, Some(KeyAction::Qmk(_))) => {
+                        ui.add_space(8.0);
+                        self.draw_qmk_editor_body(ui, keyboard, target);
+                    }
+                    (WriteSupport::Session, Some(KeyAction::Zmk(_))) => {
+                        ui.add_space(8.0);
                         self.draw_zmk_editor_body(ui, keyboard, target);
-                    });
+                    }
+                    _ => {
+                        ui.add_space(8.0);
+                        ui.weak("This key cannot be edited in this version.");
+                    }
                 }
-                _ => {
-                    ui.add_space(8.0);
-                    ui.weak("This key cannot be edited in this version.");
-                }
-            }
+            });
+
+            self.draw_editor_overlay(ui);
         });
 
         if !open {
@@ -285,7 +319,7 @@ impl crate::overlay_window::OverlayApp {
         }
     }
 
-    /// Draws the header row with layer switcher buttons and session status.
+    /// Draws the header row with layer switcher buttons spanning the full width.
     fn draw_editor_header(
         &mut self,
         ui: &mut egui::Ui,
@@ -296,18 +330,19 @@ impl crate::overlay_window::OverlayApp {
         let style = self.paint_style(picker::KEY_UNIT);
         let mut selected_layer = None;
 
+        let layer_count = layer_infos.len().max(1);
+        let item_spacing = ui.spacing().item_spacing.x;
+        let total_spacing = (layer_count - 1) as f32 * item_spacing;
+        let button_width = ((ui.available_width() - total_spacing) / layer_count as f32).max(24.0);
+
         ui.horizontal(|ui| {
             for (i, info) in layer_infos.iter().enumerate() {
                 let label = info.short_name(i);
                 let is_selected = target.layer_index == i;
-                if layer_button(ui, &label, i, is_selected, &style).clicked() {
+                if layer_button(ui, &label, i, is_selected, button_width, &style).clicked() {
                     selected_layer = Some(i);
                 }
             }
-
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                self.draw_session_status(ui);
-            });
         });
 
         if !self.editor.closing {
@@ -331,30 +366,37 @@ impl crate::overlay_window::OverlayApp {
         self.editor.retarget(keyboard, target);
     }
 
-    /// Draws the ZMK session status indicator.
-    fn draw_session_status(&mut self, ui: &mut egui::Ui) {
-        if self.editor.zmk_session == ZmkSessionState::Opening {
-            ui.label("Connecting…");
-            ui.add(egui::Spinner::new().size(14.0));
+    /// Draws a centered spinner and status text during connecting, saving, or failed operations.
+    fn draw_editor_overlay(&mut self, ui: &mut egui::Ui) {
+        let Some(overlay) = self.editor.overlay() else {
             return;
-        }
-        if self.editor.zmk_session == ZmkSessionState::Failed {
-            if ui.button("Retry").clicked() {
-                self.editor.zmk_session = ZmkSessionState::Idle;
-                self.editor.error = None;
-            }
-            return;
-        }
-        if !self.editor.zmk_dirty {
-            return;
-        }
-        if self.editor.closing {
-            ui.label("Saving…");
-            ui.add(egui::Spinner::new().size(14.0));
-        } else {
-            ui.colored_label(egui::Color32::from_rgb(220, 180, 60), "Unsaved changes")
-                .on_hover_text("Changes are saved automatically when this window closes.");
-        }
+        };
+
+        let (msg, is_spinner, is_retry) = match overlay {
+            EditorOverlay::Saving => ("Saving…", true, false),
+            EditorOverlay::Connecting => ("Connecting…", true, false),
+            EditorOverlay::Failed => ("Connection failed", false, true),
+        };
+
+        let window_rect = ui.max_rect();
+        ui.scope_builder(egui::UiBuilder::new().max_rect(window_rect), |ui| {
+            ui.vertical_centered(|ui| {
+                let top_space = (window_rect.height() * 0.5 - 30.0).max(0.0);
+                ui.add_space(top_space);
+                if is_spinner {
+                    ui.add(egui::Spinner::new().size(24.0));
+                    ui.add_space(8.0);
+                }
+                ui.label(egui::RichText::new(msg).size(14.0).strong());
+                if is_retry {
+                    ui.add_space(8.0);
+                    if ui.button("Retry").clicked() {
+                        self.editor.zmk_session = ZmkSessionState::Idle;
+                        self.editor.error = None;
+                    }
+                }
+            });
+        });
     }
 
     fn start_save(&mut self, keyboard: &Keyboard) {
@@ -392,12 +434,8 @@ impl crate::overlay_window::OverlayApp {
         };
         match task.receiver.try_recv() {
             Ok(Ok(())) => {
-                let kind = self.editor.pending.take().map(|t| t.kind);
-                match kind {
-                    Some(PendingKind::Open) => self.editor.zmk_session = ZmkSessionState::Ready,
-                    Some(PendingKind::Set) => self.editor.zmk_dirty = true,
-                    Some(PendingKind::Save) => self.editor.zmk_dirty = false,
-                    None => {}
+                if let Some(task) = self.editor.pending.take() {
+                    self.editor.complete_task(task.kind);
                 }
                 if let Some((target, action)) = self.editor.queued.take() {
                     self.apply_write(keyboard, target, action);
@@ -428,6 +466,7 @@ fn layer_button(
     label: &str,
     layer_index: usize,
     selected: bool,
+    width: f32,
     style: &crate::key_paint::KeyPaintStyle,
 ) -> egui::Response {
     let colors = style.colors_for(
@@ -443,7 +482,7 @@ fn layer_button(
         .fill(colors.fill)
         .stroke(egui::Stroke::new(stroke_width, colors.border))
         .corner_radius(4.0)
-        .min_size(egui::vec2(32.0, 22.0));
+        .min_size(egui::vec2(width, 22.0));
 
     let response = ui.add(button);
     if response.hovered() {
