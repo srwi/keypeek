@@ -282,18 +282,17 @@ impl crate::overlay_window::OverlayApp {
             ui.add_enabled_ui(is_enabled, |ui| {
                 let target = self.draw_editor_header(ui, keyboard, target);
 
-                let action = keyboard.get_action(target.layer_index, target.row, target.col);
                 let write_support = keyboard.write_support();
-                match (write_support, action.as_ref()) {
-                    (WriteSupport::Immediate, Some(KeyAction::Qmk(_))) => {
+                match write_support {
+                    WriteSupport::Immediate => {
                         ui.add_space(8.0);
                         self.draw_qmk_editor_body(ui, keyboard, target);
                     }
-                    (WriteSupport::Session, Some(KeyAction::Zmk(_))) => {
+                    WriteSupport::Session => {
                         ui.add_space(8.0);
                         self.draw_zmk_editor_body(ui, keyboard, target);
                     }
-                    _ => {
+                    WriteSupport::None => {
                         ui.add_space(8.0);
                         ui.weak("This key cannot be edited in this version.");
                     }

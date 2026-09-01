@@ -60,6 +60,29 @@ impl Candidate {
     }
 }
 
+/// Selected key state and validity indicator for picker grids.
+#[derive(Clone, Copy)]
+pub struct SelectedKey<'a> {
+    pub action: &'a KeyAction,
+    pub valid: bool,
+}
+
+impl<'a> SelectedKey<'a> {
+    pub fn valid(action: &'a KeyAction) -> Self {
+        Self { action, valid: true }
+    }
+
+    pub fn new(action: &'a KeyAction, valid: bool) -> Self {
+        Self { action, valid }
+    }
+}
+
+impl<'a> From<&'a KeyAction> for SelectedKey<'a> {
+    fn from(action: &'a KeyAction) -> Self {
+        Self::valid(action)
+    }
+}
+
 /// Draws an interactive key button.
 pub fn key_button(
     ui: &mut egui::Ui,
@@ -96,7 +119,7 @@ pub fn picker_grid_refs(
     ui: &mut egui::Ui,
     id_salt: &str,
     candidates: &[&Candidate],
-    selected: Option<&KeyAction>,
+    selected: Option<SelectedKey<'_>>,
     style: &KeyPaintStyle,
     mut on_select: impl FnMut(&Candidate),
 ) {
@@ -124,8 +147,9 @@ pub fn picker_grid_refs(
             egui::vec2(KEY_UNIT, KEY_UNIT),
         );
 
-        let pressed = selected == Some(&candidate.binding);
-        let colors = style
+        let pressed = selected.is_some_and(|s| s.action == &candidate.binding);
+        let is_valid = selected.is_none_or(|s| s.valid);
+        let mut colors = style
             .colors_for(
                 candidate.key.layer_ref.unwrap_or(0),
                 candidate.key.kind,
@@ -133,6 +157,10 @@ pub fn picker_grid_refs(
                 pressed,
             )
             .ghosted_if(candidate.transparent);
+
+        if pressed && !is_valid {
+            colors = colors.with_invalid_border();
+        }
 
         let response = key_button(
             ui,
@@ -155,7 +183,7 @@ pub fn picker_grid_rows(
     ui: &mut egui::Ui,
     id_salt: &str,
     candidates: &[Candidate],
-    selected: Option<&KeyAction>,
+    selected: Option<SelectedKey<'_>>,
     style: &KeyPaintStyle,
     on_select: impl FnMut(&Candidate),
 ) {
@@ -169,7 +197,7 @@ pub fn picker_grid_filtered(
     id_salt: &str,
     candidates: &[Candidate],
     filter: impl Fn(&Candidate) -> bool,
-    selected: Option<&KeyAction>,
+    selected: Option<SelectedKey<'_>>,
     style: &KeyPaintStyle,
     on_select: impl FnMut(&Candidate),
 ) {
@@ -188,7 +216,7 @@ pub fn candidate_groups_rows(
     ui: &mut egui::Ui,
     groups: &[CandidateGroup],
     filter: impl Fn(&Candidate) -> bool,
-    selected: impl Fn(usize) -> Option<KeyAction>,
+    selected: Option<SelectedKey<'_>>,
     style: &KeyPaintStyle,
     mut on_select: impl FnMut(usize, &Candidate),
 ) {
@@ -199,14 +227,9 @@ pub fn candidate_groups_rows(
         }
         ui.push_id((gi, group.name), |ui| {
             ui.label(group.name);
-            picker_grid_refs(
-                ui,
-                group.name,
-                &refs,
-                selected(gi).as_ref(),
-                style,
-                |candidate| on_select(gi, candidate),
-            );
+            picker_grid_refs(ui, group.name, &refs, selected, style, |candidate| {
+                on_select(gi, candidate)
+            });
             ui.add_space(6.0);
         });
     }
@@ -216,7 +239,7 @@ pub fn candidate_groups_rows(
 pub fn framed_candidate_groups_rows(
     ui: &mut egui::Ui,
     groups: &[CandidateGroup],
-    selected: impl Fn(usize) -> Option<KeyAction>,
+    selected: Option<SelectedKey<'_>>,
     style: &KeyPaintStyle,
     mut on_select: impl FnMut(usize, &Candidate),
 ) {
@@ -226,7 +249,7 @@ pub fn framed_candidate_groups_rows(
                 ui,
                 group.name,
                 &group.candidates,
-                selected(gi).as_ref(),
+                selected,
                 style,
                 |candidate| on_select(gi, candidate),
             );
@@ -241,9 +264,13 @@ fn key_chip(
     id: egui::Id,
     key: &LayoutKey,
     selected: bool,
+    valid: bool,
     style: &KeyPaintStyle,
 ) -> egui::Response {
-    let colors = style.colors_for(0, KeycodeKind::Modifier, false, selected);
+    let mut colors = style.colors_for(0, KeycodeKind::Modifier, false, selected);
+    if selected && !valid {
+        colors = colors.with_invalid_border();
+    }
     key_button(ui, cell, id, key, colors, selected, style)
 }
 
@@ -280,6 +307,7 @@ pub fn modifier_toggle_row(
     id_salt: &str,
     mods: &mut u16,
     right: &mut bool,
+    valid: bool,
     style: &KeyPaintStyle,
 ) -> bool {
     use modifier_symbols::{MOD_ALT, MOD_CTRL, MOD_GUI, MOD_SHIFT};
@@ -312,6 +340,7 @@ pub fn modifier_toggle_row(
                 ui.id().with((id_salt, "mod", i)),
                 &key,
                 *mods & mask != 0,
+                valid,
                 style,
             );
 
@@ -350,6 +379,7 @@ pub fn modifier_toggle_grid(
     ui: &mut egui::Ui,
     id_salt: &str,
     mods: u8,
+    valid: bool,
     style: &KeyPaintStyle,
     mut on_toggle: impl FnMut(u8),
 ) {
@@ -377,6 +407,7 @@ pub fn modifier_toggle_grid(
                 ui.id().with((id_salt, "mod", mask)),
                 &key,
                 mods & mask != 0,
+                valid,
                 style,
             );
             if response.clicked() {

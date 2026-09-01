@@ -3,6 +3,9 @@
 use crate::layout_key::{BorderStyle, KeycodeKind, LayoutKey};
 use crate::settings::{LegendMode, Settings, ThemeColor, ThemeSettings};
 
+/// Border color for invalid key selection in the keymap editor.
+pub const INVALID_SELECTION_BORDER: egui::Color32 = egui::Color32::from_rgb(235, 190, 40);
+
 /// Color palette for painting a key.
 #[derive(Clone, Copy)]
 pub struct KeyColors {
@@ -40,6 +43,12 @@ impl KeyColors {
         }
     }
 
+    /// Replaces the border color with the invalid selection warning color.
+    pub fn with_invalid_border(mut self) -> Self {
+        self.border = INVALID_SELECTION_BORDER;
+        self
+    }
+
     /// Returns the highlight border color for hover and selection outlines.
     pub fn highlight_border(&self) -> egui::Color32 {
         self.fill.lerp_to_gamma(egui::Color32::WHITE, 0.45)
@@ -67,7 +76,7 @@ impl KeyColors {
         } else {
             (border, 0.02 * unit, self.highlight_border())
         };
-        let color = if hovered {
+        let color = if hovered && !pressed {
             self.highlight_border()
         } else {
             color
