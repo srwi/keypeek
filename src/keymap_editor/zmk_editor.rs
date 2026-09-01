@@ -13,7 +13,7 @@ use super::EditTarget;
 use crate::ui_widgets::titled_group;
 
 /// Page categories for ZMK behaviors.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Page {
     Keys,
     Layers,
@@ -245,7 +245,7 @@ impl crate::overlay_window::OverlayApp {
         });
 
         let current_page = page_of(self.editor.zmk_draft.kind);
-        super::editor_central_panel(ui, |ui| {
+        super::editor_central_panel(ui, (target.layer_index, current_page), |ui| {
             match current_page {
                 Page::Special | Page::Commands => {
                     // Every parameterless behavior and command option is a

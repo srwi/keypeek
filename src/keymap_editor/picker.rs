@@ -197,16 +197,18 @@ pub fn candidate_groups_rows(
         if refs.is_empty() {
             continue;
         }
-        ui.label(group.name);
-        picker_grid_refs(
-            ui,
-            group.name,
-            &refs,
-            selected(gi).as_ref(),
-            style,
-            |candidate| on_select(gi, candidate),
-        );
-        ui.add_space(6.0);
+        ui.push_id((gi, group.name), |ui| {
+            ui.label(group.name);
+            picker_grid_refs(
+                ui,
+                group.name,
+                &refs,
+                selected(gi).as_ref(),
+                style,
+                |candidate| on_select(gi, candidate),
+            );
+            ui.add_space(6.0);
+        });
     }
 }
 

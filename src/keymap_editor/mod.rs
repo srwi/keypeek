@@ -213,7 +213,11 @@ pub(super) fn editor_left_panel(
 }
 
 /// The editor's scrolling central panel.
-pub(super) fn editor_central_panel(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui)) {
+pub(super) fn editor_central_panel(
+    ui: &mut egui::Ui,
+    id_salt: impl std::hash::Hash,
+    content: impl FnOnce(&mut egui::Ui),
+) {
     egui::CentralPanel::default()
         .frame(egui::Frame::NONE.inner_margin(egui::Margin {
             left: 4,
@@ -222,13 +226,16 @@ pub(super) fn editor_central_panel(ui: &mut egui::Ui, content: impl FnOnce(&mut 
             bottom: 0,
         }))
         .show_inside(ui, |ui| {
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    let content_width = (ui.available_width() - SCROLLBAR_GUTTER).max(100.0);
-                    ui.set_max_width(content_width);
-                    content(ui);
-                });
+            ui.push_id(&id_salt, |ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt(&id_salt)
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        let content_width = (ui.available_width() - SCROLLBAR_GUTTER).max(100.0);
+                        ui.set_max_width(content_width);
+                        content(ui);
+                    });
+            });
         });
 }
 
@@ -335,14 +342,16 @@ impl crate::overlay_window::OverlayApp {
         let total_spacing = (layer_count - 1) as f32 * item_spacing;
         let button_width = ((ui.available_width() - total_spacing) / layer_count as f32).max(24.0);
 
-        ui.horizontal(|ui| {
-            for (i, info) in layer_infos.iter().enumerate() {
-                let label = info.short_name(i);
-                let is_selected = target.layer_index == i;
-                if layer_button(ui, &label, i, is_selected, button_width, &style).clicked() {
-                    selected_layer = Some(i);
+        ui.push_id("layer_switcher", |ui| {
+            ui.horizontal(|ui| {
+                for (i, info) in layer_infos.iter().enumerate() {
+                    let label = info.short_name(i);
+                    let is_selected = target.layer_index == i;
+                    if layer_button(ui, &label, i, is_selected, button_width, &style).clicked() {
+                        selected_layer = Some(i);
+                    }
                 }
-            }
+            });
         });
 
         if !self.editor.closing {
@@ -484,7 +493,7 @@ fn layer_button(
         .corner_radius(4.0)
         .min_size(egui::vec2(width, 22.0));
 
-    let response = ui.add(button);
+    let response = ui.push_id(layer_index, |ui| ui.add(button)).inner;
     if response.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         let highlight_stroke = egui::Stroke::new(stroke_width, colors.highlight_border());

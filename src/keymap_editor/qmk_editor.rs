@@ -12,7 +12,7 @@ use super::EditTarget;
 use crate::ui_widgets::titled_group;
 
 /// Editor categories for QMK keycodes.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Section {
     Basic,
     Media,
@@ -277,7 +277,7 @@ impl crate::overlay_window::OverlayApp {
         });
 
         let section = self.editor.qmk_draft.section;
-        super::editor_central_panel(ui, |ui| match section {
+        super::editor_central_panel(ui, (target.layer_index, section), |ui| match section {
             Section::Layers => {
                 // One page of grouped layer keys, one per real layer; see
                 // draw_qmk_layer_page.
