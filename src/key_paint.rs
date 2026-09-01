@@ -13,6 +13,16 @@ pub struct KeyColors {
 }
 
 impl KeyColors {
+    /// Creates a color palette for a pressed key.
+    pub fn pressed(bg: egui::Color32, font: egui::Color32, unit: f32) -> Self {
+        Self {
+            fill: bg.lerp_to_gamma(egui::Color32::WHITE, 0.2),
+            border: bg.lerp_to_gamma(egui::Color32::WHITE, 0.7),
+            border_thickness: 0.03 * unit,
+            font: font.lerp_to_gamma(egui::Color32::WHITE, 0.4),
+        }
+    }
+
     /// Returns dimmed colors for transparent and unbound keys.
     pub fn ghosted(mut self) -> Self {
         self.fill = self.fill.gamma_multiply(0.25);
@@ -33,6 +43,36 @@ impl KeyColors {
     /// Returns the highlight border color for hover and selection outlines.
     pub fn highlight_border(&self) -> egui::Color32 {
         self.fill.lerp_to_gamma(egui::Color32::WHITE, 0.45)
+    }
+
+    /// Returns the font color for behavior/argument strips.
+    pub fn strip_font(&self, pressed: bool) -> egui::Color32 {
+        if pressed {
+            self.fill.lerp_to_gamma(egui::Color32::BLACK, 0.7)
+        } else {
+            self.font.gamma_multiply(0.7)
+        }
+    }
+
+    /// Resolves the border style and stroke for rendering a key.
+    pub fn border_stroke(
+        &self,
+        border: BorderStyle,
+        pressed: bool,
+        hovered: bool,
+        unit: f32,
+    ) -> (BorderStyle, egui::Stroke) {
+        let (style, width, color) = if pressed || border == BorderStyle::None {
+            (BorderStyle::Solid, self.border_thickness, self.border)
+        } else {
+            (border, 0.02 * unit, self.highlight_border())
+        };
+        let color = if hovered {
+            self.highlight_border()
+        } else {
+            color
+        };
+        (style, egui::Stroke::new(width, color))
     }
 }
 
@@ -90,17 +130,11 @@ impl KeyPaintStyle {
         const BLACK: egui::Color32 = egui::Color32::BLACK;
 
         let unit = self.unit;
-        let layer_theme_color = self.theme.layer_color(layer);
-        let mut background_color = to_egui_color(layer_theme_color);
-        let mut font_color = to_egui_color(self.theme.font_color);
+        let mut background_color: egui::Color32 = self.theme.layer_color(layer).into();
+        let mut font_color: egui::Color32 = self.theme.font_color.into();
 
         if pressed {
-            return KeyColors {
-                fill: background_color.lerp_to_gamma(egui::Color32::WHITE, 0.2),
-                border: background_color.lerp_to_gamma(egui::Color32::WHITE, 0.7),
-                border_thickness: 0.03 * unit,
-                font: font_color.lerp_to_gamma(egui::Color32::WHITE, 0.4),
-            };
+            return KeyColors::pressed(background_color, font_color, unit);
         }
 
         if kind == KeycodeKind::Special {
@@ -111,7 +145,7 @@ impl KeyPaintStyle {
 
         let mut border_color = background_color.lerp_to_gamma(BLACK, 0.2);
         if desaturate && layer != 0 {
-            let layer0_color = to_egui_color(self.theme.layer_colors[0]);
+            let layer0_color: egui::Color32 = self.theme.layer_colors[0].into();
             background_color = background_color.lerp_to_gamma(layer0_color, DESATURATE_FACTOR);
             border_color = border_color.lerp_to_gamma(layer0_color, DESATURATE_FACTOR);
             font_color = font_color.gamma_multiply(1.0 - DESATURATE_FACTOR);
@@ -155,25 +189,18 @@ pub fn paint(
         egui::epaint::RectShape::filled(rect, corner_radius, display.colors.fill).with_angle(angle),
     );
 
-    let (border_style, border_width, mut border_color) =
-        if display.pressed || key.border == BorderStyle::None {
-            (
-                BorderStyle::Solid,
-                display.colors.border_thickness,
-                display.colors.border,
-            )
-        } else {
-            (key.border, 0.02 * unit, display.colors.highlight_border())
-        };
     if display.hovered {
-        border_color = display.colors.highlight_border();
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
+    let (border_style, border_stroke) =
+        display
+            .colors
+            .border_stroke(key.border, display.pressed, display.hovered, unit);
     paint_border(
         ui,
         rect,
         corner_radius,
-        egui::Stroke::new(border_width, border_color),
+        border_stroke,
         border_style,
         unit,
         center,
@@ -204,8 +231,8 @@ pub fn paint(
             unit,
             center,
             angle,
-            display.colors.border,
-            display.colors.font.gamma_multiply(0.7),
+            &display.colors,
+            display.pressed,
         );
     }
 
@@ -222,8 +249,8 @@ pub fn paint(
             unit,
             center,
             angle,
-            display.colors.border,
-            display.colors.font.gamma_multiply(0.7),
+            &display.colors,
+            display.pressed,
         );
     }
 
@@ -276,7 +303,7 @@ fn generate_label_galleys(
     style: &KeyPaintStyle,
 ) -> LabelGalleys {
     let (symbol, text) = generate_tap_galleys(ui, display, rect, font, style);
-    let strip_color = display.colors.font.gamma_multiply(0.7);
+    let strip_color = display.colors.strip_font(display.pressed);
     let behavior =
         generate_strip_galley(ui, display.key.behavior.as_ref(), rect, strip_color, style);
     let argument =
@@ -287,6 +314,21 @@ fn generate_label_galleys(
         behavior,
         argument,
     }
+}
+
+/// Creates a horizontally-centered text galley.
+fn centered_galley(
+    painter: &egui::Painter,
+    text: &str,
+    font: egui::FontId,
+    color: egui::Color32,
+) -> std::sync::Arc<egui::Galley> {
+    let mut job = egui::text::LayoutJob {
+        halign: egui::Align::Center,
+        ..Default::default()
+    };
+    job.append(text, 0.0, egui::TextFormat::simple(font, color));
+    painter.layout_job(job)
 }
 
 fn generate_tap_galleys(
@@ -332,12 +374,10 @@ fn generate_tap_galleys(
             } else {
                 format!("{}\n{}", shifted, key.tap.full)
             };
-            let mut job = egui::text::LayoutJob {
-                halign: egui::Align::Center,
-                ..Default::default()
-            };
-            job.append(&text, 0.0, egui::TextFormat::simple(font, color));
-            return (None, Some(ui.painter().layout_job(job)));
+            return (
+                None,
+                Some(centered_galley(ui.painter(), &text, font, color)),
+            );
         }
     }
 
@@ -409,14 +449,8 @@ fn fit_text_galley(
     style: &KeyPaintStyle,
 ) -> Option<std::sync::Arc<egui::Galley>> {
     let (max_width, max_height) = (max.x, max.y);
-    let create_galley = |text: &str, fid: egui::FontId| {
-        let mut job = egui::text::LayoutJob {
-            halign: egui::Align::Center,
-            ..Default::default()
-        };
-        job.append(text, 0.0, egui::TextFormat::simple(fid, color));
-        ui.painter().layout_job(job)
-    };
+    let create_galley =
+        |text: &str, fid: egui::FontId| centered_galley(ui.painter(), text, fid, color);
     let fits = |galley: &std::sync::Arc<egui::Galley>| {
         galley.rect.width() <= max_width && galley.rect.height() <= max_height
     };
@@ -563,8 +597,8 @@ fn paint_strip(
     unit: f32,
     center: egui::Pos2,
     angle: f32,
-    background: egui::Color32,
-    font_color: egui::Color32,
+    colors: &KeyColors,
+    pressed: bool,
 ) {
     let strip_rect =
         egui::Rect::from_center_size(rotate_point(strip.center(), center, angle), strip.size());
@@ -588,7 +622,7 @@ fn paint_strip(
         egui::epaint::RectShape::new(
             strip_rect,
             corners,
-            background,
+            colors.border,
             egui::Stroke::NONE,
             egui::StrokeKind::Outside,
         )
@@ -596,8 +630,13 @@ fn paint_strip(
     );
     if let Some(galley) = galley {
         let pos = strip.center() - galley.rect.center().to_vec2();
-        ui.painter()
-            .add(rotated_text_shape(pos, galley, font_color, center, angle));
+        ui.painter().add(rotated_text_shape(
+            pos,
+            galley,
+            colors.strip_font(pressed),
+            center,
+            angle,
+        ));
     }
 }
 
@@ -634,10 +673,22 @@ fn paint_border(
     }
 }
 
+impl From<ThemeColor> for egui::Color32 {
+    fn from(color: ThemeColor) -> Self {
+        egui::Color32::from_rgba_premultiplied(color.r, color.g, color.b, color.a)
+    }
+}
+
+impl From<egui::Color32> for ThemeColor {
+    fn from(color: egui::Color32) -> Self {
+        ThemeColor::new(color.r(), color.g(), color.b(), color.a())
+    }
+}
+
 pub fn to_egui_color(color: ThemeColor) -> egui::Color32 {
-    egui::Color32::from_rgba_premultiplied(color.r, color.g, color.b, color.a)
+    color.into()
 }
 
 pub fn from_egui_color(color: egui::Color32) -> ThemeColor {
-    ThemeColor::new(color.r(), color.g(), color.b(), color.a())
+    color.into()
 }
