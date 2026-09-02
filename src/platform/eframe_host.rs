@@ -208,7 +208,7 @@ fn run_inner(
             });
 
             let mut fonts = egui::FontDefinitions::default();
-            egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+            super::add_phosphor_to_fonts(&mut fonts);
             cc.egui_ctx.set_fonts(fonts);
 
             let app = OverlayApp::new(tray_icon, settings_requested, ui_wake, settings, devices);

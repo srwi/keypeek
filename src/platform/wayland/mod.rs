@@ -163,7 +163,7 @@ pub fn run(
     let egui_ctx = egui::Context::default();
     egui_extras::install_image_loaders(&egui_ctx);
     let mut fonts = egui::FontDefinitions::default();
-    egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+    super::add_phosphor_to_fonts(&mut fonts);
     egui_ctx.set_fonts(fonts);
 
     let ui_wake = UiWake::new(Arc::new(move || ping.ping()));

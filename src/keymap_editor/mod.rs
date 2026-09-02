@@ -23,6 +23,22 @@ pub struct EditTarget {
     pub col: usize,
 }
 
+impl EditTarget {
+    /// Returns the current key action at this target position.
+    pub fn action(self, keyboard: &Keyboard) -> Option<KeyAction> {
+        keyboard.get_action(self.layer_index, self.row, self.col)
+    }
+
+    /// Sends a write command for this target key.
+    pub fn set_key(
+        self,
+        keyboard: &Keyboard,
+        action: KeyAction,
+    ) -> mpsc::Receiver<Result<(), String>> {
+        keyboard.set_key(self.layer_index, self.row, self.col, action)
+    }
+}
+
 /// Operation type of an active background task.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PendingKind {
@@ -170,7 +186,7 @@ impl EditorState {
         if self.zmk_session == ZmkSessionState::Failed {
             self.zmk_session = ZmkSessionState::Idle;
         }
-        match keyboard.get_action(target.layer_index, target.row, target.col) {
+        match target.action(keyboard) {
             Some(KeyAction::Qmk(code)) => {
                 self.qmk_draft = QmkDraft::from_keycode(code);
                 self.zmk_draft = Default::default();
@@ -210,13 +226,28 @@ const SIDEBAR_WIDTH: f32 = 110.0;
 /// Right margin to prevent scrollbar overlap with group borders.
 const SCROLLBAR_GUTTER: f32 = 8.0;
 
-/// Draws the left category panel with a search bar pinned to the bottom.
-pub(super) fn editor_left_panel(
+/// Section grouping for the editor's left sidebar.
+pub(super) struct SidebarSection<T: 'static> {
+    pub title: &'static str,
+    pub items: &'static [T],
+}
+
+/// Item in the editor's left sidebar.
+pub(super) trait SidebarItem: Copy + PartialEq {
+    fn label(self) -> &'static str;
+    fn is_supported(self, keyboard: &Keyboard) -> bool;
+}
+
+/// Draws the left category panel with sectioned items and a search bar pinned to the bottom.
+pub(super) fn editor_left_panel<T: SidebarItem>(
     ui: &mut egui::Ui,
     left_id: &str,
+    keyboard: &Keyboard,
+    current: T,
+    sections: &[SidebarSection<T>],
     search_query: &mut String,
-    content: impl FnOnce(&mut egui::Ui),
-) {
+) -> Option<T> {
+    let mut selected = None;
     let left_id = egui::Id::new(left_id);
     egui::Panel::left(left_id)
         .resizable(false)
@@ -228,7 +259,7 @@ pub(super) fn editor_left_panel(
             top: 0,
             bottom: 0,
         }))
-        .show_inside(ui, |ui| {
+        .show(ui, |ui| {
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                 ui.add_space(2.0);
                 picker::search_bar(ui, search_query);
@@ -236,18 +267,37 @@ pub(super) fn editor_left_panel(
                 ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
-                            content(ui);
+                            for section in sections {
+                                let supported: Vec<T> = section
+                                    .items
+                                    .iter()
+                                    .copied()
+                                    .filter(|item| item.is_supported(keyboard))
+                                    .collect();
+                                if supported.is_empty() {
+                                    continue;
+                                }
+                                ui.weak(section.title);
+                                for item in supported {
+                                    if ui.selectable_label(current == item, item.label()).clicked()
+                                    {
+                                        selected = Some(item);
+                                    }
+                                }
+                                ui.add_space(4.0);
+                            }
                         });
                     });
                 });
             });
         });
+    selected
 }
 
 /// The editor's scrolling central panel.
 pub(super) fn editor_central_panel(
     ui: &mut egui::Ui,
-    id_salt: impl std::hash::Hash,
+    id_salt: impl std::hash::Hash + std::fmt::Debug,
     content: impl FnOnce(&mut egui::Ui),
 ) {
     egui::CentralPanel::default()
@@ -257,7 +307,7 @@ pub(super) fn editor_central_panel(
             top: 0,
             bottom: 0,
         }))
-        .show_inside(ui, |ui| {
+        .show(ui, |ui| {
             ui.push_id(&id_salt, |ui| {
                 egui::ScrollArea::vertical()
                     .id_salt(&id_salt)
@@ -303,8 +353,8 @@ impl EditorState {
         let mut window = Window::new(title)
             .id(egui::Id::new("edit_key_window"))
             .resizable(true)
-            .default_size(egui::vec2(425.0, 475.0))
-            .min_size(egui::vec2(420.0, 320.0));
+            .default_size(egui::vec2(440.0, 525.0))
+            .min_size(egui::vec2(440.0, 525.0));
         let mut open = true;
         if !closing {
             window = window.open(&mut open);
@@ -352,11 +402,7 @@ impl EditorState {
         staged: Option<KeyAction>,
     ) {
         if let Some(action) = staged {
-            if keyboard
-                .get_action(target.layer_index, target.row, target.col)
-                .as_ref()
-                != Some(&action)
-            {
+            if target.action(keyboard).as_ref() != Some(&action) {
                 self.apply_write(keyboard, target, action);
             }
         }
@@ -462,7 +508,7 @@ impl EditorState {
             self.queued = Some((target, action));
             return;
         }
-        let receiver = keyboard.set_key(target.layer_index, target.row, target.col, action);
+        let receiver = target.set_key(keyboard, action);
         self.start_task(PendingKind::Set, receiver);
     }
 

@@ -14,7 +14,7 @@ fn candidate_group(name: &'static str, codes: impl IntoIterator<Item = u16>) -> 
         candidates: codes
             .into_iter()
             .filter_map(|c| match resolve_qmk_key(c) {
-                KeyResolution::Key(key) => Some(Candidate::new(KeyAction::Qmk(c), *key)),
+                KeyResolution::Key(_) | KeyResolution::Transparent => Some(qmk_candidate(c)),
                 _ => None,
             })
             .collect(),

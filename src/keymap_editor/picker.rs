@@ -678,7 +678,7 @@ mod tests {
     #[test]
     fn modifier_toggle_row_fits_five_keys_width() {
         let ctx = egui::Context::default();
-        let _ = ctx.run_ui(Default::default(), |ui| {
+        let output = ctx.run_ui(Default::default(), |ui| {
             let mut mods = 0u16;
             let mut right = false;
             let style = KeyPaintStyle::from_settings(&crate::settings::Settings::default());
@@ -690,6 +690,7 @@ mod tests {
             assert_eq!(inner_response.response.rect.width(), expected_width);
             assert_eq!(inner_response.response.rect.height(), KEY_UNIT);
         });
+        output.drop_without_applying_deltas();
     }
 
     #[test]
@@ -701,7 +702,7 @@ mod tests {
         let mut right = false;
 
         let mut r_pos = egui::Pos2::ZERO;
-        let _ = ctx.run_ui(Default::default(), |ui| {
+        let output = ctx.run_ui(Default::default(), |ui| {
             let inner_response = ui.allocate_ui(egui::vec2(0.0, 0.0), |ui| {
                 modifier_toggle_row(ui, "test", &mut mods, &mut right, true, &style);
             });
@@ -716,6 +717,7 @@ mod tests {
                     label_height + gap_y + (KEY_UNIT - label_height - gap_y) / 2.0,
                 );
         });
+        output.drop_without_applying_deltas();
 
         let mut raw_input = egui::RawInput::default();
         raw_input.events.push(egui::Event::PointerMoved(r_pos));
@@ -733,11 +735,12 @@ mod tests {
         });
 
         let mut changed = false;
-        let _ = ctx.run_ui(raw_input, |ui| {
+        let output = ctx.run_ui(raw_input, |ui| {
             ui.allocate_ui(egui::vec2(0.0, 0.0), |ui| {
                 changed = modifier_toggle_row(ui, "test", &mut mods, &mut right, true, &style);
             });
         });
+        output.drop_without_applying_deltas();
 
         assert!(right);
         assert!(changed);

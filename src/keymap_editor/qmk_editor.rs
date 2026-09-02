@@ -38,24 +38,6 @@ use qmk_via_api::keycodes::{Keycode, KeycodeCategory};
 use qmk_via_api::{QmkKeycode, QmkLayerOp, QmkModMask};
 
 impl Section {
-    const ALL: [Section; 15] = [
-        Section::Basic,
-        Section::Media,
-        Section::Special,
-        Section::Backlight,
-        Section::Rgblight,
-        Section::RgbMatrix,
-        Section::Audio,
-        Section::Custom,
-        Section::Layers,
-        Section::Combo,
-        Section::OneShot,
-        Section::ModTap,
-        Section::LayerTap,
-        Section::LayerMod,
-        Section::Any,
-    ];
-
     pub const fn category(&self) -> Option<KeycodeCategory> {
         match self {
             Section::Basic => Some(KeycodeCategory::Basic),
@@ -134,6 +116,47 @@ impl Section {
         matches!(self, Section::Combo | Section::ModTap | Section::LayerTap)
     }
 }
+
+impl super::SidebarItem for Section {
+    fn label(self) -> &'static str {
+        Section::label(&self)
+    }
+
+    fn is_supported(self, keyboard: &Keyboard) -> bool {
+        Section::is_supported(&self, keyboard)
+    }
+}
+
+const QMK_SECTIONS: [super::SidebarSection<Section>; 4] = [
+    super::SidebarSection {
+        title: "Keys",
+        items: &[Section::Basic, Section::Media, Section::Special],
+    },
+    super::SidebarSection {
+        title: "Layers & Mods",
+        items: &[
+            Section::Layers,
+            Section::Combo,
+            Section::OneShot,
+            Section::ModTap,
+            Section::LayerTap,
+            Section::LayerMod,
+        ],
+    },
+    super::SidebarSection {
+        title: "Lighting & Audio",
+        items: &[
+            Section::Backlight,
+            Section::Rgblight,
+            Section::RgbMatrix,
+            Section::Audio,
+        ],
+    },
+    super::SidebarSection {
+        title: "Other",
+        items: &[Section::Custom, Section::Any],
+    },
+];
 
 /// Editable parameter state for QMK keycodes.
 #[derive(Clone)]
@@ -311,22 +334,14 @@ impl EditorState {
         style: &crate::key_paint::KeyPaintStyle,
     ) {
         let current_section = self.qmk_draft.section;
-        let mut selected_section = None;
-        super::editor_left_panel(ui, "qmk_sections", &mut self.search_query, |ui| {
-            for s in Section::ALL {
-                if !s.is_supported(keyboard) {
-                    continue;
-                }
-                if ui
-                    .selectable_label(current_section == s, s.label())
-                    .clicked()
-                {
-                    selected_section = Some(s);
-                }
-            }
-        });
-
-        if let Some(s) = selected_section {
+        if let Some(s) = super::editor_left_panel(
+            ui,
+            "qmk_sections",
+            keyboard,
+            current_section,
+            &QMK_SECTIONS,
+            &mut self.search_query,
+        ) {
             self.search_query.clear();
             self.reset_qmk_draft_for_section(keyboard, target, s);
         }
@@ -341,7 +356,7 @@ impl EditorState {
             }
             Section::Custom => {
                 let groups = super::qmk_catalog::custom_groups();
-                let action = keyboard.get_action(target.layer_index, target.row, target.col);
+                let action = target.action(keyboard);
                 let selected = action.as_ref().map(SelectedKey::valid);
                 titled_group(ui, "Custom", |ui| {
                     multi_candidate_groups(
@@ -390,7 +405,7 @@ impl EditorState {
             _ => {
                 if let Some(cat) = section.category() {
                     let group = super::qmk_catalog::category(cat);
-                    let action = keyboard.get_action(target.layer_index, target.row, target.col);
+                    let action = target.action(keyboard);
                     titled_candidate_group(
                         ui,
                         group,
@@ -413,7 +428,7 @@ impl EditorState {
         target: EditTarget,
         section: Section,
     ) {
-        let current_action = keyboard.get_action(target.layer_index, target.row, target.col);
+        let current_action = target.action(keyboard);
         self.reset_qmk_section(section, current_action.as_ref());
     }
 
@@ -428,7 +443,7 @@ impl EditorState {
     ) {
         let layer_count = keyboard.layer_infos().len();
         let groups = super::qmk_catalog::layer_groups(layer_count);
-        let action = keyboard.get_action(target.layer_index, target.row, target.col);
+        let action = target.action(keyboard);
         let selected = action.as_ref().map(SelectedKey::valid);
         framed_candidate_groups(
             ui,

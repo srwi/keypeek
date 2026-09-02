@@ -12,62 +12,102 @@ use super::zmk_catalog::{self, ZmkBehaviorKind};
 use super::{EditTarget, EditorState};
 use crate::ui_widgets::titled_group;
 
-/// Page categories for ZMK behaviors.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-enum Page {
-    Keys,
+/// Editor sections and left sidebar items for ZMK behaviors.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Section {
+    KeyPress,
+    KeyToggle,
+    StickyKey,
     Layers,
-    Mods,
+    ModTap,
+    Bluetooth,
+    OutputSelection,
+    Backlight,
+    Underglow,
+    MouseKeyPress,
+    MouseMove,
+    MouseScroll,
+    System,
     Special,
-    Commands,
 }
 
-impl Page {
-    const ALL: [Page; 5] = [
-        Page::Keys,
-        Page::Layers,
-        Page::Mods,
-        Page::Commands,
-        Page::Special,
-    ];
-
+impl Section {
     fn label(self) -> &'static str {
         match self {
-            Page::Keys => "Keys",
-            Page::Layers => "Layers",
-            Page::Mods => "Mods",
-            Page::Special => "Special",
-            Page::Commands => "Commands",
+            Self::KeyPress => "Key Press",
+            Self::KeyToggle => "Key Toggle",
+            Self::StickyKey => "Sticky Key",
+            Self::Layers => "Layers",
+            Self::ModTap => "Mod-Tap",
+            Self::Bluetooth => "Bluetooth",
+            Self::OutputSelection => "Output Selection",
+            Self::Backlight => "Backlight",
+            Self::Underglow => "Underglow",
+            Self::MouseKeyPress => "Mouse Key",
+            Self::MouseMove => "Mouse Move",
+            Self::MouseScroll => "Mouse Scroll",
+            Self::System => "System",
+            Self::Special => "Special",
         }
     }
 
-    /// Returns behavior roles assigned to this page.
+    fn from_kind(kind: ZmkBehaviorKind) -> Self {
+        use ZmkBehaviorKind::*;
+        match kind {
+            KeyPress => Self::KeyPress,
+            KeyToggle => Self::KeyToggle,
+            StickyKey => Self::StickyKey,
+            MomentaryLayer | ToggleLayer | ToLayer | StickyLayer | LayerTap => Self::Layers,
+            ModTap => Self::ModTap,
+            Bluetooth => Self::Bluetooth,
+            OutputSelection => Self::OutputSelection,
+            Backlight => Self::Backlight,
+            Underglow => Self::Underglow,
+            MouseKeyPress => Self::MouseKeyPress,
+            MouseMove => Self::MouseMove,
+            MouseScroll => Self::MouseScroll,
+            Reset | Bootloader | SoftOff | StudioUnlock | ExternalPower => Self::System,
+            Transparent | None | CapsWord | KeyRepeat | GraveEscape => Self::Special,
+        }
+    }
+
+    fn default_kind(self) -> ZmkBehaviorKind {
+        use ZmkBehaviorKind::*;
+        match self {
+            Self::KeyPress => KeyPress,
+            Self::KeyToggle => KeyToggle,
+            Self::StickyKey => StickyKey,
+            Self::Layers => MomentaryLayer,
+            Self::ModTap => ModTap,
+            Self::Bluetooth => Bluetooth,
+            Self::OutputSelection => OutputSelection,
+            Self::Backlight => Backlight,
+            Self::Underglow => Underglow,
+            Self::MouseKeyPress => MouseKeyPress,
+            Self::MouseMove => MouseMove,
+            Self::MouseScroll => MouseScroll,
+            Self::System => Reset,
+            Self::Special => Transparent,
+        }
+    }
+
     fn kinds(self) -> &'static [ZmkBehaviorKind] {
         use ZmkBehaviorKind::*;
         match self {
-            Page::Keys => &[KeyPress, KeyToggle, StickyKey],
-            Page::Layers => &[MomentaryLayer, ToggleLayer, ToLayer, StickyLayer, LayerTap],
-            Page::Mods => &[ModTap],
-            Page::Special => &[
-                Transparent,
-                None,
-                CapsWord,
-                KeyRepeat,
-                GraveEscape,
-                StudioUnlock,
-                Reset,
-                Bootloader,
-                SoftOff,
-            ],
-            Page::Commands => &[
-                Bluetooth,
-                OutputSelection,
-                Backlight,
-                Underglow,
-                MouseKeyPress,
-                MouseMove,
-                MouseScroll,
-            ],
+            Self::KeyPress => &[KeyPress],
+            Self::KeyToggle => &[KeyToggle],
+            Self::StickyKey => &[StickyKey],
+            Self::Layers => &[MomentaryLayer, ToggleLayer, ToLayer, StickyLayer, LayerTap],
+            Self::ModTap => &[ModTap],
+            Self::Bluetooth => &[Bluetooth],
+            Self::OutputSelection => &[OutputSelection],
+            Self::Backlight => &[Backlight],
+            Self::Underglow => &[Underglow],
+            Self::MouseKeyPress => &[MouseKeyPress],
+            Self::MouseMove => &[MouseMove],
+            Self::MouseScroll => &[MouseScroll],
+            Self::System => &[Reset, Bootloader, SoftOff, StudioUnlock, ExternalPower],
+            Self::Special => &[Transparent, None, CapsWord, KeyRepeat, GraveEscape],
         }
     }
 
@@ -79,15 +119,52 @@ impl Page {
             keyboard.is_action_supported(&KeyAction::Zmk(zmk_catalog::sample_behavior(*k)))
         })
     }
+
+    fn is_supported(self, keyboard: &Keyboard) -> bool {
+        self.supported_kinds(keyboard).next().is_some()
+    }
 }
 
-/// Returns the page that contains the specified behavior role.
-fn page_of(kind: ZmkBehaviorKind) -> Page {
-    Page::ALL
-        .into_iter()
-        .find(|page| page.kinds().contains(&kind))
-        .unwrap_or(Page::Keys)
+impl super::SidebarItem for Section {
+    fn label(self) -> &'static str {
+        Section::label(self)
+    }
+
+    fn is_supported(self, keyboard: &Keyboard) -> bool {
+        Section::is_supported(self, keyboard)
+    }
 }
+
+const ZMK_SECTIONS: [super::SidebarSection<Section>; 6] = [
+    super::SidebarSection {
+        title: "Keys",
+        items: &[Section::KeyPress, Section::KeyToggle, Section::StickyKey],
+    },
+    super::SidebarSection {
+        title: "Layers & Mods",
+        items: &[Section::Layers, Section::ModTap],
+    },
+    super::SidebarSection {
+        title: "Wireless",
+        items: &[Section::Bluetooth, Section::OutputSelection],
+    },
+    super::SidebarSection {
+        title: "Lighting",
+        items: &[Section::Backlight, Section::Underglow],
+    },
+    super::SidebarSection {
+        title: "Mouse",
+        items: &[
+            Section::MouseKeyPress,
+            Section::MouseMove,
+            Section::MouseScroll,
+        ],
+    },
+    super::SidebarSection {
+        title: "Other",
+        items: &[Section::System, Section::Special],
+    },
+];
 
 /// Backlight command parameters for staged backlight adjustment.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -137,14 +214,14 @@ impl ZmkDraft {
         }
     }
 
-    /// Initializes draft for a page, preserving the active behavior if it belongs to this page.
-    fn for_page(page: Page, current_action: Option<&KeyAction>, fallback: ZmkBehaviorKind) -> Self {
+    /// Initializes draft for a section, preserving the active behavior if it belongs to this section.
+    fn for_section(section: Section, current_action: Option<&KeyAction>) -> Self {
         match current_action {
-            Some(KeyAction::Zmk(b)) if b.role().map(page_of) == Some(page) => {
+            Some(KeyAction::Zmk(b)) if b.role().map(Section::from_kind) == Some(section) => {
                 Self::from_behavior(b)
             }
             _ => Self {
-                kind: fallback,
+                kind: section.default_kind(),
                 ..Default::default()
             },
         }
@@ -158,10 +235,7 @@ impl ZmkDraft {
 
     /// Creates draft state from an existing ZMK behavior.
     pub fn from_behavior(behavior: &Behavior) -> Self {
-        let kind = behavior
-            .role()
-            .filter(|&r| Page::ALL.iter().any(|p| p.kinds().contains(&r)))
-            .unwrap_or(ZmkBehaviorKind::KeyPress);
+        let kind = behavior.role().unwrap_or(ZmkBehaviorKind::KeyPress);
         let mut draft = ZmkDraft {
             kind,
             layer_id: behavior.layer_id(),
@@ -224,11 +298,6 @@ impl ZmkDraft {
     }
 }
 
-enum ZmkNavSelection {
-    Kind(ZmkBehaviorKind),
-    Page(Page, ZmkBehaviorKind),
-}
-
 impl EditorState {
     /// Applies the current draft behavior to the target key.
     fn commit_zmk_draft(&mut self, keyboard: &Keyboard, target: EditTarget) {
@@ -247,9 +316,11 @@ impl EditorState {
         if !keyboard.is_action_supported(&KeyAction::Zmk(zmk_catalog::sample_behavior(
             self.zmk_draft.kind,
         ))) {
-            if let Some(first) = Page::ALL
+            if let Some(first) = ZMK_SECTIONS
                 .iter()
-                .flat_map(|p| p.supported_kinds(keyboard))
+                .flat_map(|s| s.items.iter())
+                .filter(|s| s.is_supported(keyboard))
+                .map(|s| s.default_kind())
                 .next()
             {
                 self.zmk_draft.kind = first;
@@ -257,70 +328,34 @@ impl EditorState {
             self.zmk_draft.backlight.staged = false;
         }
 
-        let current_kind = self.zmk_draft.kind;
-        let current_page = page_of(current_kind);
-        let mut selection = None;
-
-        // Left pane: grouped behavior-kind selector. Direct-apply and
-        // parameterless behaviors share one "Special" entry whose pane is a
-        // key grid.
-        super::editor_left_panel(ui, "zmk_kinds", &mut self.search_query, |ui| {
-            for page in Page::ALL {
-                let mut kinds = page.supported_kinds(keyboard).peekable();
-                if kinds.peek().is_none() {
-                    continue;
-                }
-                if matches!(page, Page::Keys | Page::Mods | Page::Commands) {
-                    ui.weak(page.label());
-                    for kind in kinds {
-                        if ui
-                            .selectable_label(current_kind == kind, kind.label())
-                            .clicked()
-                        {
-                            selection = Some(ZmkNavSelection::Kind(kind));
-                        }
-                    }
-                } else {
-                    let first_kind = *kinds.peek().unwrap();
-                    if ui
-                        .selectable_label(current_page == page, page.label())
-                        .clicked()
-                    {
-                        selection = Some(ZmkNavSelection::Page(page, first_kind));
-                    }
-                }
-                ui.add_space(4.0);
-            }
-        });
-
-        if let Some(nav) = selection {
+        let current_section = Section::from_kind(self.zmk_draft.kind);
+        if let Some(section) = super::editor_left_panel(
+            ui,
+            "zmk_kinds",
+            keyboard,
+            current_section,
+            &ZMK_SECTIONS,
+            &mut self.search_query,
+        ) {
             self.search_query.clear();
-            let current_action = keyboard.get_action(target.layer_index, target.row, target.col);
-            match nav {
-                ZmkNavSelection::Kind(kind) => {
-                    self.reset_zmk_draft_for_kind(keyboard, target, kind);
+            let current_action = target.action(keyboard);
+            match section {
+                Section::Layers | Section::System | Section::Special => {
+                    self.zmk_draft = ZmkDraft::for_section(section, current_action.as_ref());
                 }
-                ZmkNavSelection::Page(page, first_kind) => {
-                    self.zmk_draft = ZmkDraft::for_page(page, current_action.as_ref(), first_kind);
+                _ => {
+                    self.reset_zmk_draft_for_kind(keyboard, target, section.default_kind());
                 }
             }
         }
 
-        let current_page = page_of(self.zmk_draft.kind);
+        let current_section = Section::from_kind(self.zmk_draft.kind);
         let is_valid = self.zmk_draft.is_valid();
         let search_query = self.search_query.clone();
-        super::editor_central_panel(ui, (target.layer_index, current_page), |ui| {
-            match current_page {
-                Page::Special | Page::Commands => {
-                    // Every parameterless behavior and command option is a
-                    // key here; clicking applies it directly.
-                    self.draw_direct_grid(ui, keyboard, target, &search_query, style);
-                }
-                Page::Keys => {
-                    // One argument, one group: the usage's modifier toggles
-                    // and key grid are tightly coupled, so they share the
-                    // boundary.
-                    titled_group(ui, "Key", |ui| {
+        super::editor_central_panel(ui, (target.layer_index, current_section), |ui| {
+            match current_section {
+                Section::KeyPress | Section::KeyToggle | Section::StickyKey => {
+                    titled_group(ui, self.zmk_draft.kind.label(), |ui| {
                         self.draw_usage_picker(
                             ui,
                             keyboard,
@@ -331,15 +366,10 @@ impl EditorState {
                         );
                     });
                 }
-                Page::Layers => {
-                    // One page of grouped layer keys; see draw_zmk_layer_page.
+                Section::Layers => {
                     self.draw_zmk_layer_page(ui, keyboard, target, &search_query, is_valid, style);
                 }
-                Page::Mods => {
-                    // Two distinct arguments, two groups: the hold-side
-                    // modifier (single choice for standard ZMK &mt), and
-                    // the tap-side usage (whose own modifier toggles stay
-                    // inside the tap group).
+                Section::ModTap => {
                     titled_group(ui, "Hold modifier", |ui| {
                         modifier_toggle_grid(
                             ui,
@@ -367,13 +397,14 @@ impl EditorState {
                             style,
                         );
                     });
-                    // A Mod-Tap without a hold modifier has nothing to do
-                    // on hold, so the header ghosts it as invalid.
                     if self.zmk_draft.kind == ZmkBehaviorKind::ModTap
                         && self.zmk_draft.hold_mods == 0
                     {
                         ui.weak("Select a hold modifier.");
                     }
+                }
+                _ => {
+                    self.draw_direct_grid(ui, keyboard, target, &search_query, style);
                 }
             }
         });
@@ -385,7 +416,7 @@ impl EditorState {
         target: EditTarget,
         kind: ZmkBehaviorKind,
     ) {
-        let current_action = keyboard.get_action(target.layer_index, target.row, target.col);
+        let current_action = target.action(keyboard);
         self.reset_zmk_kind(kind, current_action.as_ref());
     }
 
@@ -452,7 +483,7 @@ impl EditorState {
             .zmk_draft
             .tap_usage()
             .unwrap_or_else(|| HidUsage::from_parts(HID_USAGE_KEYBOARD, 0x04, 0));
-        let kinds: Vec<_> = Page::Layers.supported_kinds(keyboard).collect();
+        let kinds: Vec<_> = Section::Layers.supported_kinds(keyboard).collect();
         let groups = zmk_catalog::layer_groups(&kinds, &layer_infos, &layer_names, tap);
 
         let is_lt = self.zmk_draft.kind == ZmkBehaviorKind::LayerTap;
@@ -463,7 +494,7 @@ impl EditorState {
                     .map(|id| KeyAction::Zmk(Behavior::LayerTap { layer_id: id, tap }))
             })
             .flatten();
-        let current_action = keyboard.get_action(target.layer_index, target.row, target.col);
+        let current_action = target.action(keyboard);
         let selected = if is_lt {
             lt_action.as_ref().map(|a| SelectedKey::new(a, valid))
         } else {
@@ -513,20 +544,27 @@ impl EditorState {
     ) {
         let kind = self.zmk_draft.kind;
         let staging_set = kind == ZmkBehaviorKind::Backlight && self.zmk_draft.backlight.staged;
-        let is_special = page_of(kind) == Page::Special;
-        let candidates: Vec<Candidate> = if is_special {
-            Page::Special
+        let current_section = Section::from_kind(kind);
+        let candidates: Vec<Candidate> = match current_section {
+            Section::System => Section::System
                 .supported_kinds(keyboard)
                 .map(|k| zmk_catalog::behavior_candidate(&zmk_catalog::sample_behavior(k), &[]))
-                .collect()
-        } else {
-            zmk_catalog::command_candidates(kind, self.zmk_draft.backlight.value)
+                .collect(),
+            Section::Special => Section::Special
+                .supported_kinds(keyboard)
+                .map(|k| zmk_catalog::behavior_candidate(&zmk_catalog::sample_behavior(k), &[]))
+                .collect(),
+            _ => zmk_catalog::command_candidates(kind, self.zmk_draft.backlight.value)
                 .into_iter()
                 .filter(|c| keyboard.is_action_supported(&c.binding))
-                .collect()
+                .collect(),
         };
-        let grid_title = if is_special { "Special" } else { kind.label() };
-        let action = keyboard.get_action(target.layer_index, target.row, target.col);
+        let grid_title = match current_section {
+            Section::System => "System",
+            Section::Special => "Special",
+            _ => kind.label(),
+        };
+        let action = target.action(keyboard);
         let selected = action.as_ref().map(SelectedKey::valid);
         let group = CandidateGroup {
             name: grid_title,
@@ -659,7 +697,7 @@ mod tests {
             kind_of(Behavior::ExternalPower(
                 zmk_studio_api::ExternalPowerCommand::Off
             )),
-            K::KeyPress
+            K::ExternalPower
         );
     }
 

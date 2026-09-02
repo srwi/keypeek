@@ -5,35 +5,35 @@ description = "Keyboard layer overlay for VIA, Vial, and ZMK"
 authors = ["Stephan Rumswinkel"]
 repository = "https://github.com/srwi/keypeek"
 readme = "README.md"
-version = "0.9.1"
+version = "0.10.0"
 edition = "2021"
 
 [dependencies]
 rust-ini = "0.21.3"
 directories = "6.0.0"
 tray-icon = "0.24.2"
-egui = "0.34.3"
-eframe = { version = "0.34.3", features = ["glow"] }
-egui_extras = { version = "0.34.3", features = ["all_loaders"] }
-qmk-via-api = { path = "../rust-via-api" }
+egui = "0.36.1"
+eframe = { version = "0.36.1", features = ["glow"] }
+egui_extras = { version = "0.36.1", features = ["all_loaders"] }
+qmk-via-api = "0.9.0"
 hidapi = { version = "2.6.5", features = ["macos-shared-device"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
-egui-phosphor = "0.12.0"
-egui-file-dialog = "0.13.0"
+egui-phosphor = "0.13.0"
+egui-file-dialog = "0.15.0"
 image = "0.25.10"
 lzma-rs = "0.3"
 serialport = "4.10.0"
-zmk-studio-api = { path = "../zmk-studio-api", features = ["serial", "ble"] }
+zmk-studio-api = { version = "0.6.0", features = ["serial", "ble"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
 winit = { version = "0.30.13", features = ["x11"] }
-egui_glow = "0.34.3"
-xkbcommon = "0.8"
-x11rb = { version = "0.13", features = ["allow-unsafe-code"] }
-smithay-client-toolkit = "0.20.0"
-wayland-client = "0.31.14"
+egui_glow = "0.36.1"
+xkbcommon = "0.9.0"
+x11rb = { version = "0.14.0", features = ["allow-unsafe-code"] }
+smithay-client-toolkit = "0.21.1"
+wayland-client = "0.31.15"
 wayland-egl = "0.32.11"
 khronos-egl = { version = "6", features = ["static"] }
 

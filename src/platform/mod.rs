@@ -13,6 +13,21 @@ pub trait OverlayHost {
     fn request_close(&mut self);
 }
 
+/// Registers Phosphor icons into the egui font definitions.
+pub(crate) fn add_phosphor_to_fonts(fonts: &mut egui::FontDefinitions) {
+    fonts.font_data.insert(
+        "phosphor".to_owned(),
+        std::sync::Arc::new(egui::FontData::from_static(
+            egui_phosphor::Variant::Regular.font_bytes(),
+        )),
+    );
+
+    if let Some(font_keys) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
+        let index = 1.min(font_keys.len());
+        font_keys.insert(index, "phosphor".to_owned());
+    }
+}
+
 pub fn run(
     settings: Settings,
     devices: Vec<DiscoveredDevice>,
