@@ -368,15 +368,13 @@ impl EditorState {
                 titled_group(ui, "Keycode", |ui| {
                     ui.horizontal(|ui| {
                         ui.label("0x");
-                        let mut text = self.qmk_draft.hex.clone();
                         let response = ui.add(
-                            egui::TextEdit::singleline(&mut text)
+                            egui::TextEdit::singleline(&mut self.qmk_draft.hex)
                                 .desired_width(80.0)
                                 .char_limit(4),
                         );
                         if response.changed() {
-                            text.retain(|c| c.is_ascii_hexdigit());
-                            self.qmk_draft.hex = text;
+                            self.qmk_draft.hex.retain(|c| c.is_ascii_hexdigit());
                         }
                         if response.lost_focus()
                             || (response.changed() && self.qmk_draft.hex.len() == 4)

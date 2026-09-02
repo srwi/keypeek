@@ -13,8 +13,10 @@ fn candidate_group(name: &'static str, codes: impl IntoIterator<Item = u16>) -> 
         name,
         candidates: codes
             .into_iter()
-            .filter(|&c| matches!(resolve_qmk_key(c), KeyResolution::Key(_)))
-            .map(qmk_candidate)
+            .filter_map(|c| match resolve_qmk_key(c) {
+                KeyResolution::Key(key) => Some(Candidate::new(KeyAction::Qmk(c), *key)),
+                _ => None,
+            })
             .collect(),
     }
 }
@@ -45,10 +47,16 @@ pub fn categories() -> &'static [CandidateGroup] {
 
 /// Returns the candidate group for a specific QMK keycode category.
 pub fn category(cat: KeycodeCategory) -> &'static CandidateGroup {
-    let index = KeycodeCategory::ALL
-        .iter()
-        .position(|&c| c == cat)
-        .expect("all categories are indexed");
+    let index = match cat {
+        KeycodeCategory::Basic => 0,
+        KeycodeCategory::Media => 1,
+        KeycodeCategory::Special => 2,
+        KeycodeCategory::Backlight => 3,
+        KeycodeCategory::Rgblight => 4,
+        KeycodeCategory::RgbMatrix => 5,
+        KeycodeCategory::Audio => 6,
+        KeycodeCategory::Custom => 7,
+    };
     &categories()[index]
 }
 

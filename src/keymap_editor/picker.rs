@@ -18,66 +18,40 @@ pub struct Candidate {
     pub key: LayoutKey,
     /// Indicates a transparent key slot.
     pub transparent: bool,
+    /// Precomputed lowercase search tokens.
+    search_haystack: String,
 }
 
 impl Candidate {
     pub fn new(binding: KeyAction, key: LayoutKey) -> Self {
+        let search_haystack = build_search_haystack(&binding, &key);
         Self {
             binding,
             key,
             transparent: false,
+            search_haystack,
         }
     }
 
+    /// Sets whether this candidate represents a transparent key slot.
+    pub fn with_transparent(mut self, transparent: bool) -> Self {
+        self.transparent = transparent;
+        self
+    }
+
     /// Checks whether this candidate matches the search query.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn matches_query(&self, query: &str) -> bool {
         let q = query.trim().to_lowercase();
         if q.is_empty() {
             return true;
         }
+        self.matches_lowercased(&q)
+    }
 
-        let matches = |s: &str| s.to_lowercase().contains(&q);
-        let matches_opt = |opt: &Option<String>| opt.as_deref().is_some_and(matches);
-        let matches_lbl = |lbl: &Option<crate::layout_key::Label>| {
-            lbl.as_ref()
-                .is_some_and(|l| matches(&l.full) || matches_opt(&l.short))
-        };
-
-        if matches(&self.key.tap.full)
-            || matches_opt(&self.key.tap.short)
-            || matches_opt(&self.key.shifted)
-            || matches_opt(&self.key.ralt)
-            || matches_opt(&self.key.ralt_shifted)
-            || self.key.tooltip_text().as_deref().is_some_and(matches)
-            || matches_lbl(&self.key.behavior)
-            || matches_lbl(&self.key.argument)
-        {
-            return true;
-        }
-
-        match &self.binding {
-            KeyAction::Qmk(code) => {
-                if let Ok(kc) = qmk_via_api::keycodes::Keycode::try_from(*code) {
-                    if matches(kc.as_ref()) {
-                        return true;
-                    }
-                }
-                format!("{:04x}", code).contains(&q)
-            }
-            KeyAction::Zmk(behavior) => match behavior {
-                zmk_studio_api::Behavior::KeyPress(usage)
-                | zmk_studio_api::Behavior::KeyToggle(usage)
-                | zmk_studio_api::Behavior::StickyKey(usage) => {
-                    if let Ok(kc) = zmk_studio_api::Keycode::try_from(usage.to_hid_usage()) {
-                        if matches(kc.as_ref()) || matches(kc.to_name()) {
-                            return true;
-                        }
-                    }
-                    format!("{:02x}", usage.id()).contains(&q)
-                }
-                _ => false,
-            },
-        }
+    /// Fast search check against pre-lowercased query token without allocations.
+    pub fn matches_lowercased(&self, lowercase_query: &str) -> bool {
+        self.search_haystack.contains(lowercase_query)
     }
 
     /// Creates a candidate for any key action, providing consistent display
@@ -98,17 +72,75 @@ impl Candidate {
         }
 
         match binding.resolve_label(layer_names) {
-            None => Self {
+            None => Self::new(
                 binding,
-                key: LayoutKey {
+                LayoutKey {
                     tap: Label::with_short("Transparent", egui_phosphor::regular::CARET_DOWN),
                     ..Default::default()
                 },
-                transparent: true,
-            },
+            )
+            .with_transparent(true),
             Some(key) => Self::new(binding, key),
         }
     }
+}
+
+fn push_token(haystack: &mut String, s: &str) {
+    for c in s.chars().flat_map(char::to_lowercase) {
+        haystack.push(c);
+    }
+    haystack.push(' ');
+}
+
+fn push_opt_token(haystack: &mut String, opt: &Option<String>) {
+    if let Some(s) = opt {
+        push_token(haystack, s);
+    }
+}
+
+fn push_lbl_token(haystack: &mut String, lbl: &Option<crate::layout_key::Label>) {
+    if let Some(l) = lbl {
+        push_token(haystack, &l.full);
+        push_opt_token(haystack, &l.short);
+    }
+}
+
+fn build_search_haystack(binding: &KeyAction, key: &LayoutKey) -> String {
+    let mut haystack = String::with_capacity(64);
+
+    push_token(&mut haystack, &key.tap.full);
+    push_opt_token(&mut haystack, &key.tap.short);
+    push_opt_token(&mut haystack, &key.shifted);
+    push_opt_token(&mut haystack, &key.ralt);
+    push_opt_token(&mut haystack, &key.ralt_shifted);
+    push_opt_token(&mut haystack, &key.tooltip_text());
+    push_lbl_token(&mut haystack, &key.behavior);
+    push_lbl_token(&mut haystack, &key.argument);
+
+    match binding {
+        KeyAction::Qmk(code) => {
+            if let Ok(kc) = qmk_via_api::keycodes::Keycode::try_from(*code) {
+                push_token(&mut haystack, kc.as_ref());
+            }
+            use std::fmt::Write;
+            let _ = write!(&mut haystack, "{:04x} ", code);
+        }
+        KeyAction::Zmk(behavior) => match behavior {
+            zmk_studio_api::Behavior::KeyPress(usage)
+            | zmk_studio_api::Behavior::KeyToggle(usage)
+            | zmk_studio_api::Behavior::StickyKey(usage) => {
+                if let Ok(kc) = zmk_studio_api::Keycode::try_from(usage.to_hid_usage()) {
+                    push_token(&mut haystack, kc.as_ref());
+                    push_token(&mut haystack, kc.to_name());
+                }
+                use std::fmt::Write;
+                let _ = write!(&mut haystack, "{:02x} ", usage.id());
+            }
+            _ => {}
+        },
+    }
+
+    haystack
 }
 
 /// Selected key state and validity indicator for picker grids.
@@ -170,11 +202,16 @@ pub fn key_button(
     response
 }
 
+/// Returns the number of columns of keys that fit in the given available width.
+pub fn picker_grid_cols(available_width: f32) -> usize {
+    ((available_width + GAP) / (KEY_UNIT + GAP))
+        .floor()
+        .max(1.0) as usize
+}
+
 /// Returns the total width spanned by the columns of keys in the picker grid for the given available width.
 pub fn picker_grid_width(available_width: f32) -> f32 {
-    let cols = ((available_width + GAP) / (KEY_UNIT + GAP))
-        .floor()
-        .max(1.0) as usize;
+    let cols = picker_grid_cols(available_width);
     (cols as f32 * KEY_UNIT + (cols.saturating_sub(1)) as f32 * GAP).min(available_width)
 }
 
@@ -190,11 +227,10 @@ pub fn picker_grid_refs(
     if candidates.is_empty() {
         return;
     }
-    let cols = ((ui.available_width() + GAP) / (KEY_UNIT + GAP))
-        .floor()
-        .max(1.0) as usize;
+    let available_width = ui.available_width();
+    let cols = picker_grid_cols(available_width);
     let rows = candidates.len().div_ceil(cols);
-    let grid_width = picker_grid_width(ui.available_width());
+    let grid_width = picker_grid_width(available_width);
     let total_height = rows as f32 * KEY_UNIT + (rows.saturating_sub(1)) as f32 * GAP;
 
     let (_, space_rect) = ui.allocate_space(egui::vec2(grid_width.max(KEY_UNIT), total_height));
@@ -251,16 +287,30 @@ pub struct CandidateGroup {
     pub candidates: Vec<Candidate>,
 }
 
+/// Filters candidate references matching a predicate and pre-lowercased search query.
+fn filter_candidates_lowercased<'a>(
+    candidates: &'a [Candidate],
+    lowercased_query: &str,
+    filter: impl Fn(&Candidate) -> bool,
+) -> Vec<&'a Candidate> {
+    if lowercased_query.is_empty() {
+        candidates.iter().filter(|c| filter(c)).collect()
+    } else {
+        candidates
+            .iter()
+            .filter(|c| filter(c) && c.matches_lowercased(lowercased_query))
+            .collect()
+    }
+}
+
 /// Filters candidate references matching a predicate and search query.
+#[cfg(test)]
 fn filter_candidates<'a>(
     candidates: &'a [Candidate],
     query: &str,
     filter: impl Fn(&Candidate) -> bool,
 ) -> Vec<&'a Candidate> {
-    candidates
-        .iter()
-        .filter(|c| filter(c) && c.matches_query(query))
-        .collect()
+    filter_candidates_lowercased(candidates, &query.trim().to_lowercase(), filter)
 }
 
 /// Renders filtered candidate groups, handling the global empty-query state and delegating
@@ -272,9 +322,10 @@ fn render_candidate_groups(
     filter: impl Fn(&Candidate) -> bool,
     mut draw_group: impl FnMut(&mut egui::Ui, usize, &'static str, &[&Candidate]),
 ) {
+    let q = search_query.trim().to_lowercase();
     let mut rendered_any = false;
     for (gi, group) in groups.iter().enumerate() {
-        let refs = filter_candidates(&group.candidates, search_query, &filter);
+        let refs = filter_candidates_lowercased(&group.candidates, &q, &filter);
         if refs.is_empty() {
             continue;
         }
@@ -282,7 +333,7 @@ fn render_candidate_groups(
         draw_group(ui, gi, group.name, &refs);
     }
 
-    if !rendered_any && !search_query.trim().is_empty() {
+    if !rendered_any && !q.is_empty() {
         ui.weak("No matching keys");
     }
 }
@@ -297,9 +348,10 @@ pub fn titled_candidate_group(
     style: &KeyPaintStyle,
     on_select: impl FnMut(&Candidate),
 ) {
+    let q = search_query.trim().to_lowercase();
+    let refs = filter_candidates_lowercased(&group.candidates, &q, &filter);
     crate::ui_widgets::titled_group(ui, group.name, |ui| {
-        let refs = filter_candidates(&group.candidates, search_query, &filter);
-        if refs.is_empty() && !search_query.trim().is_empty() {
+        if refs.is_empty() && !q.is_empty() {
             ui.weak("No matching keys");
         } else {
             picker_grid_refs(ui, group.name, &refs, selected, style, on_select);
@@ -399,11 +451,41 @@ fn modifier_chip_key(name: &modifier_symbols::ModName, hand: Option<Hand>) -> La
     key
 }
 
-/// The four QMK modifier types as key-shaped toggle chips, sharing the
-/// overlay's modifier look, alongside a vertically centered Hand (L/R) selector.
-/// Selected bits use the pressed treatment, matching how the selected cell is
-/// highlighted in the picker grids. Returns `true` if any modifier bit or hand
-/// selection changed.
+/// Draws a compact hand (L/R) selector chip fitting within a single key unit.
+fn hand_selector(ui: &mut egui::Ui, rect: egui::Rect, id_salt: &str, right: &mut bool) -> bool {
+    let mut changed = false;
+    ui.scope_builder(
+        egui::UiBuilder::new()
+            .max_rect(rect)
+            .id_salt((id_salt, "hand")),
+        |ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(3.0, 2.0);
+            ui.vertical_centered(|ui| {
+                ui.weak("Hand");
+                ui.horizontal(|ui| {
+                    let btn_size = egui::vec2((rect.width() - 3.0) / 2.0, ui.available_height());
+                    for (is_r, label, tip) in [
+                        (false, "L", "Left-hand modifiers (LCTL, LSFT, LALT, LGUI)"),
+                        (true, "R", "Right-hand modifiers (RCTL, RSFT, RALT, RGUI)"),
+                    ] {
+                        if ui
+                            .add_sized(btn_size, egui::Button::new(label).selected(*right == is_r))
+                            .on_hover_text(tip)
+                            .clicked()
+                            && *right != is_r
+                        {
+                            *right = is_r;
+                            changed = true;
+                        }
+                    }
+                });
+            });
+        },
+    );
+    changed
+}
+
+/// Draws a 4-modifier toggle row alongside a Hand (L/R) selector.
 pub fn modifier_toggle_row(
     ui: &mut egui::Ui,
     id_salt: &str,
@@ -424,54 +506,40 @@ pub fn modifier_toggle_row(
 
     let mut changed = false;
 
-    ui.horizontal(|ui| {
-        let cells = defs.len() as f32;
-        let row_width = cells * KEY_UNIT + (cells - 1.0) * GAP;
-        let (_, space_rect) = ui.allocate_space(egui::vec2(row_width, KEY_UNIT));
-        let origin = space_rect.min;
+    let total_cells = 5.0;
+    let row_width = total_cells * KEY_UNIT + (total_cells - 1.0) * GAP;
+    let (_, space_rect) = ui.allocate_space(egui::vec2(row_width, KEY_UNIT));
+    let origin = space_rect.min;
 
-        for (i, (mask, name)) in defs.iter().enumerate() {
-            let cell = egui::Rect::from_min_size(
-                origin + egui::vec2(i as f32 * (KEY_UNIT + GAP), 0.0),
-                egui::vec2(KEY_UNIT, KEY_UNIT),
-            );
-            let key = modifier_chip_key(name, Some(hand));
-            let response = key_chip(
-                ui,
-                cell,
-                ui.id().with((id_salt, "mod", i)),
-                &key,
-                *mods & mask != 0,
-                valid,
-                style,
-            );
+    for (i, (mask, name)) in defs.iter().enumerate() {
+        let cell = egui::Rect::from_min_size(
+            origin + egui::vec2(i as f32 * (KEY_UNIT + GAP), 0.0),
+            egui::vec2(KEY_UNIT, KEY_UNIT),
+        );
+        let key = modifier_chip_key(name, Some(hand));
+        let response = key_chip(
+            ui,
+            cell,
+            ui.id().with((id_salt, "mod", i)),
+            &key,
+            *mods & mask != 0,
+            valid,
+            style,
+        );
 
-            if response.clicked() {
-                *mods ^= *mask;
-                changed = true;
-            }
+        if response.clicked() {
+            *mods ^= *mask;
+            changed = true;
         }
+    }
 
-        ui.add_space(8.0);
-        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-            ui.weak("Hand");
-            if ui
-                .add(egui::Button::new("L").small().selected(!*right))
-                .clicked()
-            {
-                *right = false;
-                changed = true;
-            }
-            if ui
-                .add(egui::Button::new("R").small().selected(*right))
-                .on_hover_text("Right-hand modifiers (RCTL, RSFT, RALT, RGUI)")
-                .clicked()
-            {
-                *right = true;
-                changed = true;
-            }
-        });
-    });
+    let hand_rect = egui::Rect::from_min_size(
+        origin + egui::vec2(defs.len() as f32 * (KEY_UNIT + GAP), 0.0),
+        egui::vec2(KEY_UNIT, KEY_UNIT),
+    );
+    if hand_selector(ui, hand_rect, id_salt, right) {
+        changed = true;
+    }
 
     changed
 }
@@ -605,5 +673,73 @@ mod tests {
         assert_eq!(picker_grid_width(110.0), 108.0);
         // 10 columns: 51.0 * 10 + 6.0 * 9 = 564.0
         assert_eq!(picker_grid_width(580.0), 564.0);
+    }
+
+    #[test]
+    fn modifier_toggle_row_fits_five_keys_width() {
+        let ctx = egui::Context::default();
+        let _ = ctx.run_ui(Default::default(), |ui| {
+            let mut mods = 0u16;
+            let mut right = false;
+            let style = KeyPaintStyle::from_settings(&crate::settings::Settings::default());
+            let inner_response = ui.allocate_ui(egui::vec2(0.0, 0.0), |ui| {
+                modifier_toggle_row(ui, "test", &mut mods, &mut right, true, &style);
+            });
+            let expected_width = 5.0 * KEY_UNIT + 4.0 * GAP;
+            assert_eq!(expected_width, 279.0);
+            assert_eq!(inner_response.response.rect.width(), expected_width);
+            assert_eq!(inner_response.response.rect.height(), KEY_UNIT);
+        });
+    }
+
+    #[test]
+    fn modifier_toggle_row_toggle_hand() {
+        let ctx = egui::Context::default();
+        let style = KeyPaintStyle::from_settings(&crate::settings::Settings::default());
+
+        let mut mods = 0u16;
+        let mut right = false;
+
+        let mut r_pos = egui::Pos2::ZERO;
+        let _ = ctx.run_ui(Default::default(), |ui| {
+            let inner_response = ui.allocate_ui(egui::vec2(0.0, 0.0), |ui| {
+                modifier_toggle_row(ui, "test", &mut mods, &mut right, true, &style);
+            });
+            let origin = inner_response.response.rect.min;
+            let btn_gap = 3.0;
+            let btn_width = (KEY_UNIT - btn_gap) / 2.0;
+            let label_height = 14.0;
+            let gap_y = 2.0;
+            r_pos = origin
+                + egui::vec2(
+                    4.0 * (KEY_UNIT + GAP) + btn_width + btn_gap + btn_width / 2.0,
+                    label_height + gap_y + (KEY_UNIT - label_height - gap_y) / 2.0,
+                );
+        });
+
+        let mut raw_input = egui::RawInput::default();
+        raw_input.events.push(egui::Event::PointerMoved(r_pos));
+        raw_input.events.push(egui::Event::PointerButton {
+            pos: r_pos,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: Default::default(),
+        });
+        raw_input.events.push(egui::Event::PointerButton {
+            pos: r_pos,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: Default::default(),
+        });
+
+        let mut changed = false;
+        let _ = ctx.run_ui(raw_input, |ui| {
+            ui.allocate_ui(egui::vec2(0.0, 0.0), |ui| {
+                changed = modifier_toggle_row(ui, "test", &mut mods, &mut right, true, &style);
+            });
+        });
+
+        assert!(right);
+        assert!(changed);
     }
 }

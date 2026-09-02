@@ -89,6 +89,13 @@ fn page_of(kind: ZmkBehaviorKind) -> Page {
         .unwrap_or(Page::Keys)
 }
 
+/// Backlight command parameters for staged backlight adjustment.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct BacklightDraft {
+    pub value: u8,
+    pub staged: bool,
+}
+
 /// Editable parameter state for ZMK behaviors.
 #[derive(Clone)]
 pub struct ZmkDraft {
@@ -101,10 +108,8 @@ pub struct ZmkDraft {
     pub hold_mods: u8,
     /// Target layer ID for layer behaviors.
     pub layer_id: Option<u32>,
-    /// Brightness level for Backlight Set commands.
-    pub bl_value: u32,
-    /// Indicates whether Backlight Set is staged.
-    pub bl_set_staged: bool,
+    /// Parameter state for backlight adjustment commands.
+    pub backlight: BacklightDraft,
 }
 
 impl Default for ZmkDraft {
@@ -115,8 +120,7 @@ impl Default for ZmkDraft {
             modifiers: 0,
             hold_mods: 0,
             layer_id: None,
-            bl_value: 0,
-            bl_set_staged: false,
+            backlight: BacklightDraft::default(),
         }
     }
 }
@@ -178,8 +182,8 @@ impl ZmkDraft {
                 draft.modifiers = tap.modifiers();
             }
             Behavior::Backlight(zmk_studio_api::BacklightCommand::Set(value)) => {
-                draft.bl_value = *value as u32;
-                draft.bl_set_staged = true;
+                draft.backlight.value = *value;
+                draft.backlight.staged = true;
             }
             _ => {}
         }
@@ -250,7 +254,7 @@ impl EditorState {
             {
                 self.zmk_draft.kind = first;
             }
-            self.zmk_draft.bl_set_staged = false;
+            self.zmk_draft.backlight.staged = false;
         }
 
         let current_kind = self.zmk_draft.kind;
@@ -297,8 +301,7 @@ impl EditorState {
                     self.reset_zmk_draft_for_kind(keyboard, target, kind);
                 }
                 ZmkNavSelection::Page(page, first_kind) => {
-                    self.zmk_draft =
-                        ZmkDraft::for_page(page, current_action.as_ref(), first_kind);
+                    self.zmk_draft = ZmkDraft::for_page(page, current_action.as_ref(), first_kind);
                 }
             }
         }
@@ -509,7 +512,7 @@ impl EditorState {
         style: &crate::key_paint::KeyPaintStyle,
     ) {
         let kind = self.zmk_draft.kind;
-        let staging_set = kind == ZmkBehaviorKind::Backlight && self.zmk_draft.bl_set_staged;
+        let staging_set = kind == ZmkBehaviorKind::Backlight && self.zmk_draft.backlight.staged;
         let is_special = page_of(kind) == Page::Special;
         let candidates: Vec<Candidate> = if is_special {
             Page::Special
@@ -517,7 +520,7 @@ impl EditorState {
                 .map(|k| zmk_catalog::behavior_candidate(&zmk_catalog::sample_behavior(k), &[]))
                 .collect()
         } else {
-            zmk_catalog::command_candidates(kind, self.zmk_draft.bl_value)
+            zmk_catalog::command_candidates(kind, self.zmk_draft.backlight.value)
                 .into_iter()
                 .filter(|c| keyboard.is_action_supported(&c.binding))
                 .collect()
@@ -538,10 +541,10 @@ impl EditorState {
             style,
             |candidate| {
                 if is_backlight_set(&candidate.binding) {
-                    self.zmk_draft.bl_set_staged = true;
+                    self.zmk_draft.backlight.staged = true;
                     return;
                 }
-                self.zmk_draft.bl_set_staged = false;
+                self.zmk_draft.backlight.staged = false;
                 self.apply_write(keyboard, target, candidate.binding.clone());
             },
         );
@@ -549,10 +552,10 @@ impl EditorState {
         if staging_set {
             titled_group(ui, "Level", |ui| {
                 let level = ui
-                    .add(egui::DragValue::new(&mut self.zmk_draft.bl_value).range(0..=255));
+                    .add(egui::DragValue::new(&mut self.zmk_draft.backlight.value).range(0..=255));
                 if level.drag_stopped() || level.lost_focus() {
                     let behavior = Behavior::Backlight(zmk_studio_api::BacklightCommand::Set(
-                        self.zmk_draft.bl_value as u8,
+                        self.zmk_draft.backlight.value,
                     ));
                     self.apply_write(keyboard, target, KeyAction::Zmk(behavior));
                 }

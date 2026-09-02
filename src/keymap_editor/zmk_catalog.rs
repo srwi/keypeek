@@ -47,12 +47,12 @@ pub fn layer_groups(
 }
 
 /// Returns candidate keys for a ZMK command behavior.
-pub fn command_candidates(kind: ZmkBehaviorKind, backlight_level: u32) -> Vec<Candidate> {
+pub fn command_candidates(kind: ZmkBehaviorKind, backlight_level: u8) -> Vec<Candidate> {
     let mut behaviors = kind.standard_candidates();
     for behavior in &mut behaviors {
         if let Behavior::Backlight(zmk_studio_api::BacklightCommand::Set(ref mut level)) = behavior
         {
-            *level = backlight_level as u8;
+            *level = backlight_level;
         }
     }
     behaviors
