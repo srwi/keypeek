@@ -104,6 +104,12 @@ impl Section {
     }
 
     fn is_supported(&self, keyboard: &Keyboard) -> bool {
+        if *self == Section::Custom {
+            return super::qmk_catalog::custom_groups()
+                .iter()
+                .flat_map(|g| &g.candidates)
+                .any(|c| keyboard.is_action_supported(&c.binding));
+        }
         match self.category() {
             Some(cat) => super::qmk_catalog::category(cat)
                 .candidates
@@ -264,6 +270,13 @@ fn decode(code: u16) -> QmkDraft {
             draft.right = mods.is_right();
             return draft;
         }
+        QmkKeycode::TapDance(_)
+        | QmkKeycode::Macro(_)
+        | QmkKeycode::CustomKb(_)
+        | QmkKeycode::CustomUser(_) => {
+            draft.section = Section::Custom;
+            return draft;
+        }
         _ => {}
     }
 
@@ -316,6 +329,14 @@ impl crate::overlay_window::OverlayApp {
                 // One page of grouped layer keys, one per real layer; see
                 // draw_qmk_layer_page.
                 self.draw_qmk_layer_page(ui, keyboard, target, &style);
+            }
+            Section::Custom => {
+                let groups = super::qmk_catalog::custom_groups();
+                let action = keyboard.get_action(target.layer_index, target.row, target.col);
+                let selected = action.as_ref().map(SelectedKey::valid);
+                framed_candidate_groups_rows(ui, groups, selected, &style, |_, candidate| {
+                    self.apply_write(keyboard, target, candidate.binding.clone());
+                });
             }
             Section::Combo
             | Section::OneShot
@@ -602,5 +623,17 @@ mod tests {
         assert_eq!(decode(code).mods, MOD_LSFT | MOD_LCTL);
         assert!(QmkKeycode::encode_layer_mod(16, mods).is_none());
         assert!(QmkKeycode::encode_layer_mod(3, QmkModMask::empty()).is_none());
+    }
+
+    #[test]
+    fn tap_dance_round_trips() {
+        for td in 0..32 {
+            let code = QK_TAP_DANCE.start + td;
+            let draft = QmkDraft {
+                section: Section::Custom,
+                ..Default::default()
+            };
+            assert_round_trips(draft, code);
+        }
     }
 }

@@ -4,6 +4,7 @@ use super::picker::{Candidate, CandidateGroup};
 use crate::key_action::KeyAction;
 use crate::qmk_keycode_labels::{resolve_qmk_key, KeyResolution};
 use qmk_via_api::keycodes::{Keycode, KeycodeCategory};
+use qmk_via_api::ranges::{QK_KB, QK_MACRO, QK_TAP_DANCE, QK_USER};
 use qmk_via_api::QmkLayerOp;
 use std::sync::OnceLock;
 
@@ -25,10 +26,15 @@ pub fn categories() -> &'static [CandidateGroup] {
         KeycodeCategory::ALL
             .iter()
             .map(|&cat| {
-                candidate_group(
-                    cat.label(),
-                    Keycode::all_in_category(cat).iter().map(|&k| k as u16),
-                )
+                let codes: Vec<u16> = match cat {
+                    KeycodeCategory::Custom => Keycode::all_in_category(cat)
+                        .iter()
+                        .map(|&k| k as u16)
+                        .chain(QK_TAP_DANCE.start..QK_TAP_DANCE.start + 32)
+                        .collect(),
+                    _ => Keycode::all_in_category(cat).iter().map(|&k| k as u16).collect(),
+                };
+                candidate_group(cat.label(), codes)
             })
             .collect()
     })
@@ -41,6 +47,19 @@ pub fn category(cat: KeycodeCategory) -> &'static CandidateGroup {
         .position(|&c| c == cat)
         .expect("all categories are indexed");
     &categories()[index]
+}
+
+/// Returns candidate groups for the Custom section (Macro, Tap Dance, User, Keyboard).
+pub fn custom_groups() -> &'static [CandidateGroup] {
+    static CUSTOM_GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
+    CUSTOM_GROUPS.get_or_init(|| {
+        vec![
+            candidate_group("Macro", (0..32).map(|i| QK_MACRO.start + i)),
+            candidate_group("Tap Dance", (0..32).map(|i| QK_TAP_DANCE.start + i)),
+            candidate_group("User", (0..32).map(|i| QK_USER.start + i)),
+            candidate_group("Keyboard", (0..32).map(|i| QK_KB.start + i)),
+        ]
+    })
 }
 
 /// Returns candidate groups for all supported layer keycode types.

@@ -22,20 +22,20 @@ pub fn get_layer_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             BorderStyle::None,
         ),
         QmkKeycode::Macro(n) => (
-            None,
-            numbered_label("Macro", "M", n as u16),
+            Some(behavior_names::MACRO.label()),
+            Label::new(n.to_string()),
             None,
             BorderStyle::None,
         ),
         QmkKeycode::CustomKb(n) => (
-            None,
-            numbered_label("KB", "KB", n as u16),
+            Some(behavior_names::CUSTOM_KB.label()),
+            Label::new(n.to_string()),
             None,
             BorderStyle::None,
         ),
         QmkKeycode::CustomUser(n) => (
-            None,
-            numbered_label("User", "Usr", n),
+            Some(behavior_names::CUSTOM_USER.label()),
+            Label::new(n.to_string()),
             None,
             BorderStyle::None,
         ),
@@ -55,9 +55,34 @@ fn layer_label(layer: u8) -> Label {
     Label::new(format!("L{layer}"))
 }
 
-fn numbered_label(full_prefix: &str, short_prefix: &str, index: u16) -> Label {
-    Label::with_short(
-        format!("{full_prefix} {index}"),
-        format!("{short_prefix}{index}"),
-    )
+#[cfg(test)]
+mod tests {
+    use crate::qmk_keycode_labels::resolve_qmk_key;
+    use crate::qmk_keycode_labels::KeyResolution;
+    use qmk_via_api::ranges::{QK_KB, QK_MACRO, QK_TAP_DANCE, QK_USER};
+
+    #[test]
+    fn custom_keys_render_top_strip_behavior_and_numeric_tap() {
+        let cases = [
+            (QK_TAP_DANCE.start + 5, "TD", "5"),
+            (QK_MACRO.start + 3, "M", "3"),
+            (QK_KB.start + 7, "KB", "7"),
+            (QK_USER.start + 12, "Usr", "12"),
+        ];
+
+        for (code, expected_behavior_short, expected_tap) in cases {
+            let resolution = resolve_qmk_key(code);
+            match resolution {
+                KeyResolution::Key(key) => {
+                    assert_eq!(key.tap.full, expected_tap, "tap label for 0x{code:04X}");
+                    assert_eq!(
+                        key.behavior.as_ref().and_then(|b| b.short.as_deref()),
+                        Some(expected_behavior_short),
+                        "behavior short for 0x{code:04X}"
+                    );
+                }
+                _ => panic!("0x{code:04X} should resolve to Key"),
+            }
+        }
+    }
 }

@@ -145,6 +145,9 @@ pub mod behavior_names {
     behavior_name!(STICKY_KEY, "Sticky Key", "SK");
     behavior_name!(KEY_TOGGLE, "Key Toggle", "KT");
     behavior_name!(TAP_DANCE, "Tap Dance", "TD");
+    behavior_name!(MACRO, "Macro", "M");
+    behavior_name!(CUSTOM_KB, "Keyboard", "KB");
+    behavior_name!(CUSTOM_USER, "User", "Usr");
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Default, serde::Serialize, serde::Deserialize)]
