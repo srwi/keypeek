@@ -32,7 +32,10 @@ pub fn categories() -> &'static [CandidateGroup] {
                         .map(|&k| k as u16)
                         .chain(QK_TAP_DANCE.start..QK_TAP_DANCE.start + 32)
                         .collect(),
-                    _ => Keycode::all_in_category(cat).iter().map(|&k| k as u16).collect(),
+                    _ => Keycode::all_in_category(cat)
+                        .iter()
+                        .map(|&k| k as u16)
+                        .collect(),
                 };
                 candidate_group(cat.label(), codes)
             })

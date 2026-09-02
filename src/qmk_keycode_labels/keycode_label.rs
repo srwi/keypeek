@@ -31,14 +31,6 @@ pub fn resolve_qmk_key(bytes: u16) -> KeyResolution {
     }
 }
 
-/// Convenience helper to obtain a `LayoutKey` if the keycode is a valid, recognized key.
-pub fn get_layout_key(bytes: u16) -> Option<LayoutKey> {
-    match resolve_qmk_key(bytes) {
-        KeyResolution::Key(key) => Some(*key),
-        _ => None,
-    }
-}
-
 pub fn get_hex_layout_key(keycode_bytes: u16) -> LayoutKey {
     LayoutKey {
         tap: Label::new(format!("0x{:04X}", keycode_bytes)),

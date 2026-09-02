@@ -9,6 +9,6 @@ pub use advanced::get_advanced_layout_key;
 #[allow(unused_imports)]
 pub use basic::get_basic_layout_key;
 #[allow(unused_imports)]
-pub use keycode_label::{get_hex_layout_key, get_layout_key, resolve_qmk_key, KeyResolution};
+pub use keycode_label::{get_hex_layout_key, resolve_qmk_key, KeyResolution};
 #[allow(unused_imports)]
 pub use layer::get_layer_layout_key;

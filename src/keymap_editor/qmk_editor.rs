@@ -1,8 +1,8 @@
 //! QMK keycode editor and encoder.
 
 use super::picker::{
-    framed_candidate_groups_rows, modifier_toggle_row, picker_grid_filtered, Candidate,
-    CandidateGroup, SelectedKey, KEY_UNIT,
+    framed_candidate_groups, modifier_toggle_row, multi_candidate_groups, titled_candidate_group,
+    SelectedKey, KEY_UNIT,
 };
 use super::EditTarget;
 use crate::key_action::KeyAction;
@@ -161,7 +161,7 @@ impl Default for QmkDraft {
 
 impl QmkDraft {
     /// Initializes draft for a section, preserving the active keycode if it matches the section.
-    fn for_section(section: Section, current_action: Option<&KeyAction>) -> Self {
+    pub(super) fn for_section(section: Section, current_action: Option<&KeyAction>) -> Self {
         match current_action {
             Some(KeyAction::Qmk(code)) => {
                 let d = Self::from_keycode(*code);
@@ -309,8 +309,9 @@ impl crate::overlay_window::OverlayApp {
         keyboard: &Keyboard,
         target: EditTarget,
     ) {
+        let mut search_query = std::mem::take(&mut self.editor.search_query);
         let style = self.paint_style(KEY_UNIT);
-        super::editor_left_panel(ui, "qmk_sections", |ui| {
+        super::editor_left_panel(ui, "qmk_sections", &mut search_query, |ui, search_query| {
             for s in Section::ALL {
                 if !s.is_supported(keyboard) {
                     continue;
@@ -318,6 +319,7 @@ impl crate::overlay_window::OverlayApp {
                 let response =
                     ui.selectable_value(&mut self.editor.qmk_draft.section, s, s.label());
                 if response.changed() {
+                    search_query.clear();
                     self.reset_qmk_draft_for_section(keyboard, target, s);
                 }
             }
@@ -328,21 +330,33 @@ impl crate::overlay_window::OverlayApp {
             Section::Layers => {
                 // One page of grouped layer keys, one per real layer; see
                 // draw_qmk_layer_page.
-                self.draw_qmk_layer_page(ui, keyboard, target, &style);
+                self.draw_qmk_layer_page(ui, keyboard, target, &search_query, &style);
             }
             Section::Custom => {
                 let groups = super::qmk_catalog::custom_groups();
                 let action = keyboard.get_action(target.layer_index, target.row, target.col);
                 let selected = action.as_ref().map(SelectedKey::valid);
-                framed_candidate_groups_rows(ui, groups, selected, &style, |_, candidate| {
-                    self.apply_write(keyboard, target, candidate.binding.clone());
+                titled_group(ui, "Custom", |ui| {
+                    multi_candidate_groups(
+                        ui,
+                        groups,
+                        &search_query,
+                        |c| keyboard.is_action_supported(&c.binding),
+                        selected,
+                        &style,
+                        |_, candidate| {
+                            self.apply_write(keyboard, target, candidate.binding.clone());
+                        },
+                    );
                 });
             }
             Section::Combo
             | Section::OneShot
             | Section::ModTap
             | Section::LayerTap
-            | Section::LayerMod => self.draw_qmk_mods_page(ui, keyboard, target, &style),
+            | Section::LayerMod => {
+                self.draw_qmk_mods_page(ui, keyboard, target, &search_query, &style)
+            }
             Section::Any => {
                 titled_group(ui, "Keycode", |ui| {
                     ui.horizontal(|ui| {
@@ -370,11 +384,13 @@ impl crate::overlay_window::OverlayApp {
             }
             _ => {
                 if let Some(cat) = section.category() {
+                    let group = super::qmk_catalog::category(cat);
                     let action = keyboard.get_action(target.layer_index, target.row, target.col);
-                    draw_candidate_group_picker(
+                    titled_candidate_group(
                         ui,
-                        keyboard,
-                        super::qmk_catalog::category(cat),
+                        group,
+                        &search_query,
+                        |c| keyboard.is_action_supported(&c.binding),
                         action.as_ref().map(SelectedKey::valid),
                         &style,
                         |candidate| {
@@ -384,6 +400,7 @@ impl crate::overlay_window::OverlayApp {
                 }
             }
         });
+        self.editor.search_query = search_query;
     }
 
     fn reset_qmk_draft_for_section(
@@ -393,7 +410,8 @@ impl crate::overlay_window::OverlayApp {
         section: Section,
     ) {
         let current_action = keyboard.get_action(target.layer_index, target.row, target.col);
-        self.editor.qmk_draft = QmkDraft::for_section(section, current_action.as_ref());
+        self.editor
+            .reset_qmk_section(section, current_action.as_ref());
     }
 
     /// Draws the layer key selection page.
@@ -402,15 +420,24 @@ impl crate::overlay_window::OverlayApp {
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
         target: EditTarget,
+        search_query: &str,
         style: &crate::key_paint::KeyPaintStyle,
     ) {
         let layer_count = keyboard.layer_infos().len();
         let groups = super::qmk_catalog::layer_groups(layer_count);
         let action = keyboard.get_action(target.layer_index, target.row, target.col);
         let selected = action.as_ref().map(SelectedKey::valid);
-        framed_candidate_groups_rows(ui, &groups, selected, style, |_, candidate| {
-            self.apply_write(keyboard, target, candidate.binding.clone());
-        });
+        framed_candidate_groups(
+            ui,
+            &groups,
+            search_query,
+            |_| true,
+            selected,
+            style,
+            |_, candidate| {
+                self.apply_write(keyboard, target, candidate.binding.clone());
+            },
+        );
     }
 
     /// Draws the parameter controls for composite modifier and layer keycodes.
@@ -419,6 +446,7 @@ impl crate::overlay_window::OverlayApp {
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
         target: EditTarget,
+        search_query: &str,
         style: &crate::key_paint::KeyPaintStyle,
     ) {
         let is_valid = self.editor.qmk_draft.is_valid();
@@ -432,10 +460,11 @@ impl crate::overlay_window::OverlayApp {
                 .and_then(|l| QmkLayerOp::Momentary.encode(l.min(15) as u8))
                 .map(KeyAction::Qmk);
             let group = super::qmk_catalog::layer_picker_group(keyboard.layer_infos().len());
-            draw_candidate_group_picker(
+            titled_candidate_group(
                 ui,
-                keyboard,
                 &group,
+                search_query,
+                |c| keyboard.is_action_supported(&c.binding),
                 action.as_ref().map(|a| SelectedKey::new(a, is_valid)),
                 style,
                 |candidate| {
@@ -468,10 +497,12 @@ impl crate::overlay_window::OverlayApp {
             let action = (self.editor.qmk_draft.base_code != 0)
                 .then_some(self.editor.qmk_draft.base_code)
                 .map(KeyAction::Qmk);
-            draw_candidate_group_picker(
+            let group = super::qmk_catalog::category(KeycodeCategory::Basic);
+            titled_candidate_group(
                 ui,
-                keyboard,
-                super::qmk_catalog::category(KeycodeCategory::Basic),
+                group,
+                search_query,
+                |c| keyboard.is_action_supported(&c.binding),
                 action.as_ref().map(|a| SelectedKey::new(a, is_valid)),
                 style,
                 |candidate| {
@@ -491,33 +522,20 @@ impl crate::overlay_window::OverlayApp {
     }
 }
 
-fn draw_candidate_group_picker(
-    ui: &mut egui::Ui,
-    keyboard: &Keyboard,
-    group: &CandidateGroup,
-    selected: Option<SelectedKey<'_>>,
-    style: &crate::key_paint::KeyPaintStyle,
-    on_select: impl FnMut(&Candidate),
-) {
-    titled_group(ui, group.name, |ui| {
-        picker_grid_filtered(
-            ui,
-            group.name,
-            &group.candidates,
-            |c| keyboard.is_action_supported(&c.binding),
-            selected,
-            style,
-            on_select,
-        );
-    });
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::layout_key::LayoutKey;
     use crate::qmk_keycode_labels::constants::*;
-    use crate::qmk_keycode_labels::get_layout_key;
+    use crate::qmk_keycode_labels::{resolve_qmk_key, KeyResolution};
     use qmk_via_api::QmkLayerOp;
+
+    fn get_layout_key(bytes: u16) -> Option<LayoutKey> {
+        match resolve_qmk_key(bytes) {
+            KeyResolution::Key(key) => Some(*key),
+            _ => None,
+        }
+    }
 
     fn assert_round_trips(draft: QmkDraft, code: u16) {
         // The encoded code must decode back into the same section.

@@ -78,6 +78,8 @@ pub struct EditorState {
     pub zmk_session: ZmkSessionState,
     /// Indicates the window is saving changes before closing.
     pub closing: bool,
+    /// Active search filter for key candidate groups.
+    pub search_query: String,
 }
 
 impl Default for EditorState {
@@ -92,6 +94,7 @@ impl Default for EditorState {
             zmk_dirty: false,
             zmk_session: ZmkSessionState::Idle,
             closing: false,
+            search_query: String::new(),
         }
     }
 }
@@ -163,6 +166,7 @@ impl EditorState {
     pub fn retarget(&mut self, keyboard: &Keyboard, target: EditTarget) {
         self.target = Some(target);
         self.error = None;
+        self.search_query.clear();
         if self.zmk_session == ZmkSessionState::Failed {
             self.zmk_session = ZmkSessionState::Idle;
         }
@@ -181,6 +185,24 @@ impl EditorState {
             }
         }
     }
+
+    /// Resets the QMK draft for the given section.
+    pub fn reset_qmk_section(
+        &mut self,
+        section: qmk_editor::Section,
+        current_action: Option<&KeyAction>,
+    ) {
+        self.qmk_draft = QmkDraft::for_section(section, current_action);
+    }
+
+    /// Resets the ZMK draft for the given behavior kind.
+    pub fn reset_zmk_kind(
+        &mut self,
+        kind: zmk_catalog::ZmkBehaviorKind,
+        current_action: Option<&KeyAction>,
+    ) {
+        self.zmk_draft = ZmkDraft::for_kind(kind, current_action);
+    }
 }
 
 /// Width of the left category panel in pixels.
@@ -188,11 +210,12 @@ const SIDEBAR_WIDTH: f32 = 110.0;
 /// Right margin to prevent scrollbar overlap with group borders.
 const SCROLLBAR_GUTTER: f32 = 8.0;
 
-/// Draws the left category panel.
+/// Draws the left category panel with a search bar pinned to the bottom.
 pub(super) fn editor_left_panel(
     ui: &mut egui::Ui,
     left_id: &str,
-    content: impl FnOnce(&mut egui::Ui),
+    search_query: &mut String,
+    content: impl FnOnce(&mut egui::Ui, &mut String),
 ) {
     let left_id = egui::Id::new(left_id);
     egui::Panel::left(left_id)
@@ -206,8 +229,17 @@ pub(super) fn editor_left_panel(
             bottom: 0,
         }))
         .show_inside(ui, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), content);
+            ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
+                ui.add_space(2.0);
+                picker::search_bar(ui, search_query);
+                ui.add_space(6.0);
+                ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
+                            content(ui, search_query);
+                        });
+                    });
+                });
             });
         });
 }
@@ -370,9 +402,6 @@ impl crate::overlay_window::OverlayApp {
         target
     }
 
-    pub(crate) fn retarget_editor(&mut self, keyboard: &Keyboard, target: EditTarget) {
-        self.editor.retarget(keyboard, target);
-    }
 
     /// Draws a centered spinner and status text during connecting, saving, or failed operations.
     fn draw_editor_overlay(&mut self, ui: &mut egui::Ui) {

@@ -29,6 +29,57 @@ impl Candidate {
         }
     }
 
+    /// Checks whether this candidate matches the search query.
+    pub fn matches_query(&self, query: &str) -> bool {
+        let q = query.trim().to_lowercase();
+        if q.is_empty() {
+            return true;
+        }
+
+        let matches = |s: &str| s.to_lowercase().contains(&q);
+        let matches_opt = |opt: &Option<String>| opt.as_deref().is_some_and(matches);
+        let matches_lbl = |lbl: &Option<crate::layout_key::Label>| {
+            lbl.as_ref()
+                .is_some_and(|l| matches(&l.full) || matches_opt(&l.short))
+        };
+
+        if matches(&self.key.tap.full)
+            || matches_opt(&self.key.tap.short)
+            || matches_opt(&self.key.shifted)
+            || matches_opt(&self.key.ralt)
+            || matches_opt(&self.key.ralt_shifted)
+            || self.key.tooltip_text().as_deref().is_some_and(matches)
+            || matches_lbl(&self.key.behavior)
+            || matches_lbl(&self.key.argument)
+        {
+            return true;
+        }
+
+        match &self.binding {
+            KeyAction::Qmk(code) => {
+                if let Ok(kc) = qmk_via_api::keycodes::Keycode::try_from(*code) {
+                    if matches(kc.as_ref()) {
+                        return true;
+                    }
+                }
+                format!("{:04x}", code).contains(&q)
+            }
+            KeyAction::Zmk(behavior) => match behavior {
+                zmk_studio_api::Behavior::KeyPress(usage)
+                | zmk_studio_api::Behavior::KeyToggle(usage)
+                | zmk_studio_api::Behavior::StickyKey(usage) => {
+                    if let Ok(kc) = zmk_studio_api::Keycode::try_from(usage.to_hid_usage()) {
+                        if matches(kc.as_ref()) || matches(kc.to_name()) {
+                            return true;
+                        }
+                    }
+                    format!("{:02x}", usage.id()).contains(&q)
+                }
+                _ => false,
+            },
+        }
+    }
+
     /// Creates a candidate for any key action, providing consistent display
     /// labels for transparent and none slots across protocols.
     pub fn from_action(binding: KeyAction, layer_names: &[String]) -> Self {
@@ -117,6 +168,14 @@ pub fn key_button(
     response
 }
 
+/// Returns the total width spanned by the columns of keys in the picker grid for the given available width.
+pub fn picker_grid_width(available_width: f32) -> f32 {
+    let cols = ((available_width + GAP) / (KEY_UNIT + GAP))
+        .floor()
+        .max(1.0) as usize;
+    (cols as f32 * KEY_UNIT + (cols.saturating_sub(1)) as f32 * GAP).min(available_width)
+}
+
 /// Draws a grid of key candidates from references.
 pub fn picker_grid_refs(
     ui: &mut egui::Ui,
@@ -133,8 +192,7 @@ pub fn picker_grid_refs(
         .floor()
         .max(1.0) as usize;
     let rows = candidates.len().div_ceil(cols);
-    let grid_width =
-        (cols as f32 * KEY_UNIT + (cols.saturating_sub(1)) as f32 * GAP).min(ui.available_width());
+    let grid_width = picker_grid_width(ui.available_width());
     let total_height = rows as f32 * KEY_UNIT + (rows.saturating_sub(1)) as f32 * GAP;
 
     let (_, space_rect) = ui.allocate_space(egui::vec2(grid_width.max(KEY_UNIT), total_height));
@@ -181,83 +239,118 @@ pub fn picker_grid_refs(
     }
 }
 
-/// Draws a grid of key candidates.
-pub fn picker_grid_rows(
-    ui: &mut egui::Ui,
-    id_salt: &str,
-    candidates: &[Candidate],
-    selected: Option<SelectedKey<'_>>,
-    style: &KeyPaintStyle,
-    on_select: impl FnMut(&Candidate),
-) {
-    let refs: Vec<&Candidate> = candidates.iter().collect();
-    picker_grid_refs(ui, id_salt, &refs, selected, style, on_select);
-}
-
-/// Draws a grid of key candidates filtered by a predicate.
-pub fn picker_grid_filtered(
-    ui: &mut egui::Ui,
-    id_salt: &str,
-    candidates: &[Candidate],
-    filter: impl Fn(&Candidate) -> bool,
-    selected: Option<SelectedKey<'_>>,
-    style: &KeyPaintStyle,
-    on_select: impl FnMut(&Candidate),
-) {
-    let refs: Vec<&Candidate> = candidates.iter().filter(|c| filter(c)).collect();
-    picker_grid_refs(ui, id_salt, &refs, selected, style, on_select);
-}
-
 /// Named group of candidate keys.
 pub struct CandidateGroup {
     pub name: &'static str,
     pub candidates: Vec<Candidate>,
 }
 
-/// Draws labeled groups of candidate keys.
-pub fn candidate_groups_rows(
+/// Filters candidate references matching a predicate and search query.
+fn filter_candidates<'a>(
+    candidates: &'a [Candidate],
+    query: &str,
+    filter: impl Fn(&Candidate) -> bool,
+) -> Vec<&'a Candidate> {
+    candidates
+        .iter()
+        .filter(|c| filter(c) && c.matches_query(query))
+        .collect()
+}
+
+/// Renders filtered candidate groups, handling the global empty-query state and delegating
+/// presentation of each non-empty group to `draw_group`.
+fn render_candidate_groups(
     ui: &mut egui::Ui,
     groups: &[CandidateGroup],
+    search_query: &str,
+    filter: impl Fn(&Candidate) -> bool,
+    mut draw_group: impl FnMut(&mut egui::Ui, usize, &'static str, &[&Candidate]),
+) {
+    let mut rendered_any = false;
+    for (gi, group) in groups.iter().enumerate() {
+        let refs = filter_candidates(&group.candidates, search_query, &filter);
+        if refs.is_empty() {
+            continue;
+        }
+        rendered_any = true;
+        draw_group(ui, gi, group.name, &refs);
+    }
+
+    if !rendered_any && !search_query.trim().is_empty() {
+        ui.weak("No matching keys");
+    }
+}
+
+/// Draws a titled group containing candidate keys, filtering by the search query.
+pub fn titled_candidate_group(
+    ui: &mut egui::Ui,
+    group: &CandidateGroup,
+    search_query: &str,
+    filter: impl Fn(&Candidate) -> bool,
+    selected: Option<SelectedKey<'_>>,
+    style: &KeyPaintStyle,
+    on_select: impl FnMut(&Candidate),
+) {
+    crate::ui_widgets::titled_group(ui, group.name, |ui| {
+        let refs = filter_candidates(&group.candidates, search_query, &filter);
+        if refs.is_empty() && !search_query.trim().is_empty() {
+            ui.weak("No matching keys");
+        } else {
+            picker_grid_refs(ui, group.name, &refs, selected, style, on_select);
+        }
+    });
+}
+
+/// Draws multiple candidate groups inside an existing UI container,
+/// filtering all groups by the search query.
+pub fn multi_candidate_groups(
+    ui: &mut egui::Ui,
+    groups: &[CandidateGroup],
+    search_query: &str,
     filter: impl Fn(&Candidate) -> bool,
     selected: Option<SelectedKey<'_>>,
     style: &KeyPaintStyle,
     mut on_select: impl FnMut(usize, &Candidate),
 ) {
-    for (gi, group) in groups.iter().enumerate() {
-        let refs: Vec<&Candidate> = group.candidates.iter().filter(|c| filter(c)).collect();
-        if refs.is_empty() {
-            continue;
-        }
-        ui.push_id((gi, group.name), |ui| {
-            ui.label(group.name);
-            picker_grid_refs(ui, group.name, &refs, selected, style, |candidate| {
-                on_select(gi, candidate)
-            });
+    render_candidate_groups(ui, groups, search_query, filter, |ui, gi, name, refs| {
+        ui.push_id((gi, name), |ui| {
+            ui.label(name);
+            picker_grid_refs(ui, name, refs, selected, style, |c| on_select(gi, c));
             ui.add_space(6.0);
         });
-    }
+    });
 }
 
-/// Draws candidate groups in framed group boxes.
-pub fn framed_candidate_groups_rows(
+/// Draws a search input with width matching the left pane.
+pub fn search_bar(ui: &mut egui::Ui, query: &mut String) -> egui::Response {
+    let width = ui.available_width();
+    let response = ui.add_sized(
+        egui::vec2(width, ui.spacing().interact_size.y),
+        egui::TextEdit::singleline(query).hint_text("Search keys..."),
+    );
+    if response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        query.clear();
+    }
+    response
+}
+
+/// Draws candidate groups in framed group boxes, filtering all groups by the search query.
+pub fn framed_candidate_groups(
     ui: &mut egui::Ui,
     groups: &[CandidateGroup],
+    search_query: &str,
+    filter: impl Fn(&Candidate) -> bool,
     selected: Option<SelectedKey<'_>>,
     style: &KeyPaintStyle,
     mut on_select: impl FnMut(usize, &Candidate),
 ) {
-    for (gi, group) in groups.iter().enumerate() {
-        crate::ui_widgets::titled_group(ui, group.name, |ui| {
-            picker_grid_rows(
-                ui,
-                group.name,
-                &group.candidates,
-                selected,
-                style,
-                |candidate| on_select(gi, candidate),
-            );
+    render_candidate_groups(ui, groups, search_query, filter, |ui, gi, name, refs| {
+        crate::ui_widgets::titled_group(ui, name, |ui| {
+            picker_grid_refs(ui, name, refs, selected, style, |candidate| {
+                on_select(gi, candidate)
+            });
         });
-    }
+    });
 }
 
 /// Draws a modifier key button.
@@ -417,5 +510,94 @@ pub fn modifier_toggle_grid(
                 on_toggle(mask);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use qmk_via_api::keycodes::Keycode;
+
+    #[test]
+    fn candidate_matches_query_by_label_and_short() {
+        let candidate = Candidate::from_action(KeyAction::Qmk(Keycode::KC_ESCAPE as u16), &[]);
+        assert!(candidate.matches_query(""));
+        assert!(candidate.matches_query("esc"));
+        assert!(candidate.matches_query("ESC"));
+        assert!(candidate.matches_query("escape"));
+        assert!(!candidate.matches_query("enter"));
+
+        let enter = Candidate::from_action(KeyAction::Qmk(Keycode::KC_ENTER as u16), &[]);
+        assert!(enter.matches_query("enter"));
+        assert!(enter.matches_query("ENT"));
+        assert!(!enter.matches_query("space"));
+    }
+
+    #[test]
+    fn candidate_matches_query_by_shifted_and_symbol() {
+        let digit_1 = Candidate::from_action(KeyAction::Qmk(Keycode::KC_1 as u16), &[]);
+        assert!(digit_1.matches_query("1"));
+        assert!(digit_1.matches_query("!"));
+
+        let mute = Candidate::from_action(KeyAction::Qmk(Keycode::KC_AUDIO_MUTE as u16), &[]);
+        assert!(mute.matches_query("mute"));
+        assert!(mute.matches_query("audio"));
+    }
+
+    #[test]
+    fn candidate_matches_zmk_behavior() {
+        let space = Candidate::from_action(
+            KeyAction::Zmk(zmk_studio_api::Behavior::KeyPress(
+                zmk_studio_api::HidUsage::from_parts(zmk_studio_api::HID_USAGE_KEYBOARD, 0x2C, 0),
+            )),
+            &[],
+        );
+        assert!(space.matches_query("space"));
+        assert!(space.matches_query("spc"));
+
+        let play = Candidate::from_action(
+            KeyAction::Zmk(zmk_studio_api::Behavior::KeyPress(
+                zmk_studio_api::HidUsage::from_encoded(
+                    zmk_studio_api::Keycode::C_PLAY.to_hid_usage(),
+                ),
+            )),
+            &[],
+        );
+        assert!(play.matches_query("play"));
+    }
+
+    #[test]
+    fn candidate_matches_hex_and_whitespace_query() {
+        let a_key = Candidate::from_action(KeyAction::Qmk(Keycode::KC_A as u16), &[]);
+        assert!(a_key.matches_query("  "));
+        assert!(a_key.matches_query("0004"));
+        assert!(!a_key.matches_query("9999"));
+    }
+
+    #[test]
+    fn filter_candidates_filters_by_query() {
+        let candidates = vec![
+            Candidate::from_action(KeyAction::Qmk(Keycode::KC_ESCAPE as u16), &[]),
+            Candidate::from_action(KeyAction::Qmk(Keycode::KC_ENTER as u16), &[]),
+            Candidate::from_action(KeyAction::Qmk(Keycode::KC_SPACE as u16), &[]),
+        ];
+        let empty_filter = filter_candidates(&candidates, "", |_| true);
+        assert_eq!(empty_filter.len(), 3);
+
+        let esc_filter = filter_candidates(&candidates, "esc", |_| true);
+        assert_eq!(esc_filter.len(), 1);
+
+        let none_filter = filter_candidates(&candidates, "zzzzz", |_| true);
+        assert_eq!(none_filter.len(), 0);
+    }
+
+    #[test]
+    fn picker_grid_width_matches_columns() {
+        // 1 column: 51.0
+        assert_eq!(picker_grid_width(55.0), 51.0);
+        // 2 columns: 51.0 * 2 + 6.0 = 108.0
+        assert_eq!(picker_grid_width(110.0), 108.0);
+        // 10 columns: 51.0 * 10 + 6.0 * 9 = 564.0
+        assert_eq!(picker_grid_width(580.0), 564.0);
     }
 }

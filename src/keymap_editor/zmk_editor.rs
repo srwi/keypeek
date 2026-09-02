@@ -5,8 +5,8 @@ use crate::keyboard::Keyboard;
 use zmk_studio_api::{Behavior, HidUsage, HID_USAGE_KEYBOARD};
 
 use super::picker::{
-    candidate_groups_rows, framed_candidate_groups_rows, modifier_toggle_grid, picker_grid_rows,
-    Candidate, SelectedKey, KEY_UNIT,
+    framed_candidate_groups, modifier_toggle_grid, multi_candidate_groups, titled_candidate_group,
+    Candidate, CandidateGroup, SelectedKey, KEY_UNIT,
 };
 use super::zmk_catalog::{self, ZmkBehaviorKind};
 use super::EditTarget;
@@ -123,7 +123,7 @@ impl Default for ZmkDraft {
 
 impl ZmkDraft {
     /// Initializes draft for a specific kind, preserving the active behavior if it matches.
-    fn for_kind(kind: ZmkBehaviorKind, current_action: Option<&KeyAction>) -> Self {
+    pub(super) fn for_kind(kind: ZmkBehaviorKind, current_action: Option<&KeyAction>) -> Self {
         match current_action {
             Some(KeyAction::Zmk(b)) if b.role() == Some(kind) => Self::from_behavior(b),
             _ => Self {
@@ -233,7 +233,6 @@ impl crate::overlay_window::OverlayApp {
         keyboard: &Keyboard,
         target: EditTarget,
     ) {
-        let layer_infos = keyboard.layer_infos();
         let style = self.paint_style(KEY_UNIT);
 
         // If the current draft kind is not supported on this keyboard, switch to the first supported one.
@@ -250,10 +249,12 @@ impl crate::overlay_window::OverlayApp {
             self.editor.zmk_draft.bl_set_staged = false;
         }
 
+        let mut search_query = std::mem::take(&mut self.editor.search_query);
+
         // Left pane: grouped behavior-kind selector. Direct-apply and
         // parameterless behaviors share one "Special" entry whose pane is a
         // key grid.
-        super::editor_left_panel(ui, "zmk_kinds", |ui| {
+        super::editor_left_panel(ui, "zmk_kinds", &mut search_query, |ui, search_query| {
             for page in Page::ALL {
                 let mut kinds = page.supported_kinds(keyboard).peekable();
                 if kinds.peek().is_none() {
@@ -268,6 +269,7 @@ impl crate::overlay_window::OverlayApp {
                             kind.label(),
                         );
                         if response.changed() {
+                            search_query.clear();
                             self.reset_zmk_draft_for_kind(keyboard, target, kind);
                         }
                     }
@@ -278,6 +280,7 @@ impl crate::overlay_window::OverlayApp {
                         page.label(),
                     );
                     if response.clicked() {
+                        search_query.clear();
                         let current_action =
                             keyboard.get_action(target.layer_index, target.row, target.col);
                         self.editor.zmk_draft =
@@ -295,19 +298,26 @@ impl crate::overlay_window::OverlayApp {
                 Page::Special | Page::Commands => {
                     // Every parameterless behavior and command option is a
                     // key here; clicking applies it directly.
-                    self.draw_direct_grid(ui, keyboard, target, &style);
+                    self.draw_direct_grid(ui, keyboard, target, &search_query, &style);
                 }
                 Page::Keys => {
                     // One argument, one group: the usage's modifier toggles
                     // and key grid are tightly coupled, so they share the
                     // boundary.
                     titled_group(ui, "Key", |ui| {
-                        self.draw_usage_picker(ui, keyboard, target, is_valid, &style);
+                        self.draw_usage_picker(
+                            ui,
+                            keyboard,
+                            target,
+                            &search_query,
+                            is_valid,
+                            &style,
+                        );
                     });
                 }
                 Page::Layers => {
                     // One page of grouped layer keys; see draw_zmk_layer_page.
-                    self.draw_zmk_layer_page(ui, keyboard, target, &layer_infos, is_valid, &style);
+                    self.draw_zmk_layer_page(ui, keyboard, target, &search_query, is_valid, &style);
                 }
                 Page::Mods => {
                     // Two distinct arguments, two groups: the hold-side
@@ -333,7 +343,14 @@ impl crate::overlay_window::OverlayApp {
                         );
                     });
                     titled_group(ui, "Tap key", |ui| {
-                        self.draw_usage_picker(ui, keyboard, target, is_valid, &style);
+                        self.draw_usage_picker(
+                            ui,
+                            keyboard,
+                            target,
+                            &search_query,
+                            is_valid,
+                            &style,
+                        );
                     });
                     // A Mod-Tap without a hold modifier has nothing to do
                     // on hold, so the header ghosts it as invalid.
@@ -345,6 +362,7 @@ impl crate::overlay_window::OverlayApp {
                 }
             }
         });
+        self.editor.search_query = search_query;
     }
 
     fn reset_zmk_draft_for_kind(
@@ -353,9 +371,8 @@ impl crate::overlay_window::OverlayApp {
         target: EditTarget,
         kind: ZmkBehaviorKind,
     ) {
-        self.editor.zmk_draft.bl_set_staged = false;
         let current_action = keyboard.get_action(target.layer_index, target.row, target.col);
-        self.editor.zmk_draft = ZmkDraft::for_kind(kind, current_action.as_ref());
+        self.editor.reset_zmk_kind(kind, current_action.as_ref());
     }
 
     /// Draws the HID usage picker grid.
@@ -364,6 +381,7 @@ impl crate::overlay_window::OverlayApp {
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
         target: EditTarget,
+        search_query: &str,
         valid: bool,
         style: &crate::key_paint::KeyPaintStyle,
     ) {
@@ -386,9 +404,10 @@ impl crate::overlay_window::OverlayApp {
             },
         );
 
-        candidate_groups_rows(
+        multi_candidate_groups(
             ui,
             zmk_catalog::categories(),
+            search_query,
             |c| keyboard.is_action_supported(&c.binding),
             selected,
             style,
@@ -407,10 +426,11 @@ impl crate::overlay_window::OverlayApp {
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
         target: EditTarget,
-        layer_infos: &[crate::key_action::LayerInfo],
+        search_query: &str,
         valid: bool,
         style: &crate::key_paint::KeyPaintStyle,
     ) {
+        let layer_infos = keyboard.layer_infos();
         let layer_names: Vec<String> = layer_infos
             .iter()
             .map(|info| info.name.clone().unwrap_or_default())
@@ -421,7 +441,7 @@ impl crate::overlay_window::OverlayApp {
             .tap_usage()
             .unwrap_or_else(|| HidUsage::from_parts(HID_USAGE_KEYBOARD, 0x04, 0));
         let kinds: Vec<_> = Page::Layers.supported_kinds(keyboard).collect();
-        let groups = zmk_catalog::layer_groups(&kinds, layer_infos, &layer_names, tap);
+        let groups = zmk_catalog::layer_groups(&kinds, &layer_infos, &layer_names, tap);
 
         let is_lt = self.editor.zmk_draft.kind == ZmkBehaviorKind::LayerTap;
         let lt_action = is_lt
@@ -439,26 +459,34 @@ impl crate::overlay_window::OverlayApp {
             current_action.as_ref().map(SelectedKey::valid)
         };
 
-        framed_candidate_groups_rows(ui, &groups, selected, style, |gi, candidate| {
-            let kind = kinds[gi];
-            if let KeyAction::Zmk(behavior) = &candidate.binding {
-                if kind == ZmkBehaviorKind::LayerTap {
-                    if let Some(layer_id) = behavior.layer_id() {
-                        self.editor.zmk_draft.kind = ZmkBehaviorKind::LayerTap;
-                        self.editor.zmk_draft.layer_id = Some(layer_id);
-                        self.commit_zmk_draft(keyboard, target);
+        framed_candidate_groups(
+            ui,
+            &groups,
+            search_query,
+            |_| true,
+            selected,
+            style,
+            |gi, candidate| {
+                let kind = kinds[gi];
+                if let KeyAction::Zmk(behavior) = &candidate.binding {
+                    if kind == ZmkBehaviorKind::LayerTap {
+                        if let Some(layer_id) = behavior.layer_id() {
+                            self.editor.zmk_draft.kind = ZmkBehaviorKind::LayerTap;
+                            self.editor.zmk_draft.layer_id = Some(layer_id);
+                            self.commit_zmk_draft(keyboard, target);
+                        }
+                    } else {
+                        self.editor.zmk_draft.kind = kind;
+                        self.editor.zmk_draft.layer_id = behavior.layer_id();
+                        self.apply_write(keyboard, target, candidate.binding.clone());
                     }
-                } else {
-                    self.editor.zmk_draft.kind = kind;
-                    self.editor.zmk_draft.layer_id = behavior.layer_id();
-                    self.apply_write(keyboard, target, candidate.binding.clone());
                 }
-            }
-        });
+            },
+        );
 
         if self.editor.zmk_draft.kind == ZmkBehaviorKind::LayerTap {
             titled_group(ui, "Tap key", |ui| {
-                self.draw_usage_picker(ui, keyboard, target, valid, style);
+                self.draw_usage_picker(ui, keyboard, target, search_query, valid, style);
             });
         }
     }
@@ -469,6 +497,7 @@ impl crate::overlay_window::OverlayApp {
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
         target: EditTarget,
+        search_query: &str,
         style: &crate::key_paint::KeyPaintStyle,
     ) {
         let kind = self.editor.zmk_draft.kind;
@@ -488,23 +517,26 @@ impl crate::overlay_window::OverlayApp {
         let grid_title = if is_special { "Special" } else { kind.label() };
         let action = keyboard.get_action(target.layer_index, target.row, target.col);
         let selected = action.as_ref().map(SelectedKey::valid);
-        titled_group(ui, grid_title, |ui| {
-            picker_grid_rows(
-                ui,
-                kind.label(),
-                &candidates,
-                selected,
-                style,
-                |candidate| {
-                    if is_backlight_set(&candidate.binding) {
-                        self.editor.zmk_draft.bl_set_staged = true;
-                        return;
-                    }
-                    self.editor.zmk_draft.bl_set_staged = false;
-                    self.apply_write(keyboard, target, candidate.binding.clone());
-                },
-            );
-        });
+        let group = CandidateGroup {
+            name: grid_title,
+            candidates,
+        };
+        titled_candidate_group(
+            ui,
+            &group,
+            search_query,
+            |_| true,
+            selected,
+            style,
+            |candidate| {
+                if is_backlight_set(&candidate.binding) {
+                    self.editor.zmk_draft.bl_set_staged = true;
+                    return;
+                }
+                self.editor.zmk_draft.bl_set_staged = false;
+                self.apply_write(keyboard, target, candidate.binding.clone());
+            },
+        );
 
         if staging_set {
             titled_group(ui, "Level", |ui| {

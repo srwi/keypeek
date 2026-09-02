@@ -158,7 +158,7 @@ impl OverlayApp {
                     // A closing editor is saving; it must not be retargeted.
                     if clicked && !self.editor.closing {
                         if let Some((row, col, target_layer)) = hovered {
-                            self.retarget_editor(
+                            self.editor.retarget(
                                 keyboard,
                                 crate::keymap_editor::EditTarget {
                                     layer_index: target_layer,
