@@ -1,15 +1,12 @@
 //! QMK keycode editor and encoder.
 
+use super::picker::{
+    framed_candidate_groups_rows, modifier_toggle_row, picker_grid_filtered, Candidate,
+    CandidateGroup, SelectedKey, KEY_UNIT,
+};
+use super::EditTarget;
 use crate::key_action::KeyAction;
 use crate::keyboard::Keyboard;
-use crate::qmk_keycode_labels::get_layout_key;
-
-use super::picker::{
-    framed_candidate_groups_rows, modifier_toggle_row, picker_grid_rows, Candidate, SelectedKey,
-    KEY_UNIT,
-};
-use super::qmk_catalog::qmk_candidate;
-use super::EditTarget;
 use crate::ui_widgets::titled_group;
 
 /// Editor categories for QMK keycodes.
@@ -352,22 +349,17 @@ impl crate::overlay_window::OverlayApp {
             }
             _ => {
                 if let Some(cat) = section.category() {
-                    let group = super::qmk_catalog::category(cat);
                     let action = keyboard.get_action(target.layer_index, target.row, target.col);
-                    let selected = action.as_ref().map(SelectedKey::valid);
-                    titled_group(ui, group.name, |ui| {
-                        super::picker::picker_grid_filtered(
-                            ui,
-                            group.name,
-                            &group.candidates,
-                            |c| keyboard.is_action_supported(&c.binding),
-                            selected,
-                            &style,
-                            |candidate| {
-                                self.apply_write(keyboard, target, candidate.binding.clone());
-                            },
-                        );
-                    });
+                    draw_candidate_group_picker(
+                        ui,
+                        keyboard,
+                        super::qmk_catalog::category(cat),
+                        action.as_ref().map(SelectedKey::valid),
+                        &style,
+                        |candidate| {
+                            self.apply_write(keyboard, target, candidate.binding.clone());
+                        },
+                    );
                 }
             }
         });
@@ -418,25 +410,22 @@ impl crate::overlay_window::OverlayApp {
                 .mod_tap_layer
                 .and_then(|l| QmkLayerOp::Momentary.encode(l.min(15) as u8))
                 .map(KeyAction::Qmk);
-            let selected = action.as_ref().map(|a| SelectedKey::new(a, is_valid));
             let group = super::qmk_catalog::layer_picker_group(keyboard.layer_infos().len());
-            titled_group(ui, "Layer", |ui| {
-                picker_grid_rows(
-                    ui,
-                    "qmk_layer",
-                    &group.candidates,
-                    selected,
-                    style,
-                    |candidate| {
-                        if let KeyAction::Qmk(code) = &candidate.binding {
-                            if let QmkKeycode::LayerOp { layer, .. } = QmkKeycode::from_u16(*code) {
-                                self.editor.qmk_draft.mod_tap_layer = Some(layer as usize);
-                                self.commit_qmk_draft(keyboard, target);
-                            }
+            draw_candidate_group_picker(
+                ui,
+                keyboard,
+                &group,
+                action.as_ref().map(|a| SelectedKey::new(a, is_valid)),
+                style,
+                |candidate| {
+                    if let KeyAction::Qmk(code) = &candidate.binding {
+                        if let QmkKeycode::LayerOp { layer, .. } = QmkKeycode::from_u16(*code) {
+                            self.editor.qmk_draft.mod_tap_layer = Some(layer as usize);
+                            self.commit_qmk_draft(keyboard, target);
                         }
-                    },
-                );
-            });
+                    }
+                },
+            );
         }
 
         if section.has_mods() {
@@ -455,9 +444,22 @@ impl crate::overlay_window::OverlayApp {
         }
 
         if section.has_tap_key() {
-            titled_group(ui, "Tap/base key (8-bit basic only)", |ui| {
-                self.draw_base_picker(ui, keyboard, target, is_valid, style);
-            });
+            let action = (self.editor.qmk_draft.base_code != 0)
+                .then_some(self.editor.qmk_draft.base_code)
+                .map(KeyAction::Qmk);
+            draw_candidate_group_picker(
+                ui,
+                keyboard,
+                super::qmk_catalog::category(KeycodeCategory::Basic),
+                action.as_ref().map(|a| SelectedKey::new(a, is_valid)),
+                style,
+                |candidate| {
+                    if let KeyAction::Qmk(code) = &candidate.binding {
+                        self.editor.qmk_draft.base_code = *code;
+                        self.commit_qmk_draft(keyboard, target);
+                    }
+                },
+            );
         }
     }
 
@@ -466,36 +468,34 @@ impl crate::overlay_window::OverlayApp {
         let staged = self.editor.qmk_draft.staged().map(KeyAction::Qmk);
         self.commit_staged(keyboard, target, staged);
     }
+}
 
-    fn draw_base_picker(
-        &mut self,
-        ui: &mut egui::Ui,
-        keyboard: &Keyboard,
-        target: EditTarget,
-        valid: bool,
-        style: &crate::key_paint::KeyPaintStyle,
-    ) {
-        let candidates: Vec<Candidate> = (0x00u16..=0xFF)
-            .filter(|&code| get_layout_key(code).is_some())
-            .map(qmk_candidate)
-            .collect();
-        let action = (self.editor.qmk_draft.base_code != 0)
-            .then_some(self.editor.qmk_draft.base_code)
-            .map(KeyAction::Qmk);
-        let selected = action.as_ref().map(|a| SelectedKey::new(a, valid));
-        picker_grid_rows(ui, "qmk_base", &candidates, selected, style, |candidate| {
-            if let KeyAction::Qmk(code) = &candidate.binding {
-                self.editor.qmk_draft.base_code = *code;
-                self.commit_qmk_draft(keyboard, target);
-            }
-        });
-    }
+fn draw_candidate_group_picker(
+    ui: &mut egui::Ui,
+    keyboard: &Keyboard,
+    group: &CandidateGroup,
+    selected: Option<SelectedKey<'_>>,
+    style: &crate::key_paint::KeyPaintStyle,
+    on_select: impl FnMut(&Candidate),
+) {
+    titled_group(ui, group.name, |ui| {
+        picker_grid_filtered(
+            ui,
+            group.name,
+            &group.candidates,
+            |c| keyboard.is_action_supported(&c.binding),
+            selected,
+            style,
+            on_select,
+        );
+    });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::qmk_keycode_labels::constants::*;
+    use crate::qmk_keycode_labels::get_layout_key;
     use qmk_via_api::QmkLayerOp;
 
     fn assert_round_trips(draft: QmkDraft, code: u16) {
