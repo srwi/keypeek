@@ -69,7 +69,10 @@ pub struct SelectedKey<'a> {
 
 impl<'a> SelectedKey<'a> {
     pub fn valid(action: &'a KeyAction) -> Self {
-        Self { action, valid: true }
+        Self {
+            action,
+            valid: true,
+        }
     }
 
     pub fn new(action: &'a KeyAction, valid: bool) -> Self {
@@ -159,7 +162,7 @@ pub fn picker_grid_refs(
             .ghosted_if(candidate.transparent);
 
         if pressed && !is_valid {
-            colors = colors.with_invalid_border();
+            colors = colors.with_invalid_selection();
         }
 
         let response = key_button(
@@ -269,7 +272,7 @@ fn key_chip(
 ) -> egui::Response {
     let mut colors = style.colors_for(0, KeycodeKind::Modifier, false, selected);
     if selected && !valid {
-        colors = colors.with_invalid_border();
+        colors = colors.with_invalid_selection();
     }
     key_button(ui, cell, id, key, colors, selected, style)
 }

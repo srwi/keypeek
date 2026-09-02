@@ -424,12 +424,14 @@ impl crate::overlay_window::OverlayApp {
         let groups = zmk_catalog::layer_groups(&kinds, layer_infos, &layer_names, tap);
 
         let is_lt = self.editor.zmk_draft.kind == ZmkBehaviorKind::LayerTap;
-        let lt_action = is_lt.then(|| {
-            self.editor
-                .zmk_draft
-                .layer_id
-                .map(|id| KeyAction::Zmk(Behavior::LayerTap { layer_id: id, tap }))
-        }).flatten();
+        let lt_action = is_lt
+            .then(|| {
+                self.editor
+                    .zmk_draft
+                    .layer_id
+                    .map(|id| KeyAction::Zmk(Behavior::LayerTap { layer_id: id, tap }))
+            })
+            .flatten();
         let current_action = keyboard.get_action(target.layer_index, target.row, target.col);
         let selected = if is_lt {
             lt_action.as_ref().map(|a| SelectedKey::new(a, valid))
@@ -437,28 +439,22 @@ impl crate::overlay_window::OverlayApp {
             current_action.as_ref().map(SelectedKey::valid)
         };
 
-        framed_candidate_groups_rows(
-            ui,
-            &groups,
-            selected,
-            style,
-            |gi, candidate| {
-                let kind = kinds[gi];
-                if let KeyAction::Zmk(behavior) = &candidate.binding {
-                    if kind == ZmkBehaviorKind::LayerTap {
-                        if let Some(layer_id) = behavior.layer_id() {
-                            self.editor.zmk_draft.kind = ZmkBehaviorKind::LayerTap;
-                            self.editor.zmk_draft.layer_id = Some(layer_id);
-                            self.commit_zmk_draft(keyboard, target);
-                        }
-                    } else {
-                        self.editor.zmk_draft.kind = kind;
-                        self.editor.zmk_draft.layer_id = behavior.layer_id();
-                        self.apply_write(keyboard, target, candidate.binding.clone());
+        framed_candidate_groups_rows(ui, &groups, selected, style, |gi, candidate| {
+            let kind = kinds[gi];
+            if let KeyAction::Zmk(behavior) = &candidate.binding {
+                if kind == ZmkBehaviorKind::LayerTap {
+                    if let Some(layer_id) = behavior.layer_id() {
+                        self.editor.zmk_draft.kind = ZmkBehaviorKind::LayerTap;
+                        self.editor.zmk_draft.layer_id = Some(layer_id);
+                        self.commit_zmk_draft(keyboard, target);
                     }
+                } else {
+                    self.editor.zmk_draft.kind = kind;
+                    self.editor.zmk_draft.layer_id = behavior.layer_id();
+                    self.apply_write(keyboard, target, candidate.binding.clone());
                 }
-            },
-        );
+            }
+        });
 
         if self.editor.zmk_draft.kind == ZmkBehaviorKind::LayerTap {
             titled_group(ui, "Tap key", |ui| {

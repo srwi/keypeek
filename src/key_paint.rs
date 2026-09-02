@@ -13,6 +13,7 @@ pub struct KeyColors {
     pub border: egui::Color32,
     pub border_thickness: f32,
     pub font: egui::Color32,
+    pub invalid: bool,
 }
 
 impl KeyColors {
@@ -23,6 +24,7 @@ impl KeyColors {
             border: bg.lerp_to_gamma(egui::Color32::WHITE, 0.7),
             border_thickness: 0.03 * unit,
             font: font.lerp_to_gamma(egui::Color32::WHITE, 0.4),
+            invalid: false,
         }
     }
 
@@ -43,9 +45,10 @@ impl KeyColors {
         }
     }
 
-    /// Replaces the border color with the invalid selection warning color.
-    pub fn with_invalid_border(mut self) -> Self {
+    /// Configures colors and styling for an invalid key selection in the keymap editor.
+    pub fn with_invalid_selection(mut self) -> Self {
         self.border = INVALID_SELECTION_BORDER;
+        self.invalid = true;
         self
     }
 
@@ -56,7 +59,9 @@ impl KeyColors {
 
     /// Returns the font color for behavior/argument strips.
     pub fn strip_font(&self, pressed: bool) -> egui::Color32 {
-        if pressed {
+        if self.invalid {
+            self.border.lerp_to_gamma(egui::Color32::BLACK, 0.8)
+        } else if pressed {
             self.fill.lerp_to_gamma(egui::Color32::BLACK, 0.7)
         } else {
             self.font.gamma_multiply(0.7)
@@ -165,6 +170,7 @@ impl KeyPaintStyle {
             border: border_color,
             border_thickness: 1.0,
             font: font_color,
+            invalid: false,
         }
     }
 }
@@ -194,35 +200,24 @@ pub fn paint(
     let corner_radius = 0.1 * unit;
     let key = display.key;
 
+    // 1. Base key background fill
     ui.painter().add(
         egui::epaint::RectShape::filled(rect, corner_radius, display.colors.fill).with_angle(angle),
     );
 
+    // 2. Diagonal warning hatching for invalid key selections
+    if display.colors.invalid {
+        paint_hatching(ui, rect, corner_radius, unit, center, angle);
+    }
+
     if display.hovered {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
-    let (border_style, border_stroke) =
-        display
-            .colors
-            .border_stroke(key.border, display.pressed, display.hovered, unit);
-    paint_border(
-        ui,
-        rect,
-        corner_radius,
-        border_stroke,
-        border_style,
-        unit,
-        center,
-        angle,
-    );
 
     let font = egui::FontId::proportional(0.25 * unit * style.font_scale);
     let galleys = generate_label_galleys(ui, display, rect, font, style);
 
-    // Draw the legend strips: behavior on top, argument on bottom. They overlay
-    // the key's edges (the primary label stays centered) and are tied to the
-    // legend existing, not to whether the text fits, so an over-long legend
-    // never blanks out.
+    // 3. Legend strips: behavior on top, argument on bottom
     let strip_height = style.strip_metrics().1;
     let has_behavior = key.behavior.is_some();
     let has_argument = key.argument.is_some();
@@ -263,6 +258,7 @@ pub fn paint(
         );
     }
 
+    // 4. Primary key label / symbol text
     let draw_text = |pos, galley| {
         ui.painter().add(rotated_text_shape(
             pos,
@@ -294,6 +290,22 @@ pub fn paint(
         }
         _ => {}
     }
+
+    // 5. Border and hover outline (rendered on top so strips never occlude the perimeter)
+    let (border_style, border_stroke) =
+        display
+            .colors
+            .border_stroke(key.border, display.pressed, display.hovered, unit);
+    paint_border(
+        ui,
+        rect,
+        corner_radius,
+        border_stroke,
+        border_style,
+        unit,
+        center,
+        angle,
+    );
 }
 
 struct LabelGalleys {
@@ -646,6 +658,48 @@ fn paint_strip(
             center,
             angle,
         ));
+    }
+}
+
+/// Paints diagonal hatching across a key for invalid selections.
+fn paint_hatching(
+    ui: &egui::Ui,
+    rect: egui::Rect,
+    corner_radius: f32,
+    unit: f32,
+    center: egui::Pos2,
+    angle: f32,
+) {
+    let stroke_color = INVALID_SELECTION_BORDER.gamma_multiply(0.65);
+    let stroke_width = (0.025 * unit).max(1.0);
+    let stroke = egui::Stroke::new(stroke_width, stroke_color);
+
+    let step = (0.16 * unit).max(6.0);
+    let w = rect.width();
+    let h = rect.height();
+    let total = w + h;
+
+    let cutoff = corner_radius * 0.586;
+    let max_c = total - cutoff;
+    let mut c = ((cutoff / step).ceil() * step).max(step);
+
+    while c <= max_c {
+        let x_start = (c - h).max(0.0);
+        let y_start = c.min(h);
+        let x_end = c.min(w);
+        let y_end = (c - w).max(0.0);
+
+        if x_start < x_end {
+            let p1 = egui::pos2(rect.left() + x_start, rect.top() + y_start);
+            let p2 = egui::pos2(rect.left() + x_end, rect.top() + y_end);
+
+            let p1_rot = rotate_point(p1, center, angle);
+            let p2_rot = rotate_point(p2, center, angle);
+
+            ui.painter()
+                .add(egui::Shape::line_segment([p1_rot, p2_rot], stroke));
+        }
+        c += step;
     }
 }
 
