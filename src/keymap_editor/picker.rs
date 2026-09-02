@@ -151,20 +151,22 @@ pub fn key_button(
     if let Some(tooltip) = key.tooltip_text() {
         response = response.on_hover_text_at_pointer(tooltip);
     }
-    key_paint::paint(
-        ui,
-        rect,
-        0.0,
-        &KeyDisplay {
-            key,
-            colors,
-            hovered: response.hovered(),
-            pressed,
-            shift_held: false,
-            ralt_held: false,
-        },
-        style,
-    );
+    if ui.is_rect_visible(rect) {
+        key_paint::paint(
+            ui,
+            rect,
+            0.0,
+            &KeyDisplay {
+                key,
+                colors,
+                hovered: response.hovered(),
+                pressed,
+                shift_held: false,
+                ralt_held: false,
+            },
+            style,
+        );
+    }
     response
 }
 
@@ -207,6 +209,10 @@ pub fn picker_grid_refs(
                 ),
             egui::vec2(KEY_UNIT, KEY_UNIT),
         );
+
+        if !ui.is_rect_visible(cell) {
+            continue;
+        }
 
         let pressed = selected.is_some_and(|s| s.action == &candidate.binding);
         let is_valid = selected.is_none_or(|s| s.valid);
