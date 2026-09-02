@@ -2,9 +2,9 @@
 
 use super::picker::{
     framed_candidate_groups, modifier_toggle_row, multi_candidate_groups, titled_candidate_group,
-    SelectedKey, KEY_UNIT,
+    SelectedKey,
 };
-use super::EditTarget;
+use super::{EditTarget, EditorState};
 use crate::key_action::KeyAction;
 use crate::keyboard::Keyboard;
 use crate::ui_widgets::titled_group;
@@ -302,35 +302,42 @@ fn decode(code: u16) -> QmkDraft {
 
 // ── Editor body ─────────────────────────────────────────────────────────────
 
-impl crate::overlay_window::OverlayApp {
+impl EditorState {
     pub(super) fn draw_qmk_editor_body(
         &mut self,
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
         target: EditTarget,
+        style: &crate::key_paint::KeyPaintStyle,
     ) {
-        let mut search_query = std::mem::take(&mut self.editor.search_query);
-        let style = self.paint_style(KEY_UNIT);
-        super::editor_left_panel(ui, "qmk_sections", &mut search_query, |ui, search_query| {
+        let current_section = self.qmk_draft.section;
+        let mut selected_section = None;
+        super::editor_left_panel(ui, "qmk_sections", &mut self.search_query, |ui| {
             for s in Section::ALL {
                 if !s.is_supported(keyboard) {
                     continue;
                 }
-                let response =
-                    ui.selectable_value(&mut self.editor.qmk_draft.section, s, s.label());
-                if response.changed() {
-                    search_query.clear();
-                    self.reset_qmk_draft_for_section(keyboard, target, s);
+                if ui
+                    .selectable_label(current_section == s, s.label())
+                    .clicked()
+                {
+                    selected_section = Some(s);
                 }
             }
         });
 
-        let section = self.editor.qmk_draft.section;
+        if let Some(s) = selected_section {
+            self.search_query.clear();
+            self.reset_qmk_draft_for_section(keyboard, target, s);
+        }
+
+        let section = self.qmk_draft.section;
+        let search_query = self.search_query.clone();
         super::editor_central_panel(ui, (target.layer_index, section), |ui| match section {
             Section::Layers => {
                 // One page of grouped layer keys, one per real layer; see
                 // draw_qmk_layer_page.
-                self.draw_qmk_layer_page(ui, keyboard, target, &search_query, &style);
+                self.draw_qmk_layer_page(ui, keyboard, target, &search_query, style);
             }
             Section::Custom => {
                 let groups = super::qmk_catalog::custom_groups();
@@ -343,7 +350,7 @@ impl crate::overlay_window::OverlayApp {
                         &search_query,
                         |c| keyboard.is_action_supported(&c.binding),
                         selected,
-                        &style,
+                        style,
                         |_, candidate| {
                             self.apply_write(keyboard, target, candidate.binding.clone());
                         },
@@ -355,13 +362,13 @@ impl crate::overlay_window::OverlayApp {
             | Section::ModTap
             | Section::LayerTap
             | Section::LayerMod => {
-                self.draw_qmk_mods_page(ui, keyboard, target, &search_query, &style)
+                self.draw_qmk_mods_page(ui, keyboard, target, &search_query, style)
             }
             Section::Any => {
                 titled_group(ui, "Keycode", |ui| {
                     ui.horizontal(|ui| {
                         ui.label("0x");
-                        let mut text = self.editor.qmk_draft.hex.clone();
+                        let mut text = self.qmk_draft.hex.clone();
                         let response = ui.add(
                             egui::TextEdit::singleline(&mut text)
                                 .desired_width(80.0)
@@ -369,15 +376,15 @@ impl crate::overlay_window::OverlayApp {
                         );
                         if response.changed() {
                             text.retain(|c| c.is_ascii_hexdigit());
-                            self.editor.qmk_draft.hex = text;
+                            self.qmk_draft.hex = text;
                         }
                         if response.lost_focus()
-                            || (response.changed() && self.editor.qmk_draft.hex.len() == 4)
+                            || (response.changed() && self.qmk_draft.hex.len() == 4)
                         {
                             self.commit_qmk_draft(keyboard, target);
                         }
                     });
-                    if u16::from_str_radix(&self.editor.qmk_draft.hex, 16).is_err() {
+                    if u16::from_str_radix(&self.qmk_draft.hex, 16).is_err() {
                         ui.weak("Enter a 1–4 digit hex keycode");
                     }
                 });
@@ -392,7 +399,7 @@ impl crate::overlay_window::OverlayApp {
                         &search_query,
                         |c| keyboard.is_action_supported(&c.binding),
                         action.as_ref().map(SelectedKey::valid),
-                        &style,
+                        style,
                         |candidate| {
                             self.apply_write(keyboard, target, candidate.binding.clone());
                         },
@@ -400,7 +407,6 @@ impl crate::overlay_window::OverlayApp {
                 }
             }
         });
-        self.editor.search_query = search_query;
     }
 
     fn reset_qmk_draft_for_section(
@@ -410,8 +416,7 @@ impl crate::overlay_window::OverlayApp {
         section: Section,
     ) {
         let current_action = keyboard.get_action(target.layer_index, target.row, target.col);
-        self.editor
-            .reset_qmk_section(section, current_action.as_ref());
+        self.reset_qmk_section(section, current_action.as_ref());
     }
 
     /// Draws the layer key selection page.
@@ -449,12 +454,11 @@ impl crate::overlay_window::OverlayApp {
         search_query: &str,
         style: &crate::key_paint::KeyPaintStyle,
     ) {
-        let is_valid = self.editor.qmk_draft.is_valid();
-        let section = self.editor.qmk_draft.section;
+        let is_valid = self.qmk_draft.is_valid();
+        let section = self.qmk_draft.section;
 
         if section.has_layer() {
             let action = self
-                .editor
                 .qmk_draft
                 .mod_tap_layer
                 .and_then(|l| QmkLayerOp::Momentary.encode(l.min(15) as u8))
@@ -470,7 +474,7 @@ impl crate::overlay_window::OverlayApp {
                 |candidate| {
                     if let KeyAction::Qmk(code) = &candidate.binding {
                         if let QmkKeycode::LayerOp { layer, .. } = QmkKeycode::from_u16(*code) {
-                            self.editor.qmk_draft.mod_tap_layer = Some(layer as usize);
+                            self.qmk_draft.mod_tap_layer = Some(layer as usize);
                             self.commit_qmk_draft(keyboard, target);
                         }
                     }
@@ -483,8 +487,8 @@ impl crate::overlay_window::OverlayApp {
                 if modifier_toggle_row(
                     ui,
                     "qmk_mods",
-                    &mut self.editor.qmk_draft.mods,
-                    &mut self.editor.qmk_draft.right,
+                    &mut self.qmk_draft.mods,
+                    &mut self.qmk_draft.right,
                     is_valid,
                     style,
                 ) {
@@ -494,8 +498,8 @@ impl crate::overlay_window::OverlayApp {
         }
 
         if section.has_tap_key() {
-            let action = (self.editor.qmk_draft.base_code != 0)
-                .then_some(self.editor.qmk_draft.base_code)
+            let action = (self.qmk_draft.base_code != 0)
+                .then_some(self.qmk_draft.base_code)
                 .map(KeyAction::Qmk);
             let group = super::qmk_catalog::category(KeycodeCategory::Basic);
             titled_candidate_group(
@@ -507,7 +511,7 @@ impl crate::overlay_window::OverlayApp {
                 style,
                 |candidate| {
                     if let KeyAction::Qmk(code) = &candidate.binding {
-                        self.editor.qmk_draft.base_code = *code;
+                        self.qmk_draft.base_code = *code;
                         self.commit_qmk_draft(keyboard, target);
                     }
                 },
@@ -517,7 +521,7 @@ impl crate::overlay_window::OverlayApp {
 
     /// Applies the current draft keycode to the target key.
     fn commit_qmk_draft(&mut self, keyboard: &Keyboard, target: EditTarget) {
-        let staged = self.editor.qmk_draft.staged().map(KeyAction::Qmk);
+        let staged = self.qmk_draft.staged().map(KeyAction::Qmk);
         self.commit_staged(keyboard, target, staged);
     }
 }

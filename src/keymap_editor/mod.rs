@@ -5,7 +5,7 @@ mod qmk_catalog;
 mod qmk_editor;
 mod zmk_catalog;
 mod zmk_editor;
-
+pub use picker::KEY_UNIT;
 pub use qmk_editor::QmkDraft;
 pub use zmk_editor::ZmkDraft;
 
@@ -215,7 +215,7 @@ pub(super) fn editor_left_panel(
     ui: &mut egui::Ui,
     left_id: &str,
     search_query: &mut String,
-    content: impl FnOnce(&mut egui::Ui, &mut String),
+    content: impl FnOnce(&mut egui::Ui),
 ) {
     let left_id = egui::Id::new(left_id);
     egui::Panel::left(left_id)
@@ -236,7 +236,7 @@ pub(super) fn editor_left_panel(
                 ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
-                            content(ui, search_query);
+                            content(ui);
                         });
                     });
                 });
@@ -271,26 +271,31 @@ pub(super) fn editor_central_panel(
         });
 }
 
-impl crate::overlay_window::OverlayApp {
+impl EditorState {
     /// Draws the edit key window.
-    pub(super) fn draw_editor_window(&mut self, ctx: &egui::Context, keyboard: &Keyboard) {
-        let Some(target) = self.editor.target else {
+    pub fn draw_window(
+        &mut self,
+        ctx: &egui::Context,
+        keyboard: &Keyboard,
+        style: &crate::key_paint::KeyPaintStyle,
+    ) {
+        let Some(target) = self.target else {
             return;
         };
 
         // Save unsaved ZMK changes before closing the window.
-        if self.editor.closing && self.editor.pending.is_none() && self.editor.zmk_dirty {
+        if self.closing && self.pending.is_none() && self.zmk_dirty {
             self.start_save(keyboard);
         }
 
         self.poll_pending_write(ctx, keyboard);
 
-        if matches!(keyboard.write_support(), WriteSupport::Session) && !self.editor.closing {
+        if matches!(keyboard.write_support(), WriteSupport::Session) && !self.closing {
             self.ensure_zmk_session(keyboard);
         }
 
-        let closing = self.editor.closing;
-        let title = if self.editor.zmk_dirty {
+        let closing = self.closing;
+        let title = if self.zmk_dirty {
             "Edit key (Unsaved changes)"
         } else {
             "Edit key"
@@ -305,24 +310,24 @@ impl crate::overlay_window::OverlayApp {
             window = window.open(&mut open);
         }
         window.show(ctx, |ui| {
-            if let Some(error) = &self.editor.error {
+            if let Some(error) = &self.error {
                 ui.add_space(4.0);
                 ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
             }
 
-            let is_enabled = self.editor.overlay().is_none();
+            let is_enabled = self.overlay().is_none();
             ui.add_enabled_ui(is_enabled, |ui| {
-                let target = self.draw_editor_header(ui, keyboard, target);
+                let target = self.draw_editor_header(ui, keyboard, target, style);
 
                 let write_support = keyboard.write_support();
                 match write_support {
                     WriteSupport::Immediate => {
                         ui.add_space(8.0);
-                        self.draw_qmk_editor_body(ui, keyboard, target);
+                        self.draw_qmk_editor_body(ui, keyboard, target, style);
                     }
                     WriteSupport::Session => {
                         ui.add_space(8.0);
-                        self.draw_zmk_editor_body(ui, keyboard, target);
+                        self.draw_zmk_editor_body(ui, keyboard, target, style);
                     }
                     WriteSupport::None => {
                         ui.add_space(8.0);
@@ -334,8 +339,8 @@ impl crate::overlay_window::OverlayApp {
             self.draw_editor_overlay(ui);
         });
 
-        if !open {
-            self.request_close_editor();
+        if !open && self.request_close() {
+            keyboard.end_edit_session();
         }
     }
 
@@ -363,9 +368,9 @@ impl crate::overlay_window::OverlayApp {
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
         target: EditTarget,
+        style: &crate::key_paint::KeyPaintStyle,
     ) -> EditTarget {
         let layer_infos = keyboard.layer_infos();
-        let style = self.paint_style(picker::KEY_UNIT);
         let mut selected_layer = None;
 
         let layer_count = layer_infos.len().max(1);
@@ -378,14 +383,14 @@ impl crate::overlay_window::OverlayApp {
                 for (i, info) in layer_infos.iter().enumerate() {
                     let label = info.short_name(i);
                     let is_selected = target.layer_index == i;
-                    if layer_button(ui, &label, i, is_selected, button_width, &style).clicked() {
+                    if layer_button(ui, &label, i, is_selected, button_width, style).clicked() {
                         selected_layer = Some(i);
                     }
                 }
             });
         });
 
-        if !self.editor.closing {
+        if !self.closing {
             if let Some(new_layer) = selected_layer {
                 if new_layer != target.layer_index {
                     let new_target = EditTarget {
@@ -393,7 +398,7 @@ impl crate::overlay_window::OverlayApp {
                         row: target.row,
                         col: target.col,
                     };
-                    self.editor.retarget(keyboard, new_target);
+                    self.retarget(keyboard, new_target);
                     return new_target;
                 }
             }
@@ -402,10 +407,9 @@ impl crate::overlay_window::OverlayApp {
         target
     }
 
-
     /// Draws a centered spinner and status text during connecting, saving, or failed operations.
     fn draw_editor_overlay(&mut self, ui: &mut egui::Ui) {
-        let Some(overlay) = self.editor.overlay() else {
+        let Some(overlay) = self.overlay() else {
             return;
         };
 
@@ -428,8 +432,8 @@ impl crate::overlay_window::OverlayApp {
                 if is_retry {
                     ui.add_space(8.0);
                     if ui.button("Retry").clicked() {
-                        self.editor.zmk_session = ZmkSessionState::Idle;
-                        self.editor.error = None;
+                        self.zmk_session = ZmkSessionState::Idle;
+                        self.error = None;
                     }
                 }
             });
@@ -437,62 +441,61 @@ impl crate::overlay_window::OverlayApp {
     }
 
     fn start_save(&mut self, keyboard: &Keyboard) {
-        if self.editor.pending.is_some() {
+        if self.pending.is_some() {
             return;
         }
-        self.editor
-            .start_task(PendingKind::Save, keyboard.save_keymap());
+        self.start_task(PendingKind::Save, keyboard.save_keymap());
     }
 
     /// Starts the ZMK Studio session connection if idle.
     fn ensure_zmk_session(&mut self, keyboard: &Keyboard) {
-        if self.editor.zmk_session != ZmkSessionState::Idle || self.editor.pending.is_some() {
+        if self.zmk_session != ZmkSessionState::Idle || self.pending.is_some() {
             return;
         }
-        self.editor.zmk_session = ZmkSessionState::Opening;
-        self.editor
-            .start_task(PendingKind::Open, keyboard.open_edit_session());
+        self.zmk_session = ZmkSessionState::Opening;
+        self.start_task(PendingKind::Open, keyboard.open_edit_session());
     }
 
     /// Sends a write command to the device, or queues it if an operation is in progress.
     fn apply_write(&mut self, keyboard: &Keyboard, target: EditTarget, action: KeyAction) {
-        if self.editor.pending.is_some() {
-            self.editor.queued = Some((target, action));
+        if self.pending.is_some() {
+            self.queued = Some((target, action));
             return;
         }
         let receiver = keyboard.set_key(target.layer_index, target.row, target.col, action);
-        self.editor.start_task(PendingKind::Set, receiver);
+        self.start_task(PendingKind::Set, receiver);
     }
 
     /// Polls active background operations and processes queued write commands.
     fn poll_pending_write(&mut self, ctx: &egui::Context, keyboard: &Keyboard) {
-        let Some(task) = &self.editor.pending else {
+        let Some(task) = &self.pending else {
             return;
         };
         match task.receiver.try_recv() {
             Ok(Ok(())) => {
-                if let Some(task) = self.editor.pending.take() {
-                    self.editor.complete_task(task.kind);
+                if let Some(task) = self.pending.take() {
+                    self.complete_task(task.kind);
                 }
-                if let Some((target, action)) = self.editor.queued.take() {
+                if let Some((target, action)) = self.queued.take() {
                     self.apply_write(keyboard, target, action);
                 }
-                if self.editor.closing {
-                    if self.editor.zmk_dirty {
+                if self.closing {
+                    if self.zmk_dirty {
                         self.start_save(keyboard);
-                    } else if self.editor.pending.is_none() {
-                        self.close_editor();
+                    } else if self.pending.is_none() {
+                        self.reset();
+                        keyboard.end_edit_session();
                     }
                 }
             }
             Ok(Err(e)) => {
-                self.editor.fail_task(e);
+                self.fail_task(e);
             }
             Err(mpsc::TryRecvError::Empty) => {
                 ctx.request_repaint();
             }
             Err(mpsc::TryRecvError::Disconnected) => {
-                self.editor.fail_task("Connection lost");
+                self.fail_task("Connection lost");
             }
         }
     }

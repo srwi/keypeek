@@ -177,7 +177,8 @@ impl OverlayApp {
             let keyboard = Arc::clone(keyboard);
             self.draw_overlay_window(ctx, &keyboard, self.overlay_visible());
             if self.editor.target.is_some() {
-                self.draw_editor_window(ctx, &keyboard);
+                let style = self.paint_style(crate::keymap_editor::KEY_UNIT);
+                self.editor.draw_window(ctx, &keyboard, &style);
             }
         } else if self.editor.target.is_some() {
             // The connection dropped; close the editor. Unsaved ZMK changes
