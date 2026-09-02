@@ -1,6 +1,8 @@
 use super::state::AppConnectionState;
 use super::OverlayApp;
-use crate::settings::{LayerMask, LegendMode, ThemeColor, ThemeSettings, WindowPosition};
+use crate::settings::{
+    LayerMask, LegendMode, MonitorSelection, ThemeColor, ThemeSettings, WindowPosition,
+};
 use egui::Window;
 
 impl OverlayApp {
@@ -237,6 +239,32 @@ impl OverlayApp {
                                     }
                                 });
                             ui.end_row();
+
+                            ui.label("Monitor");
+                            egui::ComboBox::from_id_salt("monitor_combo")
+                                .width(ui.available_width())
+                                .selected_text(self.settings.draft.monitor.to_string())
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(
+                                        &mut self.settings.draft.monitor,
+                                        MonitorSelection::Primary,
+                                        MonitorSelection::Primary.to_string(),
+                                    );
+                                    for name in &self.ui.available_monitors {
+                                        ui.selectable_value(
+                                            &mut self.settings.draft.monitor,
+                                            MonitorSelection::Named(name.clone()),
+                                            name,
+                                        );
+                                    }
+                                });
+                            ui.end_row();
+
+                            if self.ui.available_monitors.is_empty() {
+                                ui.label("");
+                                ui.small("Only \"Primary\" is available on this display server.");
+                                ui.end_row();
+                            }
 
                             ui.label("Display duration");
                             let mut timeout_ui =

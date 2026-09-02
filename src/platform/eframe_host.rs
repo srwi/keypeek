@@ -1,13 +1,18 @@
 use super::OverlayHost;
 use crate::device_discovery::DiscoveredDevice;
 use crate::overlay_window::OverlayApp;
-use crate::settings::Settings;
+use crate::settings::{MonitorSelection, Settings};
 use crate::ui_wake::UiWake;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 struct EframeHost<'a> {
     ctx: &'a egui::Context,
+}
+
+// Windows reports monitor names as the raw GDI device name (`\\.\DISPLAY1`).
+fn clean_monitor_name(name: &str) -> &str {
+    name.strip_prefix(r"\\.\").unwrap_or(name)
 }
 
 impl OverlayHost for EframeHost<'_> {
@@ -23,15 +28,71 @@ impl OverlayHost for EframeHost<'_> {
 
 struct EframeApp {
     app: OverlayApp,
-    // Undecorated transparent windows don't reliably honor `with_maximized`, so we
-    // size to the monitor explicitly once known. Linux never WM-maximizes at all,
-    // since Mutter drops always-on-top on a maximized window.
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    sized_to_monitor: bool,
+    last_applied_monitor: Option<MonitorSelection>,
     // winit's always-on-top request is sent before the window is mapped, which
     // EWMH WMs like Mutter ignore, so re-assert it for a few frames after mapping.
     #[cfg(target_os = "linux")]
     x11_above_ticks: u32,
+}
+
+impl EframeApp {
+    fn apply_monitor_placement(&mut self, ctx: &egui::Context, frame: &eframe::Frame) {
+        let target = self.app.active_monitor().clone();
+        if self.last_applied_monitor.as_ref() == Some(&target) {
+            return;
+        }
+
+        // Not available on the very first frame — retried next frame.
+        let Some(window) = frame.winit_window() else {
+            return;
+        };
+
+        let monitor = match &target {
+            MonitorSelection::Primary => window.primary_monitor(),
+            MonitorSelection::Named(name) => window
+                .available_monitors()
+                .find(|m| m.name().as_deref().map(clean_monitor_name) == Some(name.as_str())),
+        }
+        .or_else(|| window.primary_monitor())
+        .or_else(|| window.available_monitors().next());
+
+        let Some(monitor) = monitor else {
+            return;
+        };
+
+        let scale = monitor.scale_factor();
+        let pos = monitor.position().to_logical::<f32>(scale);
+
+        // Windows: an explicit InnerSize breaks DWM's per-pixel-alpha
+        // compositing on HDR systems. Un-maximize, move, re-maximize instead —
+        // Windows does the sizing itself. Other platforms keep explicit sizing.
+        #[cfg(target_os = "windows")]
+        {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(
+                pos.x, pos.y,
+            )));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let size = monitor.size().to_logical::<f32>(scale);
+            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(
+                pos.x, pos.y,
+            )));
+            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
+                size.width,
+                size.height,
+            )));
+        }
+
+        // Moving/maximizing can drop always-on-top — re-assert.
+        ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
+            egui::WindowLevel::AlwaysOnTop,
+        ));
+
+        self.last_applied_monitor = Some(target);
+    }
 }
 
 impl eframe::App for EframeApp {
@@ -39,7 +100,7 @@ impl eframe::App for EframeApp {
         self.app.clear_color().to_array()
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
 
         // Re-assert always-on-top now that the window is mapped (see field docs).
@@ -53,13 +114,17 @@ impl eframe::App for EframeApp {
             ctx.request_repaint();
         }
 
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
-        if !self.sized_to_monitor {
-            if let Some(monitor_size) = ctx.input(|i| i.viewport().monitor_size) {
-                ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(0.0, 0.0)));
-                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(monitor_size));
-                self.sized_to_monitor = true;
-            }
+        self.apply_monitor_placement(&ctx, frame);
+        if let Some(window) = frame.winit_window() {
+            let names: Vec<String> = window
+                .available_monitors()
+                .filter_map(|m| m.name())
+                .map(|n| clean_monitor_name(&n).to_string())
+                .collect();
+            self.app.set_available_monitors(names);
+
+            #[cfg(target_os = "windows")]
+            enable_dwm_per_pixel_alpha(window.as_ref());
         }
 
         let mut host = EframeHost { ctx: &ctx };
@@ -91,8 +156,8 @@ fn show_on_all_spaces(cc: &eframe::CreationContext<'_>) {
 // `DwmEnableBlurBehindWindow`; otherwise the overlay can render opaque (black)
 // on some systems. See https://github.com/srwi/keypeek/issues/16
 #[cfg(target_os = "windows")]
-fn enable_dwm_per_pixel_alpha(cc: &eframe::CreationContext<'_>) {
-    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+fn enable_dwm_per_pixel_alpha(handle_source: &impl raw_window_handle::HasWindowHandle) {
+    use raw_window_handle::RawWindowHandle;
     use windows::core::BOOL;
     use windows::Win32::Foundation::HWND;
     use windows::Win32::Graphics::Dwm::{
@@ -100,7 +165,8 @@ fn enable_dwm_per_pixel_alpha(cc: &eframe::CreationContext<'_>) {
     };
     use windows::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject, HGDIOBJ};
 
-    let Ok(RawWindowHandle::Win32(handle)) = cc.window_handle().map(|h| h.as_raw()) else {
+    let Ok(RawWindowHandle::Win32(handle)) = handle_source.window_handle().map(|h| h.as_raw())
+    else {
         return;
     };
     let hwnd = HWND(handle.hwnd.get() as *mut core::ffi::c_void);
@@ -214,8 +280,7 @@ fn run_inner(
             let app = OverlayApp::new(tray_icon, settings_requested, ui_wake, settings, devices);
             Ok(Box::new(EframeApp {
                 app,
-                #[cfg(any(target_os = "macos", target_os = "linux"))]
-                sized_to_monitor: false,
+                last_applied_monitor: None,
                 #[cfg(target_os = "linux")]
                 x11_above_ticks: 10,
             }))
