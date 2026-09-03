@@ -1,6 +1,7 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 mod connection;
 mod device_discovery;
+mod hid_labels;
 mod key_action;
 mod key_matrix;
 mod key_paint;

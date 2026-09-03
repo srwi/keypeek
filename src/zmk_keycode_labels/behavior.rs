@@ -269,24 +269,12 @@ fn mod_mask_to_glyphs(m: u8) -> Label {
 }
 
 fn layer_tap_layout_key(layer_id: u32, tap: HidUsage, behavior: Option<Label>) -> LayoutKey {
-    let tap_key = hid_usage_to_layout_key(tap);
+    let mut tap_key = hid_usage_to_layout_key(tap);
     let mod_mask = tap.modifier_mask();
-    let argument = tap_key
-        .argument
-        .or_else(|| (mod_mask != 0).then(|| mod_mask_to_glyphs(mod_mask)));
-    LayoutKey {
-        tap: tap_key.tap,
-        behavior,
-        argument,
-        shifted: tap_key.shifted,
-        ralt: tap_key.ralt,
-        ralt_shifted: tap_key.ralt_shifted,
-        symbol: tap_key.symbol,
-        kind: KeycodeKind::Modifier,
-        layer_ref: Some(layer_id as u8),
-        border: BorderStyle::None,
-        ..Default::default()
+    if tap_key.argument.is_none() && mod_mask != 0 {
+        tap_key.argument = Some(mod_mask_to_glyphs(mod_mask));
     }
+    crate::hid_labels::layer_tap_key(layer_id as u8, tap_key, behavior)
 }
 
 fn hold_tap_layout_key(hold: HidUsage, tap: HidUsage, behavior: Option<Label>) -> LayoutKey {
@@ -301,19 +289,7 @@ fn hold_tap_layout_key(hold: HidUsage, tap: HidUsage, behavior: Option<Label>) -
     } else {
         hold_key.tap
     };
-    LayoutKey {
-        tap: tap_key.tap,
-        behavior,
-        argument: Some(hold_label),
-        shifted: tap_key.shifted,
-        ralt: tap_key.ralt,
-        ralt_shifted: tap_key.ralt_shifted,
-        mod_mask: hold_key.mod_mask,
-        symbol: tap_key.symbol,
-        kind: KeycodeKind::Basic,
-        layer_ref: None,
-        border: BorderStyle::None,
-    }
+    crate::hid_labels::mod_tap_key(tap_key, hold_label, hold_key.mod_mask, behavior)
 }
 
 fn custom_layout_key(
@@ -409,13 +385,11 @@ fn param_summary(
 /// Build a pure layer-switch key: the target layer is the centered label and
 /// `border` is the sole indicator; there are no legend strips.
 fn layer_layout_key(border: BorderStyle, layer_id: u32, layer_names: &[String]) -> LayoutKey {
-    LayoutKey {
-        tap: layer_arg_label(layer_names, layer_id),
-        kind: KeycodeKind::Modifier,
-        layer_ref: Some(layer_id as u8),
+    crate::hid_labels::layer_switch_key(
+        layer_id as u8,
+        layer_arg_label(layer_names, layer_id),
         border,
-        ..Default::default()
-    }
+    )
 }
 
 fn layer_arg_label(layer_names: &[String], layer_id: u32) -> Label {

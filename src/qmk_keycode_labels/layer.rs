@@ -13,7 +13,10 @@ pub fn get_layer_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
                 QmkLayerOp::OneShot => (BorderStyle::Dashed, Some(layer)),
                 QmkLayerOp::Default => (BorderStyle::Solid, None),
             };
-            (None, layer_label(layer), layer_ref, border)
+            let mut key =
+                crate::hid_labels::layer_switch_key(layer, layer_label(layer), border);
+            key.layer_ref = layer_ref;
+            return Some(key);
         }
         QmkKeycode::TapDance(n) => (
             Some(behavior_names::TAP_DANCE.label()),
@@ -57,8 +60,7 @@ fn layer_label(layer: u8) -> Label {
 
 #[cfg(test)]
 mod tests {
-    use crate::qmk_keycode_labels::resolve_qmk_key;
-    use crate::qmk_keycode_labels::KeyResolution;
+    use crate::qmk_keycode_labels::try_resolve_qmk_key;
     use qmk_via_api::ranges::{QK_KB, QK_MACRO, QK_TAP_DANCE, QK_USER};
 
     #[test]
@@ -71,18 +73,13 @@ mod tests {
         ];
 
         for (code, expected_behavior_short, expected_tap) in cases {
-            let resolution = resolve_qmk_key(code);
-            match resolution {
-                KeyResolution::Key(key) => {
-                    assert_eq!(key.tap.full, expected_tap, "tap label for 0x{code:04X}");
-                    assert_eq!(
-                        key.behavior.as_ref().and_then(|b| b.short.as_deref()),
-                        Some(expected_behavior_short),
-                        "behavior short for 0x{code:04X}"
-                    );
-                }
-                _ => panic!("0x{code:04X} should resolve to Key"),
-            }
+            let key = try_resolve_qmk_key(code).expect("should resolve to Key");
+            assert_eq!(key.tap.full, expected_tap, "tap label for 0x{code:04X}");
+            assert_eq!(
+                key.behavior.as_ref().and_then(|b| b.short.as_deref()),
+                Some(expected_behavior_short),
+                "behavior short for 0x{code:04X}",
+            );
         }
     }
 }

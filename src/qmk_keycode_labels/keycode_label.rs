@@ -2,38 +2,35 @@ use crate::layout_key::{Label, LayoutKey};
 use crate::qmk_keycode_labels::advanced::get_advanced_layout_key;
 use crate::qmk_keycode_labels::basic::get_basic_layout_key;
 use crate::qmk_keycode_labels::layer::get_layer_layout_key;
+
 use qmk_via_api::keycodes::Keycode;
 
-/// The semantic classification and visual layout resolution of a QMK keycode.
-#[derive(Debug, Clone, PartialEq)]
-pub enum KeyResolution {
-    /// Transparent slot that falls through to lower layers.
-    Transparent,
-    /// A recognized QMK key with defined labels, symbols, and layout properties.
-    Key(Box<LayoutKey>),
-    /// Unrecognized/custom firmware keycode with no defined semantic mapping.
-    Unknown,
-}
-
-/// Resolves a raw QMK keycode byte sequence into its semantic classification.
-pub fn resolve_qmk_key(bytes: u16) -> KeyResolution {
+/// Derives the display `LayoutKey` for a QMK keycode.
+/// Returns `None` for `KC_TRANSPARENT` (falls through to lower layers).
+/// Unknown keycodes return a hex fallback (`0x%04X`) so they are never silently dropped.
+pub fn qmk_to_layout_key(bytes: u16) -> Option<LayoutKey> {
     if bytes == Keycode::KC_TRANSPARENT as u16 {
-        return KeyResolution::Transparent;
+        return None;
     }
 
-    if let Some(key) = get_basic_layout_key(bytes)
+    try_resolve_qmk_key(bytes).or_else(|| Some(get_hex_layout_key(bytes)))
+}
+
+/// Attempts to resolve a QMK keycode to a known key layout, returning `None` if unknown
+/// or transparent.
+pub fn try_resolve_qmk_key(bytes: u16) -> Option<LayoutKey> {
+    if bytes == Keycode::KC_TRANSPARENT as u16 {
+        return None;
+    }
+
+    get_basic_layout_key(bytes)
         .or_else(|| get_layer_layout_key(bytes))
         .or_else(|| get_advanced_layout_key(bytes))
-    {
-        KeyResolution::Key(Box::new(key))
-    } else {
-        KeyResolution::Unknown
-    }
 }
 
-pub fn get_hex_layout_key(keycode_bytes: u16) -> LayoutKey {
+pub fn get_hex_layout_key(bytes: u16) -> LayoutKey {
     LayoutKey {
-        tap: Label::new(format!("0x{:04X}", keycode_bytes)),
+        tap: Label::new(format!("0x{:04X}", bytes)),
         ..Default::default()
     }
 }

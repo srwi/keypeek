@@ -544,14 +544,11 @@ mod tests {
     use super::*;
     use crate::layout_key::LayoutKey;
     use crate::qmk_keycode_labels::constants::*;
-    use crate::qmk_keycode_labels::{resolve_qmk_key, KeyResolution};
+    use crate::qmk_keycode_labels::try_resolve_qmk_key;
     use qmk_via_api::QmkLayerOp;
 
     fn get_layout_key(bytes: u16) -> Option<LayoutKey> {
-        match resolve_qmk_key(bytes) {
-            KeyResolution::Key(key) => Some(*key),
-            _ => None,
-        }
+        try_resolve_qmk_key(bytes)
     }
 
     fn assert_round_trips(draft: QmkDraft, code: u16) {

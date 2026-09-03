@@ -50,21 +50,13 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             })
         }
         QmkKeycode::ModTap { mods, keycode } => {
-            let mod_label = mod_mask_to_label(mods);
             let tap_key = get_basic_layout_key(keycode as u16).unwrap_or_default();
-
-            Some(LayoutKey {
-                tap: tap_key.tap,
-                behavior: Some(behavior_names::MOD_TAP.label()),
-                argument: Some(mod_label),
-                shifted: tap_key.shifted,
-                ralt: tap_key.ralt,
-                ralt_shifted: tap_key.ralt_shifted,
-                mod_mask: Some(to_held_mod_mask(mods)),
-                symbol: tap_key.symbol,
-                kind: KeycodeKind::Basic,
-                ..Default::default()
-            })
+            Some(crate::hid_labels::mod_tap_key(
+                tap_key,
+                mod_mask_to_label(mods),
+                Some(to_held_mod_mask(mods)),
+                Some(behavior_names::MOD_TAP.label()),
+            ))
         }
         QmkKeycode::LayerMod { layer, mods } => Some(LayoutKey {
             tap: Label::new(format!("L{}", layer)),
@@ -75,31 +67,14 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             border: BorderStyle::None,
             ..Default::default()
         }),
-        QmkKeycode::OneShotMod(mods) => {
-            let mod_label = mod_mask_to_label(mods);
-
-            Some(LayoutKey {
-                tap: mod_label,
-                behavior: Some(behavior_names::ONE_SHOT_MOD.label()),
-                mod_mask: Some(to_held_mod_mask(mods)),
-                kind: KeycodeKind::Modifier,
-                ..Default::default()
-            })
-        }
+        QmkKeycode::OneShotMod(mods) => Some(crate::hid_labels::one_shot_mod_key(
+            mod_mask_to_label(mods),
+            Some(to_held_mod_mask(mods)),
+            Some(behavior_names::ONE_SHOT_MOD.label()),
+        )),
         QmkKeycode::LayerTap { layer, keycode } => {
             let tap_key = get_basic_layout_key(keycode as u16).unwrap_or_default();
-
-            Some(LayoutKey {
-                tap: tap_key.tap,
-                shifted: tap_key.shifted,
-                ralt: tap_key.ralt,
-                ralt_shifted: tap_key.ralt_shifted,
-                symbol: tap_key.symbol,
-                kind: KeycodeKind::Modifier,
-                layer_ref: Some(layer),
-                border: BorderStyle::None,
-                ..Default::default()
-            })
+            Some(crate::hid_labels::layer_tap_key(layer, tap_key, None))
         }
         _ => None,
     }

@@ -2,7 +2,7 @@
 
 use super::picker::{Candidate, CandidateGroup};
 use crate::key_action::KeyAction;
-use crate::qmk_keycode_labels::{resolve_qmk_key, KeyResolution};
+use crate::qmk_keycode_labels::try_resolve_qmk_key;
 use qmk_via_api::keycodes::{Keycode, KeycodeCategory};
 use qmk_via_api::ranges::{QK_KB, QK_MACRO, QK_TAP_DANCE, QK_USER};
 use qmk_via_api::QmkLayerOp;
@@ -13,9 +13,12 @@ fn candidate_group(name: &'static str, codes: impl IntoIterator<Item = u16>) -> 
         name,
         candidates: codes
             .into_iter()
-            .filter_map(|c| match resolve_qmk_key(c) {
-                KeyResolution::Key(_) | KeyResolution::Transparent => Some(qmk_candidate(c)),
-                _ => None,
+            .filter_map(|c| {
+                if c == Keycode::KC_TRANSPARENT as u16 || try_resolve_qmk_key(c).is_some() {
+                    Some(qmk_candidate(c))
+                } else {
+                    None
+                }
             })
             .collect(),
     }
