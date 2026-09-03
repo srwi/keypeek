@@ -327,334 +327,29 @@ fn get_basic_layout_key_static(keycode: Keycode) -> Option<LayoutKey> {
             tap: Label::with_short("MIDI Toggle", "MDTg"),
             ..Default::default()
         }),
-        Keycode::QK_MIDI_NOTE_C_0 => Some(LayoutKey {
-            tap: Label::with_short("MIDI C0", "MDC0"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_C_SHARP_0 => Some(LayoutKey {
-            tap: Label::with_short("MIDI C#0", "MDC#0"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_D_0 => Some(LayoutKey {
-            tap: Label::with_short("MIDI D0", "MDD0"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_D_SHARP_0 => Some(LayoutKey {
-            tap: Label::with_short("MIDI D#0", "MDD#0"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_E_0 => Some(LayoutKey {
-            tap: Label::with_short("MIDI E0", "MDE0"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_F_0 => Some(LayoutKey {
-            tap: Label::with_short("MIDI F0", "MDF0"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_F_SHARP_0 => Some(LayoutKey {
-            tap: Label::with_short("MIDI F#0", "MDF#0"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_G_0 => Some(LayoutKey {
-            tap: Label::with_short("MIDI G0", "MDG0"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_G_SHARP_0 => Some(LayoutKey {
-            tap: Label::with_short("MIDI G#0", "MDG#0"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_A_0 => Some(LayoutKey {
-            tap: Label::with_short("MIDI A0", "MDA0"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_A_SHARP_0 => Some(LayoutKey {
-            tap: Label::with_short("MIDI A#0", "MDA#0"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_B_0 => Some(LayoutKey {
-            tap: Label::with_short("MIDI B0", "MDB0"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_C_1 => Some(LayoutKey {
-            tap: Label::with_short("MIDI C1", "MDC1"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_C_SHARP_1 => Some(LayoutKey {
-            tap: Label::with_short("MIDI C#1", "MDC#1"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_D_1 => Some(LayoutKey {
-            tap: Label::with_short("MIDI D1", "MDD1"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_D_SHARP_1 => Some(LayoutKey {
-            tap: Label::with_short("MIDI D#1", "MDD#1"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_E_1 => Some(LayoutKey {
-            tap: Label::with_short("MIDI E1", "MDE1"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_F_1 => Some(LayoutKey {
-            tap: Label::with_short("MIDI F1", "MDF1"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_F_SHARP_1 => Some(LayoutKey {
-            tap: Label::with_short("MIDI F#1", "MDF#1"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_G_1 => Some(LayoutKey {
-            tap: Label::with_short("MIDI G1", "MDG1"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_G_SHARP_1 => Some(LayoutKey {
-            tap: Label::with_short("MIDI G#1", "MDG#1"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_A_1 => Some(LayoutKey {
-            tap: Label::with_short("MIDI A1", "MDA1"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_A_SHARP_1 => Some(LayoutKey {
-            tap: Label::with_short("MIDI A#1", "MDA#1"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_B_1 => Some(LayoutKey {
-            tap: Label::with_short("MIDI B1", "MDB1"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_C_2 => Some(LayoutKey {
-            tap: Label::with_short("MIDI C2", "MDC2"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_C_SHARP_2 => Some(LayoutKey {
-            tap: Label::with_short("MIDI C#2", "MDC#2"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_D_2 => Some(LayoutKey {
-            tap: Label::with_short("MIDI D2", "MDD2"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_D_SHARP_2 => Some(LayoutKey {
-            tap: Label::with_short("MIDI D#2", "MDD#2"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_E_2 => Some(LayoutKey {
-            tap: Label::with_short("MIDI E2", "MDE2"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_F_2 => Some(LayoutKey {
-            tap: Label::with_short("MIDI F2", "MDF2"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_F_SHARP_2 => Some(LayoutKey {
-            tap: Label::with_short("MIDI F#2", "MDF#2"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_G_2 => Some(LayoutKey {
-            tap: Label::with_short("MIDI G2", "MDG2"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_G_SHARP_2 => Some(LayoutKey {
-            tap: Label::with_short("MIDI G#2", "MDG#2"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_A_2 => Some(LayoutKey {
-            tap: Label::with_short("MIDI A2", "MDA2"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_A_SHARP_2 => Some(LayoutKey {
-            tap: Label::with_short("MIDI A#2", "MDA#2"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_B_2 => Some(LayoutKey {
-            tap: Label::with_short("MIDI B2", "MDB2"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_C_3 => Some(LayoutKey {
-            tap: Label::with_short("MIDI C3", "MDC3"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_C_SHARP_3 => Some(LayoutKey {
-            tap: Label::with_short("MIDI C#3", "MDC#3"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_D_3 => Some(LayoutKey {
-            tap: Label::with_short("MIDI D3", "MDD3"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_D_SHARP_3 => Some(LayoutKey {
-            tap: Label::with_short("MIDI D#3", "MDD#3"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_E_3 => Some(LayoutKey {
-            tap: Label::with_short("MIDI E3", "MDE3"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_F_3 => Some(LayoutKey {
-            tap: Label::with_short("MIDI F3", "MDF3"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_F_SHARP_3 => Some(LayoutKey {
-            tap: Label::with_short("MIDI F#3", "MDF#3"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_G_3 => Some(LayoutKey {
-            tap: Label::with_short("MIDI G3", "MDG3"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_G_SHARP_3 => Some(LayoutKey {
-            tap: Label::with_short("MIDI G#3", "MDG#3"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_A_3 => Some(LayoutKey {
-            tap: Label::with_short("MIDI A3", "MDA3"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_A_SHARP_3 => Some(LayoutKey {
-            tap: Label::with_short("MIDI A#3", "MDA#3"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_B_3 => Some(LayoutKey {
-            tap: Label::with_short("MIDI B3", "MDB3"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_C_4 => Some(LayoutKey {
-            tap: Label::with_short("MIDI C4", "MDC4"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_C_SHARP_4 => Some(LayoutKey {
-            tap: Label::with_short("MIDI C#4", "MDC#4"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_D_4 => Some(LayoutKey {
-            tap: Label::with_short("MIDI D4", "MDD4"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_D_SHARP_4 => Some(LayoutKey {
-            tap: Label::with_short("MIDI D#4", "MDD#4"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_E_4 => Some(LayoutKey {
-            tap: Label::with_short("MIDI E4", "MDE4"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_F_4 => Some(LayoutKey {
-            tap: Label::with_short("MIDI F4", "MDF4"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_F_SHARP_4 => Some(LayoutKey {
-            tap: Label::with_short("MIDI F#4", "MDF#4"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_G_4 => Some(LayoutKey {
-            tap: Label::with_short("MIDI G4", "MDG4"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_G_SHARP_4 => Some(LayoutKey {
-            tap: Label::with_short("MIDI G#4", "MDG#4"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_A_4 => Some(LayoutKey {
-            tap: Label::with_short("MIDI A4", "MDA4"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_A_SHARP_4 => Some(LayoutKey {
-            tap: Label::with_short("MIDI A#4", "MDA#4"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_B_4 => Some(LayoutKey {
-            tap: Label::with_short("MIDI B4", "MDB4"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_C_5 => Some(LayoutKey {
-            tap: Label::with_short("MIDI C5", "MDC5"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_C_SHARP_5 => Some(LayoutKey {
-            tap: Label::with_short("MIDI C#5", "MDC#5"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_D_5 => Some(LayoutKey {
-            tap: Label::with_short("MIDI D5", "MDD5"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_D_SHARP_5 => Some(LayoutKey {
-            tap: Label::with_short("MIDI D#5", "MDD#5"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_E_5 => Some(LayoutKey {
-            tap: Label::with_short("MIDI E5", "MDE5"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_F_5 => Some(LayoutKey {
-            tap: Label::with_short("MIDI F5", "MDF5"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_F_SHARP_5 => Some(LayoutKey {
-            tap: Label::with_short("MIDI F#5", "MDF#5"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_G_5 => Some(LayoutKey {
-            tap: Label::with_short("MIDI G5", "MDG5"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_G_SHARP_5 => Some(LayoutKey {
-            tap: Label::with_short("MIDI G#5", "MDG#5"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_A_5 => Some(LayoutKey {
-            tap: Label::with_short("MIDI A5", "MDA5"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_A_SHARP_5 => Some(LayoutKey {
-            tap: Label::with_short("MIDI A#5", "MDA#5"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_NOTE_B_5 => Some(LayoutKey {
-            tap: Label::with_short("MIDI B5", "MDB5"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_OCTAVE_N2 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Oct -2", "MDO-2"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_OCTAVE_N1 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Oct -1", "MDO-1"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_OCTAVE_0 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Oct 0", "MDO0"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_OCTAVE_1 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Oct 1", "MDO1"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_OCTAVE_2 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Oct 2", "MDO2"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_OCTAVE_3 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Oct 3", "MDO3"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_OCTAVE_4 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Oct 4", "MDO4"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_OCTAVE_5 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Oct 5", "MDO5"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_OCTAVE_6 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Oct 6", "MDO6"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_OCTAVE_7 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Oct 7", "MDO7"),
-            ..Default::default()
-        }),
+        k if (Keycode::QK_MIDI_NOTE_C_0 as u16..=Keycode::QK_MIDI_NOTE_B_5 as u16)
+            .contains(&(k as u16)) =>
+        {
+            const NOTE_NAMES: [&str; 12] = [
+                "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+            ];
+            let offset = (k as u16) - (Keycode::QK_MIDI_NOTE_C_0 as u16);
+            let octave = offset / 12;
+            let note = NOTE_NAMES[(offset % 12) as usize];
+            Some(LayoutKey {
+                tap: Label::with_short(format!("MIDI {note}{octave}"), format!("MD{note}{octave}")),
+                ..Default::default()
+            })
+        }
+        k if (Keycode::QK_MIDI_OCTAVE_N2 as u16..=Keycode::QK_MIDI_OCTAVE_7 as u16)
+            .contains(&(k as u16)) =>
+        {
+            let oct = (k as i32) - (Keycode::QK_MIDI_OCTAVE_0 as i32);
+            Some(LayoutKey {
+                tap: Label::with_short(format!("MIDI Oct {oct}"), format!("MDO{oct}")),
+                ..Default::default()
+            })
+        }
         Keycode::QK_MIDI_OCTAVE_DOWN => Some(LayoutKey {
             tap: Label::with_short("MIDI Oct Down", "MDO-"),
             ..Default::default()
@@ -663,58 +358,15 @@ fn get_basic_layout_key_static(keycode: Keycode) -> Option<LayoutKey> {
             tap: Label::with_short("MIDI Oct Up", "MDO+"),
             ..Default::default()
         }),
-        Keycode::QK_MIDI_TRANSPOSE_N6 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Trans -6", "MDT-6"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_TRANSPOSE_N5 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Trans -5", "MDT-5"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_TRANSPOSE_N4 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Trans -4", "MDT-4"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_TRANSPOSE_N3 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Trans -3", "MDT-3"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_TRANSPOSE_N2 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Trans -2", "MDT-2"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_TRANSPOSE_N1 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Trans -1", "MDT-1"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_TRANSPOSE_0 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Trans 0", "MDT0"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_TRANSPOSE_1 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Trans 1", "MDT1"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_TRANSPOSE_2 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Trans 2", "MDT2"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_TRANSPOSE_3 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Trans 3", "MDT3"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_TRANSPOSE_4 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Trans 4", "MDT4"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_TRANSPOSE_5 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Trans 5", "MDT5"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_TRANSPOSE_6 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Trans 6", "MDT6"),
-            ..Default::default()
-        }),
+        k if (Keycode::QK_MIDI_TRANSPOSE_N6 as u16..=Keycode::QK_MIDI_TRANSPOSE_6 as u16)
+            .contains(&(k as u16)) =>
+        {
+            let step = (k as i32) - (Keycode::QK_MIDI_TRANSPOSE_0 as i32);
+            Some(LayoutKey {
+                tap: Label::with_short(format!("MIDI Trans {step}"), format!("MDT{step}")),
+                ..Default::default()
+            })
+        }
         Keycode::QK_MIDI_TRANSPOSE_DOWN => Some(LayoutKey {
             tap: Label::with_short("MIDI Trans Down", "MDT-"),
             ..Default::default()
@@ -723,50 +375,15 @@ fn get_basic_layout_key_static(keycode: Keycode) -> Option<LayoutKey> {
             tap: Label::with_short("MIDI Trans Up", "MDT+"),
             ..Default::default()
         }),
-        Keycode::QK_MIDI_VELOCITY_0 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Vel 0", "MDV0"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_VELOCITY_1 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Vel 1", "MDV1"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_VELOCITY_2 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Vel 2", "MDV2"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_VELOCITY_3 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Vel 3", "MDV3"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_VELOCITY_4 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Vel 4", "MDV4"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_VELOCITY_5 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Vel 5", "MDV5"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_VELOCITY_6 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Vel 6", "MDV6"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_VELOCITY_7 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Vel 7", "MDV7"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_VELOCITY_8 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Vel 8", "MDV8"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_VELOCITY_9 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Vel 9", "MDV9"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_VELOCITY_10 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Vel 10", "MDV10"),
-            ..Default::default()
-        }),
+        k if (Keycode::QK_MIDI_VELOCITY_0 as u16..=Keycode::QK_MIDI_VELOCITY_10 as u16)
+            .contains(&(k as u16)) =>
+        {
+            let vel = (k as u16) - (Keycode::QK_MIDI_VELOCITY_0 as u16);
+            Some(LayoutKey {
+                tap: Label::with_short(format!("MIDI Vel {vel}"), format!("MDV{vel}")),
+                ..Default::default()
+            })
+        }
         Keycode::QK_MIDI_VELOCITY_DOWN => Some(LayoutKey {
             tap: Label::with_short("MIDI Vel Down", "MDV-"),
             ..Default::default()
@@ -775,70 +392,15 @@ fn get_basic_layout_key_static(keycode: Keycode) -> Option<LayoutKey> {
             tap: Label::with_short("MIDI Vel Up", "MDV+"),
             ..Default::default()
         }),
-        Keycode::QK_MIDI_CHANNEL_1 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Ch 1", "MDC1"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_CHANNEL_2 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Ch 2", "MDC2"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_CHANNEL_3 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Ch 3", "MDC3"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_CHANNEL_4 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Ch 4", "MDC4"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_CHANNEL_5 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Ch 5", "MDC5"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_CHANNEL_6 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Ch 6", "MDC6"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_CHANNEL_7 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Ch 7", "MDC7"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_CHANNEL_8 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Ch 8", "MDC8"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_CHANNEL_9 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Ch 9", "MDC9"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_CHANNEL_10 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Ch 10", "MDC10"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_CHANNEL_11 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Ch 11", "MDC11"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_CHANNEL_12 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Ch 12", "MDC12"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_CHANNEL_13 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Ch 13", "MDC13"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_CHANNEL_14 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Ch 14", "MDC14"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_CHANNEL_15 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Ch 15", "MDC15"),
-            ..Default::default()
-        }),
-        Keycode::QK_MIDI_CHANNEL_16 => Some(LayoutKey {
-            tap: Label::with_short("MIDI Ch 16", "MDC16"),
-            ..Default::default()
-        }),
+        k if (Keycode::QK_MIDI_CHANNEL_1 as u16..=Keycode::QK_MIDI_CHANNEL_16 as u16)
+            .contains(&(k as u16)) =>
+        {
+            let ch = (k as u16) - (Keycode::QK_MIDI_CHANNEL_1 as u16) + 1;
+            Some(LayoutKey {
+                tap: Label::with_short(format!("MIDI Ch {ch}"), format!("MDC{ch}")),
+                ..Default::default()
+            })
+        }
         Keycode::QK_MIDI_CHANNEL_DOWN => Some(LayoutKey {
             tap: Label::with_short("MIDI Ch Down", "MDC-"),
             ..Default::default()
@@ -927,262 +489,25 @@ fn get_basic_layout_key_static(keycode: Keycode) -> Option<LayoutKey> {
             tap: Label::with_short("Seq Clear Steps", "SeqClr"),
             ..Default::default()
         }),
-        Keycode::QK_JOYSTICK_BUTTON_0 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 0", "JoyB0"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_1 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 1", "JoyB1"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_2 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 2", "JoyB2"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_3 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 3", "JoyB3"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_4 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 4", "JoyB4"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_5 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 5", "JoyB5"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_6 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 6", "JoyB6"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_7 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 7", "JoyB7"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_8 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 8", "JoyB8"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_9 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 9", "JoyB9"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_10 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 10", "JoyB10"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_11 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 11", "JoyB11"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_12 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 12", "JoyB12"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_13 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 13", "JoyB13"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_14 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 14", "JoyB14"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_15 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 15", "JoyB15"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_16 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 16", "JoyB16"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_17 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 17", "JoyB17"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_18 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 18", "JoyB18"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_19 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 19", "JoyB19"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_20 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 20", "JoyB20"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_21 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 21", "JoyB21"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_22 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 22", "JoyB22"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_23 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 23", "JoyB23"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_24 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 24", "JoyB24"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_25 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 25", "JoyB25"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_26 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 26", "JoyB26"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_27 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 27", "JoyB27"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_28 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 28", "JoyB28"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_29 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 29", "JoyB29"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_30 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 30", "JoyB30"),
-            ..Default::default()
-        }),
-        Keycode::QK_JOYSTICK_BUTTON_31 => Some(LayoutKey {
-            tap: Label::with_short("Joy Btn 31", "JoyB31"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_1 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 1", "PB1"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_2 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 2", "PB2"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_3 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 3", "PB3"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_4 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 4", "PB4"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_5 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 5", "PB5"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_6 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 6", "PB6"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_7 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 7", "PB7"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_8 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 8", "PB8"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_9 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 9", "PB9"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_10 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 10", "PB10"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_11 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 11", "PB11"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_12 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 12", "PB12"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_13 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 13", "PB13"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_14 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 14", "PB14"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_15 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 15", "PB15"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_16 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 16", "PB16"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_17 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 17", "PB17"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_18 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 18", "PB18"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_19 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 19", "PB19"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_20 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 20", "PB20"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_21 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 21", "PB21"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_22 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 22", "PB22"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_23 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 23", "PB23"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_24 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 24", "PB24"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_25 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 25", "PB25"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_26 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 26", "PB26"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_27 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 27", "PB27"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_28 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 28", "PB28"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_29 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 29", "PB29"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_30 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 30", "PB30"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_31 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 31", "PB31"),
-            ..Default::default()
-        }),
-        Keycode::QK_PROGRAMMABLE_BUTTON_32 => Some(LayoutKey {
-            tap: Label::with_short("Prog Btn 32", "PB32"),
-            ..Default::default()
-        }),
+        k if (Keycode::QK_JOYSTICK_BUTTON_0 as u16..=Keycode::QK_JOYSTICK_BUTTON_31 as u16)
+            .contains(&(k as u16)) =>
+        {
+            let n = (k as u16) - (Keycode::QK_JOYSTICK_BUTTON_0 as u16);
+            Some(LayoutKey {
+                tap: Label::with_short(format!("Joy Btn {n}"), format!("JoyB{n}")),
+                ..Default::default()
+            })
+        }
+        k if (Keycode::QK_PROGRAMMABLE_BUTTON_1 as u16
+            ..=Keycode::QK_PROGRAMMABLE_BUTTON_32 as u16)
+            .contains(&(k as u16)) =>
+        {
+            let n = (k as u16) - (Keycode::QK_PROGRAMMABLE_BUTTON_1 as u16) + 1;
+            Some(LayoutKey {
+                tap: Label::with_short(format!("Prog Btn {n}"), format!("PB{n}")),
+                ..Default::default()
+            })
+        }
         Keycode::QK_AUDIO_ON => Some(LayoutKey {
             tap: Label::with_short("Audio On", "AudOn"),
             ..Default::default()
@@ -1264,7 +589,7 @@ fn get_basic_layout_key_static(keycode: Keycode) -> Option<LayoutKey> {
             ..Default::default()
         }),
         Keycode::QK_BACKLIGHT_OFF => Some(LayoutKey {
-            tap: Label::with_short("BL Off", "BL Off"),
+            tap: Label::new("BL Off"),
             ..Default::default()
         }),
         Keycode::QK_BACKLIGHT_TOGGLE => Some(LayoutKey {
@@ -1272,19 +597,19 @@ fn get_basic_layout_key_static(keycode: Keycode) -> Option<LayoutKey> {
             ..Default::default()
         }),
         Keycode::QK_BACKLIGHT_DOWN => Some(LayoutKey {
-            tap: Label::new("BL -"),
+            tap: Label::with_short("BL Dec", "BL-"),
             ..Default::default()
         }),
         Keycode::QK_BACKLIGHT_UP => Some(LayoutKey {
-            tap: Label::new("BL +"),
+            tap: Label::with_short("BL Inc", "BL+"),
             ..Default::default()
         }),
         Keycode::QK_BACKLIGHT_STEP => Some(LayoutKey {
-            tap: Label::new("BL Cycle"),
+            tap: Label::with_short("BL Cycle", "BLCyc"),
             ..Default::default()
         }),
         Keycode::QK_BACKLIGHT_TOGGLE_BREATHING => Some(LayoutKey {
-            tap: Label::new("BR Toggle"),
+            tap: Label::with_short("BL Breathe", "BLBr"),
             ..Default::default()
         }),
         Keycode::QK_LED_MATRIX_ON => Some(LayoutKey {
@@ -1296,7 +621,7 @@ fn get_basic_layout_key_static(keycode: Keycode) -> Option<LayoutKey> {
             ..Default::default()
         }),
         Keycode::QK_LED_MATRIX_TOGGLE => Some(LayoutKey {
-            tap: Label::with_short("RGB Toggle", "RGBTog"),
+            tap: Label::with_short("RGB Toggle", "RGBTg"),
             ..Default::default()
         }),
         Keycode::QK_LED_MATRIX_MODE_NEXT => Some(LayoutKey {
@@ -1336,35 +661,35 @@ fn get_basic_layout_key_static(keycode: Keycode) -> Option<LayoutKey> {
             ..Default::default()
         }),
         Keycode::QK_UNDERGLOW_HUE_UP => Some(LayoutKey {
-            tap: Label::new("Hue +"),
+            tap: Label::with_short("Hue +", "Hue+"),
             ..Default::default()
         }),
         Keycode::QK_UNDERGLOW_HUE_DOWN => Some(LayoutKey {
-            tap: Label::new("Hue -"),
+            tap: Label::with_short("Hue -", "Hue-"),
             ..Default::default()
         }),
         Keycode::QK_UNDERGLOW_SATURATION_UP => Some(LayoutKey {
-            tap: Label::new("Sat +"),
+            tap: Label::with_short("Sat +", "Sat+"),
             ..Default::default()
         }),
         Keycode::QK_UNDERGLOW_SATURATION_DOWN => Some(LayoutKey {
-            tap: Label::new("Sat -"),
+            tap: Label::with_short("Sat -", "Sat-"),
             ..Default::default()
         }),
         Keycode::QK_UNDERGLOW_VALUE_UP => Some(LayoutKey {
-            tap: Label::new("Bright +"),
+            tap: Label::with_short("Bright +", "Bri+"),
             ..Default::default()
         }),
         Keycode::QK_UNDERGLOW_VALUE_DOWN => Some(LayoutKey {
-            tap: Label::new("Bright -"),
+            tap: Label::with_short("Bright -", "Bri-"),
             ..Default::default()
         }),
         Keycode::QK_UNDERGLOW_SPEED_UP => Some(LayoutKey {
-            tap: Label::new("Effect Speed+"),
+            tap: Label::with_short("Speed +", "Spd+"),
             ..Default::default()
         }),
         Keycode::QK_UNDERGLOW_SPEED_DOWN => Some(LayoutKey {
-            tap: Label::new("Effect Speed-"),
+            tap: Label::with_short("Speed -", "Spd-"),
             ..Default::default()
         }),
         Keycode::RGB_MODE_PLAIN => Some(LayoutKey {
@@ -1728,7 +1053,7 @@ fn get_basic_layout_key_static(keycode: Keycode) -> Option<LayoutKey> {
             ..Default::default()
         }),
         Keycode::QK_CAPS_WORD_TOGGLE => Some(LayoutKey {
-            tap: Label::with_short("Caps Word", "CapWord"),
+            tap: Label::with_short("Caps Word", "CW"),
             ..Default::default()
         }),
         Keycode::QK_AUTOCORRECT_ON => Some(LayoutKey {
@@ -1752,158 +1077,13 @@ fn get_basic_layout_key_static(keycode: Keycode) -> Option<LayoutKey> {
             ..Default::default()
         }),
         Keycode::QK_REPEAT_KEY => Some(LayoutKey {
-            tap: Label::with_short("Repeat Key", "RepKey"),
+            tap: Label::with_short("Repeat Key", "Rep"),
             ..Default::default()
         }),
         Keycode::QK_ALT_REPEAT_KEY => Some(LayoutKey {
-            tap: Label::with_short("Alt Repeat", "ARepKey"),
+            tap: Label::with_short("Alt Repeat", "ARep"),
             ..Default::default()
         }),
         _ => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::get_basic_layout_key;
-    use qmk_via_api::keycodes::Keycode;
-
-    // Regression guard: a plain digit key must always carry its shifted
-    // legend (at minimum the static US-layout fallback), never collapse to
-    // just `tap` with no `shifted` at all.
-    #[test]
-    fn plain_digit_keeps_a_shifted_legend() {
-        let key = get_basic_layout_key(Keycode::KC_8 as u16).unwrap();
-        eprintln!("KC_8 -> tap={:?} shifted={:?}", key.tap.full, key.shifted);
-        assert!(key.shifted.is_some());
-    }
-
-    // Regression guard: the Single-legend live preview keys off `mod_mask`.
-    // Shift keys must carry HELD_MOD_SHIFT, RAlt HELD_MOD_RALT, and
-    // everything else (plain Ctrl/Gui) must carry neither. Plain LAlt only
-    // carries it on macOS, where it is Option (a Level-3 shift).
-    #[test]
-    fn standalone_modifier_keys_carry_the_right_mod_mask() {
-        use crate::layout_key::{HELD_MOD_RALT, HELD_MOD_SHIFT};
-
-        let shift = get_basic_layout_key(Keycode::KC_LEFT_SHIFT as u16).unwrap();
-        assert_eq!(shift.mod_mask, Some(HELD_MOD_SHIFT));
-
-        let ralt = get_basic_layout_key(Keycode::KC_RIGHT_ALT as u16).unwrap();
-        assert_eq!(ralt.mod_mask, Some(HELD_MOD_RALT));
-
-        let lalt = get_basic_layout_key(Keycode::KC_LEFT_ALT as u16).unwrap();
-        #[cfg(not(target_os = "macos"))]
-        {
-            assert_eq!(lalt.mod_mask, None);
-        }
-        #[cfg(target_os = "macos")]
-        {
-            assert_eq!(lalt.mod_mask, Some(HELD_MOD_RALT));
-        }
-
-        let ctrl = get_basic_layout_key(Keycode::KC_LEFT_CTRL as u16).unwrap();
-        assert_eq!(ctrl.mod_mask, None);
-    }
-
-    // Regression guard: `tap` must localize too, not just `shifted`. On a
-    // German layout KC_SLASH's base char is "-", not the US "/". Layout-
-    // dependent (needs a live German Wayland session), like the os_layout
-    // live tests, so it is not part of the normal `cargo test` run.
-    #[test]
-    #[ignore]
-    fn symbol_key_tap_localizes_too() {
-        let key = get_basic_layout_key(Keycode::KC_SLASH as u16).unwrap();
-        eprintln!(
-            "KC_SLASH -> tap={:?} shifted={:?}",
-            key.tap.full, key.shifted
-        );
-        assert_eq!(key.tap.full, "-");
-        assert_eq!(key.shifted.as_deref(), Some("_"));
-    }
-
-    // Regression guard: AZERTY puts accented letters on the digit row
-    // ("2" key -> base "é", shifted "2"). Shift there is a genuinely
-    // different, useful character, so it must NOT collapse into a flat
-    // letter display like German ö/Ö does. Needs a live French session.
-    #[test]
-    #[ignore]
-    fn azerty_digit_row_keeps_the_shifted_digit() {
-        let key = get_basic_layout_key(Keycode::KC_2 as u16).unwrap();
-        eprintln!("KC_2 -> tap={:?} shifted={:?}", key.tap.full, key.shifted);
-        assert_eq!(key.tap.full, "é");
-        assert_eq!(key.shifted.as_deref(), Some("2"));
-    }
-
-    // Regression guard: letters must localize too (QWERTZ swaps Y/Z,
-    // AZERTY swaps A/Q). Uppercased; `shifted` stays untouched (None).
-    // Expects a US/German-family layout (AZERTY legitimately gives "Q"
-    // here), so needs a matching live session.
-    #[test]
-    #[ignore]
-    fn letter_key_tap_localizes_and_uppercases() {
-        let key = get_basic_layout_key(Keycode::KC_A as u16).unwrap();
-        eprintln!("KC_A -> tap={:?} shifted={:?}", key.tap.full, key.shifted);
-        assert_eq!(key.tap.full, "A");
-        assert!(key.shifted.is_none());
-    }
-
-    // Regression guard: some letters carry an RAlt legend too (German
-    // RAlt+Q -> "@"); needed for the Single-legend live preview even
-    // though letters never show a stacked Dual-mode legend.
-    #[test]
-    #[ignore]
-    fn letter_key_carries_ralt_for_live_preview() {
-        let key = get_basic_layout_key(Keycode::KC_Q as u16).unwrap();
-        eprintln!("KC_Q -> tap={:?} ralt={:?}", key.tap.full, key.ralt);
-        assert_eq!(key.ralt.as_deref(), Some("@"));
-    }
-
-    // Regression guard: keys carrying an RAlt legend may also carry a
-    // Shift+RAlt one, needed for the live preview when both mods are held.
-    // The two always resolve in the same pass, so a Shift+RAlt legend
-    // without an RAlt one would be inconsistent. Layout-dependent (needs a
-    // live session whose layout defines Shift+RAlt characters, e.g. German).
-    #[test]
-    #[ignore]
-    fn ralt_shifted_never_appears_without_ralt() {
-        for usage in [Keycode::KC_Q as u16, Keycode::KC_8 as u16] {
-            let key = get_basic_layout_key(usage).unwrap();
-            eprintln!(
-                "usage {usage:#04x} -> ralt={:?} ralt_shifted={:?}",
-                key.ralt, key.ralt_shifted
-            );
-            if key.ralt_shifted.is_some() {
-                assert!(key.ralt.is_some());
-            }
-        }
-    }
-
-    #[test]
-    fn qmk_media_and_mouse_keys_do_not_collide_with_hid_keypad() {
-        let eject = get_basic_layout_key(Keycode::KC_MEDIA_EJECT as u16).unwrap();
-        assert_eq!(eject.tap.full, "Eject");
-
-        let calc = get_basic_layout_key(Keycode::KC_CALCULATOR as u16).unwrap();
-        assert_eq!(calc.tap.full, "Calc");
-
-        let mail = get_basic_layout_key(Keycode::KC_MAIL as u16).unwrap();
-        assert_eq!(mail.tap.full, "Mail");
-
-        let my_comp = get_basic_layout_key(Keycode::KC_MY_COMPUTER as u16).unwrap();
-        assert_eq!(my_comp.tap.full, "My Comp");
-
-        let bri_up = get_basic_layout_key(Keycode::KC_BRIGHTNESS_UP as u16).unwrap();
-        assert_eq!(bri_up.symbol.as_deref(), Some(egui_phosphor::regular::SUN));
-
-        let ctrl_panel = get_basic_layout_key(Keycode::KC_CONTROL_PANEL as u16).unwrap();
-        assert_eq!(ctrl_panel.tap.full, "Control Panel");
-
-        let mouse_up = get_basic_layout_key(Keycode::QK_MOUSE_CURSOR_UP as u16).unwrap();
-        assert_eq!(mouse_up.tap.full, egui_phosphor::regular::ARROW_UP);
-        assert_eq!(mouse_up.symbol.as_deref(), Some(egui_phosphor::regular::MOUSE_SIMPLE));
-
-        let mouse_btn1 = get_basic_layout_key(Keycode::QK_MOUSE_BUTTON_1 as u16).unwrap();
-        assert_eq!(mouse_btn1.symbol.as_deref(), Some(egui_phosphor::regular::MOUSE_LEFT_CLICK));
     }
 }

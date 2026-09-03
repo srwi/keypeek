@@ -66,7 +66,7 @@ pub fn behavior_to_layout_key(behavior: &Behavior, layer_names: &[String]) -> Op
             ..Default::default()
         }),
         Behavior::Reset => Some(LayoutKey {
-            tap: Label::new("Reset"),
+            tap: Label::with_short("Reset", "Rst"),
             ..Default::default()
         }),
         Behavior::Bootloader => Some(LayoutKey {
@@ -140,7 +140,7 @@ pub fn behavior_to_layout_key(behavior: &Behavior, layer_names: &[String]) -> Op
             let label = match bl {
                 BacklightCommand::On => Label::new("BL On"),
                 BacklightCommand::Off => Label::new("BL Off"),
-                BacklightCommand::Toggle => Label::new("BL Tog"),
+                BacklightCommand::Toggle => Label::with_short("BL Toggle", "BLTog"),
                 BacklightCommand::Inc => Label::with_short("BL Inc", "BL+"),
                 BacklightCommand::Dec => Label::with_short("BL Dec", "BL-"),
                 BacklightCommand::Cycle => Label::with_short("BL Cycle", "BLCyc"),
@@ -161,9 +161,9 @@ pub fn behavior_to_layout_key(behavior: &Behavior, layer_names: &[String]) -> Op
         }
         Behavior::Underglow(ug) => {
             let label = match ug {
-                UnderglowCommand::Toggle => Label::new("RGB Tog"),
-                UnderglowCommand::On => Label::new("RGB On"),
-                UnderglowCommand::Off => Label::new("RGB Off"),
+                UnderglowCommand::Toggle => Label::with_short("RGB Toggle", "RGBTg"),
+                UnderglowCommand::On => Label::with_short("RGB On", "RGBOn"),
+                UnderglowCommand::Off => Label::with_short("RGB Off", "RGBOff"),
                 UnderglowCommand::HueInc => Label::with_short("Hue +", "Hue+"),
                 UnderglowCommand::HueDec => Label::with_short("Hue -", "Hue-"),
                 UnderglowCommand::SatInc => Label::with_short("Sat +", "Sat+"),
@@ -189,42 +189,87 @@ pub fn behavior_to_layout_key(behavior: &Behavior, layer_names: &[String]) -> Op
             })
         }
         Behavior::MouseKeyPress(btn) => {
-            let label = match btn {
-                MouseButton::Left => Label::with_short("L Click", "LClk"),
-                MouseButton::Right => Label::with_short("R Click", "RClk"),
-                MouseButton::Middle => Label::with_short("M Click", "MClk"),
-                MouseButton::Button4 => Label::with_short("Mouse 4", "MB4"),
-                MouseButton::Button5 => Label::with_short("Mouse 5", "MB5"),
-                MouseButton::Other(n) => Label::with_short(format!("Mouse {n}"), format!("M{n}")),
+            let (tap, symbol) = match btn {
+                MouseButton::Left => (
+                    Label::new(""),
+                    Some(egui_phosphor::regular::MOUSE_LEFT_CLICK.to_string()),
+                ),
+                MouseButton::Right => (
+                    Label::new(""),
+                    Some(egui_phosphor::regular::MOUSE_RIGHT_CLICK.to_string()),
+                ),
+                MouseButton::Middle => (
+                    Label::new(""),
+                    Some(egui_phosphor::regular::MOUSE_MIDDLE_CLICK.to_string()),
+                ),
+                MouseButton::Button4 => (Label::new("Mouse Btn4"), None),
+                MouseButton::Button5 => (Label::new("Mouse Btn5"), None),
+                MouseButton::Other(n) => (
+                    Label::with_short(format!("Mouse {n}"), format!("M{n}")),
+                    None,
+                ),
             };
             Some(LayoutKey {
-                tap: label,
+                tap,
+                symbol,
                 ..Default::default()
             })
         }
         Behavior::MouseMove { x, y } => {
-            let label = match (x.signum(), y.signum()) {
-                (0, -1) => Label::with_short("Mouse Up", "MsUp"),
-                (0, 1) => Label::with_short("Mouse Down", "MsDn"),
-                (-1, 0) => Label::with_short("Mouse Left", "MsLt"),
-                (1, 0) => Label::with_short("Mouse Right", "MsRt"),
-                _ => Label::with_short(format!("Move ({x}, {y})"), format!("Mv {x},{y}")),
+            let (tap, symbol) = match (x.signum(), y.signum()) {
+                (0, -1) => (
+                    Label::new(egui_phosphor::regular::ARROW_UP),
+                    Some(egui_phosphor::regular::MOUSE_SIMPLE.to_string()),
+                ),
+                (0, 1) => (
+                    Label::new(egui_phosphor::regular::ARROW_DOWN),
+                    Some(egui_phosphor::regular::MOUSE_SIMPLE.to_string()),
+                ),
+                (-1, 0) => (
+                    Label::new(egui_phosphor::regular::ARROW_LEFT),
+                    Some(egui_phosphor::regular::MOUSE_SIMPLE.to_string()),
+                ),
+                (1, 0) => (
+                    Label::new(egui_phosphor::regular::ARROW_RIGHT),
+                    Some(egui_phosphor::regular::MOUSE_SIMPLE.to_string()),
+                ),
+                _ => (
+                    Label::with_short(format!("Move ({x}, {y})"), format!("Mv {x},{y}")),
+                    None,
+                ),
             };
             Some(LayoutKey {
-                tap: label,
+                tap,
+                symbol,
                 ..Default::default()
             })
         }
         Behavior::MouseScroll { x, y } => {
-            let label = match (x.signum(), y.signum()) {
-                (0, 1) => Label::with_short("Scroll Up", "ScrUp"),
-                (0, -1) => Label::with_short("Scroll Down", "ScrDn"),
-                (-1, 0) => Label::with_short("Scroll Left", "ScrLt"),
-                (1, 0) => Label::with_short("Scroll Right", "ScrRt"),
-                _ => Label::with_short(format!("Scroll ({x}, {y})"), format!("Scr {x},{y}")),
+            let (tap, symbol) = match (x.signum(), y.signum()) {
+                (0, 1) => (
+                    Label::new(egui_phosphor::regular::ARROW_UP),
+                    Some(egui_phosphor::regular::MOUSE_SCROLL.to_string()),
+                ),
+                (0, -1) => (
+                    Label::new(egui_phosphor::regular::ARROW_DOWN),
+                    Some(egui_phosphor::regular::MOUSE_SCROLL.to_string()),
+                ),
+                (-1, 0) => (
+                    Label::new(egui_phosphor::regular::ARROW_LEFT),
+                    Some(egui_phosphor::regular::MOUSE_SCROLL.to_string()),
+                ),
+                (1, 0) => (
+                    Label::new(egui_phosphor::regular::ARROW_RIGHT),
+                    Some(egui_phosphor::regular::MOUSE_SCROLL.to_string()),
+                ),
+                _ => (
+                    Label::with_short(format!("Scroll ({x}, {y})"), format!("Scr {x},{y}")),
+                    None,
+                ),
             };
             Some(LayoutKey {
-                tap: label,
+                tap,
+                symbol,
                 ..Default::default()
             })
         }

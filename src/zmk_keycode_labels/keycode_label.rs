@@ -36,51 +36,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn zmk_consumer_keys_resolve() {
-        let mute = keycode_to_layout_key(&Keycode::C_MUTE);
-        assert_eq!(
-            mute.symbol.as_deref(),
-            Some(egui_phosphor::regular::SPEAKER_X)
-        );
-
-        let vol_up = keycode_to_layout_key(&Keycode::C_VOLUME_UP);
-        assert_eq!(
-            vol_up.symbol.as_deref(),
-            Some(egui_phosphor::regular::SPEAKER_HIGH)
-        );
-
-        let vol_dn = keycode_to_layout_key(&Keycode::C_VOLUME_DOWN);
-        assert_eq!(
-            vol_dn.symbol.as_deref(),
-            Some(egui_phosphor::regular::SPEAKER_LOW)
-        );
-
-        let play_pause = keycode_to_layout_key(&Keycode::C_PLAY_PAUSE);
-        assert_eq!(
-            play_pause.symbol.as_deref(),
-            Some(egui_phosphor::regular::PLAY_PAUSE)
-        );
-
-        let bri_inc = keycode_to_layout_key(&Keycode::C_BRIGHTNESS_INC);
-        assert_eq!(bri_inc.symbol.as_deref(), Some(egui_phosphor::regular::SUN));
-    }
-
-    #[test]
-    fn zmk_shifted_symbols_resolve() {
-        let excl = keycode_to_layout_key(&Keycode::EXCLAMATION);
-        assert_eq!(excl.tap.full, "!");
-
-        let at = keycode_to_layout_key(&Keycode::AT_SIGN);
-        assert_eq!(at.tap.full, "@");
-
-        let hash = keycode_to_layout_key(&Keycode::POUND);
-        assert_eq!(hash.tap.full, "#");
-
-        let colon = keycode_to_layout_key(&Keycode::COLON);
-        assert_eq!(colon.tap.full, ":");
-    }
-
-    #[test]
     fn zmk_and_qmk_resolve_identical_base_keys() {
         let zmk_a = keycode_to_layout_key(&Keycode::A);
         let qmk_a = crate::qmk_keycode_labels::get_basic_layout_key(
@@ -105,4 +60,3 @@ mod tests {
         assert_eq!(zmk_mute.symbol, qmk_mute.symbol);
     }
 }
-

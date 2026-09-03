@@ -13,8 +13,7 @@ pub fn get_layer_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
                 QmkLayerOp::OneShot => (BorderStyle::Dashed, Some(layer)),
                 QmkLayerOp::Default => (BorderStyle::Solid, None),
             };
-            let mut key =
-                crate::hid_labels::layer_switch_key(layer, layer_label(layer), border);
+            let mut key = crate::hid_labels::layer_switch_key(layer, layer_label(layer), border);
             key.layer_ref = layer_ref;
             return Some(key);
         }

@@ -3,7 +3,6 @@ use crate::layout_key::{Label, LayoutKey};
 /// Resolves a USB HID Consumer Page (0x0C) usage ID into a LayoutKey.
 pub fn hid_consumer_key(usage_id: u16) -> Option<LayoutKey> {
     match usage_id {
-
         0x30 => Some(LayoutKey {
             tap: Label::new("Power"),
             ..Default::default()
