@@ -1,34 +1,15 @@
 use crate::layout_key::{Label, LayoutKey};
 use zmk_studio_api::Keycode;
 
+#[allow(dead_code)]
 pub fn keycode_to_layout_key(keycode: &Keycode) -> LayoutKey {
-    let raw = *keycode as u32;
-    let mods = ((raw >> 24) & 0xFF) as u8;
-    let mut page = ((raw >> 16) & 0xFF) as u16;
-    if page == 0 {
-        page = 0x07;
+    let mut key = super::hid_usage::hid_usage_to_layout_key(
+        zmk_studio_api::HidUsage::from_encoded(*keycode as u32),
+    );
+    if key.tap.full.starts_with("0x") {
+        key.tap = Label::new(keycode.to_name());
     }
-    let usage_id = (raw & 0xFFFF) as u16;
-
-    if mods == 0 {
-        if let Some(key) = crate::hid_labels::hid_usage_to_layout_key(page, usage_id) {
-            return key;
-        }
-    } else if mods & !(zmk_studio_api::MOD_LSFT | zmk_studio_api::MOD_RSFT) == 0 {
-        if let Some(base_key) = crate::hid_labels::hid_usage_to_layout_key(page, usage_id) {
-            if let Some(shifted) = base_key.shifted {
-                return LayoutKey {
-                    tap: Label::new(shifted),
-                    ..Default::default()
-                };
-            }
-        }
-    }
-
-    LayoutKey {
-        tap: Label::new(keycode.to_name()),
-        ..Default::default()
-    }
+    key
 }
 
 #[cfg(test)]
@@ -58,5 +39,62 @@ mod tests {
         )
         .unwrap();
         assert_eq!(zmk_mute.symbol, qmk_mute.symbol);
+    }
+
+    #[test]
+    fn zmk_and_qmk_resolve_identical_modified_keys() {
+        use qmk_via_api::{QmkKeycode, QmkModMask};
+        use zmk_studio_api::{HidUsage, MOD_LCTL, MOD_LSFT, MOD_RALT};
+
+        // Shift-wrapped: both resolve to flat shifted char without badge
+        let zmk_shift_1 = super::super::hid_usage::hid_usage_to_layout_key(HidUsage::from_parts(
+            0x07, 0x1E, MOD_LSFT,
+        ));
+        let qmk_shift_1 = crate::qmk_keycode_labels::get_advanced_layout_key(
+            QmkKeycode::encode_mod_combo(QmkModMask::from_bits(QmkModMask::LSFT), 0x1E).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(zmk_shift_1.tap.full, qmk_shift_1.tap.full);
+        assert_eq!(zmk_shift_1.tap.full, "!");
+        assert!(zmk_shift_1.argument.is_none());
+        assert!(qmk_shift_1.argument.is_none());
+
+        // Non-text modifier: both show base key + modifier badge
+        let zmk_ctrl_c = super::super::hid_usage::hid_usage_to_layout_key(HidUsage::from_parts(
+            0x07, 0x06, MOD_LCTL,
+        ));
+        let qmk_ctrl_c = crate::qmk_keycode_labels::get_advanced_layout_key(
+            QmkKeycode::encode_mod_combo(QmkModMask::from_bits(QmkModMask::LCTL), 0x06).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(zmk_ctrl_c.tap.full, qmk_ctrl_c.tap.full);
+        assert_eq!(zmk_ctrl_c.argument, qmk_ctrl_c.argument);
+
+        // AltGr-wrapped: both resolve identically
+        let zmk_ralt_8 = super::super::hid_usage::hid_usage_to_layout_key(HidUsage::from_parts(
+            0x07, 0x25, MOD_RALT,
+        ));
+        let qmk_ralt_8 = crate::qmk_keycode_labels::get_advanced_layout_key(
+            QmkKeycode::encode_mod_combo(
+                QmkModMask::from_bits(QmkModMask::LALT | QmkModMask::RIGHT_HAND),
+                0x25,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(zmk_ralt_8.tap.full, qmk_ralt_8.tap.full);
+        assert_eq!(zmk_ralt_8.argument, qmk_ralt_8.argument);
+
+        // Modified media key (e.g. Ctrl + Audio Mute): both show mute symbol + Ctrl badge
+        let zmk_ctrl_mute = super::super::hid_usage::hid_usage_to_layout_key(HidUsage::from_parts(
+            0x0C, 0xE2, MOD_LCTL,
+        ));
+        let qmk_ctrl_mute = crate::qmk_keycode_labels::get_advanced_layout_key(
+            QmkKeycode::encode_mod_combo(QmkModMask::from_bits(QmkModMask::LCTL), 0xA8).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(zmk_ctrl_mute.symbol, qmk_ctrl_mute.symbol);
+        assert!(zmk_ctrl_mute.symbol.is_some());
+        assert_eq!(zmk_ctrl_mute.argument, qmk_ctrl_mute.argument);
     }
 }

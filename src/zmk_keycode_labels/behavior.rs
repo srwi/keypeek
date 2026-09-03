@@ -1,9 +1,8 @@
-use crate::layout_key::modifier_symbols;
+use crate::hid_labels::Modifiers;
 use crate::layout_key::{behavior_names, BorderStyle, KeycodeKind, Label, LayoutKey};
 use zmk_studio_api::{
     BacklightCommand, Behavior, BehaviorParam, BluetoothCommand, ExternalPowerCommand, HidUsage,
-    MouseButton, OutputSelection, UnderglowCommand, MOD_LALT, MOD_LCTL, MOD_LGUI, MOD_LSFT,
-    MOD_RALT, MOD_RCTL, MOD_RGUI, MOD_RSFT,
+    MouseButton, OutputSelection, UnderglowCommand,
 };
 
 use super::hid_usage::hid_usage_to_layout_key;
@@ -305,20 +304,11 @@ pub fn behavior_to_layout_key(behavior: &Behavior, layer_names: &[String]) -> Op
 }
 
 fn mod_mask_to_glyphs(m: u8) -> Label {
-    modifier_symbols::glyphs(
-        m & (MOD_LCTL | MOD_RCTL) != 0,
-        m & (MOD_LSFT | MOD_RSFT) != 0,
-        m & (MOD_LALT | MOD_RALT) != 0,
-        m & (MOD_LGUI | MOD_RGUI) != 0,
-    )
+    Modifiers::from_zmk_mask(m).label()
 }
 
 fn layer_tap_layout_key(layer_id: u32, tap: HidUsage, behavior: Option<Label>) -> LayoutKey {
-    let mut tap_key = hid_usage_to_layout_key(tap);
-    let mod_mask = tap.modifier_mask();
-    if tap_key.argument.is_none() && mod_mask != 0 {
-        tap_key.argument = Some(mod_mask_to_glyphs(mod_mask));
-    }
+    let tap_key = hid_usage_to_layout_key(tap);
     crate::hid_labels::layer_tap_key(layer_id as u8, tap_key, behavior)
 }
 

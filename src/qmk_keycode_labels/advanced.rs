@@ -8,46 +8,13 @@ use qmk_via_api::{QmkKeycode, QmkModMask};
 pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
     match QmkKeycode::from_u16(keycode_bytes) {
         QmkKeycode::ModCombo { mods, keycode } => {
-            // Shift and RAlt are the only mods that change the output
-            // character (RAlt as the layout's Level-3 shift, where defined).
-            // Resolve that directly and show it flat, with no badge.
-            // Everything else (Ctrl/Gui) produces no text; fall through to
-            // base key + mod badge. On macOS plain Alt is Option, a Level-3
-            // shift in its own right, so it counts as one too.
-            let alt_is_level3 = cfg!(target_os = "macos") || mods.is_right();
-            let text_modifier = if !mods.has_ctrl() && !mods.has_gui() {
-                if mods.has_shift() && !mods.has_alt() {
-                    Some(crate::os_layout::Modifier::Shift)
-                } else if mods.has_alt() && !mods.has_shift() && alt_is_level3 {
-                    Some(crate::os_layout::Modifier::RAlt)
-                } else if mods.has_shift() && mods.has_alt() && alt_is_level3 {
-                    Some(crate::os_layout::Modifier::ShiftRAlt)
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-            if let Some(m) = text_modifier {
-                if let Some(text) = crate::os_layout::resolve(keycode as u16, m) {
-                    return Some(LayoutKey {
-                        tap: Label::new(text),
-                        ..Default::default()
-                    });
-                }
-            }
-
-            let (tap, symbol) = match get_basic_layout_key(keycode as u16) {
-                Some(k) => (k.tap, k.symbol),
-                None => (Label::new(format!("0x{:02X}", keycode)), None),
-            };
-            Some(LayoutKey {
-                tap,
-                argument: Some(mod_mask_to_label(mods)),
-                symbol,
-                kind: KeycodeKind::Modifier,
-                ..Default::default()
-            })
+            let base = get_basic_layout_key(keycode as u16);
+            Some(crate::hid_labels::mod_combo_key(
+                0x07,
+                keycode as u16,
+                mods.into(),
+                base,
+            ))
         }
         QmkKeycode::ModTap { mods, keycode } => {
             let tap_key = get_basic_layout_key(keycode as u16).unwrap_or_default();
