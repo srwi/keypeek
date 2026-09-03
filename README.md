@@ -1,5 +1,8 @@
 # KeyPeek <img src="resources/icon.svg" align="right" width="15%"/>
 
+<a href="https://ko-fi.com/stephanrwi"><img src="https://img.shields.io/static/v1?label=Buy%20me%20a%20coffee&message=%E2%98%95&logo=Ko-fi&color=%23FF5E5B"/></a>
+<a href="https://paypal.me/rumswinkel"><img src="https://img.shields.io/static/v1?label=Donate&message=%E2%9D%A4&logo=PayPal&color=%23009cde"/></a>
+
 KeyPeek provides a live on-screen overlay of your keyboard, mirroring the active base and momentary layers. It is especially useful when learning complex multi-layer layouts or using boards with missing legends. The overlay updates instantly when layers change, so the view always matches your firmware state. KeyPeek currently supports QMK, Vial, and ZMK keyboards.
 
 <img src=".github/assets/demo.gif" alt="KeyPeek in action">
@@ -105,6 +108,14 @@ KeyPeek will read layout and keymap directly from the device for ZMK without req
 Devices are scanned when the app starts. For QMK you will be prompted to select the `keyboard_info.json` generated from your keymap when you connect. For Vial and ZMK, just select the connected device from the dropdown, since they provide layout information directly.
 
 <img src=".github/assets/settings_window.png" alt="Settings window screenshot" width="60%">
+
+# Support
+
+If you're enjoying KeyPeek, I'd be truly grateful for your support!
+You can show your appreciation by giving a star on GitHub or making a donation:
+
+- **[Buy me a coffee](https://ko-fi.com/stephanrwi)**
+- **[Donate via PayPal](https://paypal.me/rumswinkel)**
 
 # License & Attribution
 
