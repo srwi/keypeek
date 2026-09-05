@@ -16,6 +16,8 @@ impl InputState {
             mac_cmd: false,
             command: m.ctrl,
         };
+        self.events
+            .push(egui::Event::ModifiersChanged(self.modifiers));
     }
 
     /// `pos` is in surface-local logical coordinates (egui points).
@@ -79,7 +81,6 @@ impl InputState {
         let size_pts = egui::vec2(size_pts.0 as f32, size_pts.1 as f32);
         egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size_pts)),
-            modifiers: self.modifiers,
             focused: true,
             events: std::mem::take(&mut self.events),
             ..Default::default()

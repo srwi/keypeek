@@ -1,11 +1,9 @@
-use crate::layout_key::LayoutKey;
-use crate::zmk_keycode_labels::behavior_to_layout_key;
 use std::error::Error;
 use std::io::{Read, Write};
 use std::time::Duration;
 use zmk_studio_api::proto::zmk::{core, keymap};
-use zmk_studio_api::transport::{BleDiscoveryMode, PlatformBleTransport};
-use zmk_studio_api::{ClientError, StudioClient};
+use zmk_studio_api::transport::{serial::SerialTransport, BleDiscoveryMode, PlatformBleTransport};
+use zmk_studio_api::{Behavior, ClientError, ResolvedLayer, StudioClient};
 
 pub struct ZmkSerialDevice {
     pub port_name: String,
@@ -106,9 +104,87 @@ fn windows_bluetooth_radio_is_on() -> windows::core::Result<bool> {
     Ok(radio.State()? == RadioState::On)
 }
 
+use std::collections::{HashMap, HashSet};
+use zmk_studio_api::{BehaviorBindingParametersSet, BehaviorRole};
+
 pub struct ZmkData {
     pub physical_layouts: keymap::PhysicalLayouts,
-    pub layout_keys: Vec<Vec<Option<LayoutKey>>>,
+    pub resolved_layers: Vec<ResolvedLayer>,
+    pub supported_behaviors: HashSet<BehaviorRole>,
+    pub behavior_metadata: HashMap<BehaviorRole, Vec<BehaviorBindingParametersSet>>,
+}
+
+/// ZMK Studio RPC connection session.
+pub enum ZmkStudioSession {
+    Serial(StudioClient<SerialTransport>),
+    Ble(StudioClient<PlatformBleTransport>),
+}
+
+impl ZmkStudioSession {
+    /// Opens a ZMK Studio session on the specified transport.
+    pub fn open(transport: &ZmkTransport) -> Result<Self, Box<dyn Error>> {
+        let mut session = match transport {
+            ZmkTransport::SerialPort(port_name) => {
+                Self::Serial(StudioClient::open_serial(port_name).map_err(|e| {
+                    format!(
+                        "Failed to open serial port '{port_name}': {e}. \
+                         The port may be in use by another application such as ZMK Studio."
+                    )
+                })?)
+            }
+            ZmkTransport::BleDevice(device_id) => Self::Ble(
+                StudioClient::<PlatformBleTransport>::open_ble(device_id).map_err(|e| {
+                    format!(
+                        "Failed to connect to BLE device '{device_id}': {e}. \
+                     Make sure the keyboard is paired in your OS Bluetooth settings."
+                    )
+                })?,
+            ),
+        };
+
+        if session.lock_state()? == core::LockState::ZmkStudioCoreLockStateLocked {
+            return Err(Box::new(DeviceLocked));
+        }
+        session.ensure_behavior_catalog()?;
+
+        Ok(session)
+    }
+
+    fn lock_state(&mut self) -> Result<core::LockState, Box<dyn Error>> {
+        Ok(match self {
+            Self::Serial(client) => client.get_lock_state()?,
+            Self::Ble(client) => client.get_lock_state()?,
+        })
+    }
+
+    fn ensure_behavior_catalog(&mut self) -> Result<(), Box<dyn Error>> {
+        match self {
+            Self::Serial(client) => client.ensure_behavior_catalog()?,
+            Self::Ble(client) => client.ensure_behavior_catalog()?,
+        }
+        Ok(())
+    }
+
+    pub fn set_key(
+        &mut self,
+        layer_id: u32,
+        key_position: i32,
+        behavior: Behavior,
+    ) -> Result<(), Box<dyn Error>> {
+        match self {
+            Self::Serial(client) => client.set_key_at(layer_id, key_position, behavior)?,
+            Self::Ble(client) => client.set_key_at(layer_id, key_position, behavior)?,
+        }
+        Ok(())
+    }
+
+    pub fn save(&mut self) -> Result<(), Box<dyn Error>> {
+        match self {
+            Self::Serial(client) => client.save_changes()?,
+            Self::Ble(client) => client.save_changes()?,
+        }
+        Ok(())
+    }
 }
 
 pub fn fetch_zmk_data(transport: &ZmkTransport) -> Result<ZmkData, Box<dyn Error>> {
@@ -165,21 +241,8 @@ fn fetch_zmk_data_from_client<T: Read + Write>(
 
     let resolved_layers = client.resolve_keymap()?;
 
-    let layer_names: Vec<String> = resolved_layers
-        .iter()
-        .map(|layer| layer.name.clone())
-        .collect();
-
-    let layout_keys: Vec<Vec<Option<LayoutKey>>> = resolved_layers
-        .iter()
-        .map(|layer| {
-            layer
-                .bindings
-                .iter()
-                .map(|behavior| behavior_to_layout_key(behavior, &layer_names))
-                .collect()
-        })
-        .collect();
+    let supported_behaviors = client.supported_roles().unwrap_or_default();
+    let behavior_metadata = client.behavior_metadata().unwrap_or_default();
 
     // Drop the ZMK RPC connection and give transport time to settle before
     // the caller opens any other handle (e.g. HID).
@@ -188,6 +251,8 @@ fn fetch_zmk_data_from_client<T: Read + Write>(
 
     Ok(ZmkData {
         physical_layouts,
-        layout_keys,
+        resolved_layers,
+        supported_behaviors,
+        behavior_metadata,
     })
 }

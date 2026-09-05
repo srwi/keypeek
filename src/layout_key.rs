@@ -5,49 +5,58 @@ pub mod modifier_symbols {
     pub struct ModName {
         pub full: &'static str,
         pub short: &'static str,
+        pub name: &'static str,
     }
 
     #[cfg(target_os = "macos")]
     pub const MOD_CTRL: ModName = ModName {
         full: egui_phosphor::regular::CONTROL,
         short: egui_phosphor::regular::CONTROL,
+        name: "Control",
     };
     #[cfg(not(target_os = "macos"))]
     pub const MOD_CTRL: ModName = ModName {
         full: "Ctrl",
         short: "Ctl",
+        name: "Control",
     };
 
     pub const MOD_SHIFT: ModName = ModName {
         full: egui_phosphor::regular::ARROW_FAT_UP,
         short: egui_phosphor::regular::ARROW_FAT_UP,
+        name: "Shift",
     };
 
     #[cfg(target_os = "macos")]
     pub const MOD_ALT: ModName = ModName {
         full: egui_phosphor::regular::OPTION,
         short: egui_phosphor::regular::OPTION,
+        name: "Option",
     };
     #[cfg(not(target_os = "macos"))]
     pub const MOD_ALT: ModName = ModName {
         full: "Alt",
         short: "Alt",
+        name: "Alt",
     };
 
     #[cfg(target_os = "macos")]
     pub const MOD_GUI: ModName = ModName {
         full: egui_phosphor::regular::COMMAND,
         short: egui_phosphor::regular::COMMAND,
+        name: "Command",
     };
     #[cfg(target_os = "windows")]
     pub const MOD_GUI: ModName = ModName {
         full: "Win",
         short: "Win",
+        name: "Windows",
     };
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     pub const MOD_GUI: ModName = ModName {
         full: "Super",
         short: "Sup",
+        name: "Super",
     };
 
     /// Chord separator: macOS packs glyphs tightly (⌃⇧⌥⌘); elsewhere "+" separates text names.
@@ -66,20 +75,17 @@ pub mod modifier_symbols {
     /// Build a standalone modifier key: glyph modifiers go in `symbol`, text names in `tap`.
     /// `mod_mask` is `HELD_MOD_SHIFT`/`HELD_MOD_RALT`, or 0. See their doc comments.
     pub fn modifier_key(m: &ModName, mod_mask: u16) -> super::LayoutKey {
-        if is_glyph(m.full) {
-            super::LayoutKey {
-                symbol: Some(m.full.to_string()),
-                kind: super::KeycodeKind::Modifier,
-                mod_mask: (mod_mask != 0).then_some(mod_mask),
-                ..Default::default()
-            }
-        } else {
-            super::LayoutKey {
-                tap: super::Label::with_short(m.full, m.short),
-                kind: super::KeycodeKind::Modifier,
-                mod_mask: (mod_mask != 0).then_some(mod_mask),
-                ..Default::default()
-            }
+        let is_sym = is_glyph(m.full);
+        super::LayoutKey {
+            tap: if is_sym {
+                super::Label::new(m.name)
+            } else {
+                super::Label::with_short(m.name, m.short)
+            },
+            symbol: is_sym.then(|| m.full.to_string()),
+            kind: super::KeycodeKind::Modifier,
+            mod_mask: (mod_mask != 0).then_some(mod_mask),
+            ..Default::default()
         }
     }
 
@@ -139,6 +145,9 @@ pub mod behavior_names {
     behavior_name!(STICKY_KEY, "Sticky Key", "SK");
     behavior_name!(KEY_TOGGLE, "Key Toggle", "KT");
     behavior_name!(TAP_DANCE, "Tap Dance", "TD");
+    behavior_name!(MACRO, "Macro", "M");
+    behavior_name!(CUSTOM_KB, "Keyboard", "KB");
+    behavior_name!(CUSTOM_USER, "User", "Usr");
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Default, serde::Serialize, serde::Deserialize)]
@@ -256,6 +265,30 @@ pub struct LayoutKey {
 
     /// Outline style hinting how this key activates a layer. `None` for plain keys.
     pub border: BorderStyle,
+}
+
+impl LayoutKey {
+    /// Full long name for tooltips and descriptions.
+    pub fn tooltip_text(&self) -> Option<String> {
+        if self.tap.is_empty() {
+            return None;
+        }
+
+        let full_text = match (&self.behavior, &self.argument) {
+            (Some(behavior), Some(arg)) => {
+                format!("{}: {} ({})", behavior.full, self.tap.full, arg.full)
+            }
+            (Some(behavior), None) => {
+                format!("{}: {}", behavior.full, self.tap.full)
+            }
+            (None, Some(arg)) => {
+                format!("{} ({})", self.tap.full, arg.full)
+            }
+            (None, None) => self.tap.full.clone(),
+        };
+
+        Some(full_text)
+    }
 }
 
 impl Default for LayoutKey {

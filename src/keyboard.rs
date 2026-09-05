@@ -1,13 +1,15 @@
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::key_matrix::KeyMatrix;
+use crate::key_action::KeyAction;
+use crate::key_matrix::{BoundKey, KeyMatrix};
 use crate::layout_key::LayoutKey;
-use crate::protocols::{KeyboardLayout, KeyboardProtocol};
+use crate::protocols::{DeviceLocked, KeyboardLayout, KeyboardProtocol, WriteSupport};
 use crate::ui_wake::UiWake;
+use std::error::Error;
 
 /// A layer packet's size field is `sizeof(layer_state_t)` and at most 4 bytes.
 const MAX_LAYER_STATE_BYTES: usize = 4;
@@ -15,6 +17,14 @@ const MAX_LAYER_STATE_BYTES: usize = 4;
 const LAYER_STATE_PACKET: u8 = 0xff;
 /// Leading byte of a key event packet, followed by `row`, `col`, `pressed`.
 const KEY_EVENT_PACKET: u8 = 0xF1;
+
+/// A `0xff`-led packet is only a real layer-state packet when its size field is
+/// `sizeof(layer_state_t)` and both bitmasks fit; firmware without this module
+/// echoes other packets with the same leading byte.
+fn is_layer_state_packet(response: &[u8]) -> bool {
+    let size = response[1] as usize;
+    size != 0 && size <= MAX_LAYER_STATE_BYTES && 2 + 2 * size <= response.len()
+}
 
 /// The active layers as seen through the visible-layer bitmask (bit `i` selects layer
 /// `i`; see `Settings::visible_layers`).
@@ -46,47 +56,196 @@ impl ActiveLayers {
     }
 }
 
-/// How long the overlay stays visible; `None` keeps it visible until the layer state
-/// changes, `Duration::ZERO` hides it right away.
-fn overlay_visible_duration(
+/// The overlay's tuning knobs, all changeable while connected.
+#[derive(Clone, Copy)]
+pub struct OverlayConfig {
+    /// How long the overlay lingers once no selected layer is held; negative never hides.
+    pub timeout_ms: i64,
+    /// How long a layer has to be held before the overlay appears.
+    pub activation_delay_ms: u32,
+    /// Bit `i` keeps the overlay up while layer `i` is active; see `ActiveLayers`.
+    pub visible_layers: u32,
+}
+
+/// The stretch of time the overlay is shown for: from `from` until `until`, where `None`
+/// keeps it up until the layer state changes again.
+#[derive(Clone, Copy)]
+struct VisibilityWindow {
+    from: Instant,
+    until: Option<Instant>,
+}
+
+impl VisibilityWindow {
+    /// An empty window, keeping the overlay hidden until the next layer state arrives.
+    fn hidden(now: Instant) -> Self {
+        Self {
+            from: now,
+            until: Some(now),
+        }
+    }
+
+    fn is_visible(&self, now: Instant) -> bool {
+        now >= self.from && self.until.is_none_or(|until| now < until)
+    }
+
+    /// How long until the overlay appears or disappears on its own.
+    fn changes_in(&self, now: Instant) -> Option<Duration> {
+        let next = if now < self.from {
+            Some(self.from)
+        } else {
+            self.until
+        };
+        next.filter(|at| now < *at).map(|at| at - now)
+    }
+}
+
+/// The window a freshly arrived layer state puts the overlay in.
+fn next_visibility_window(
     active: ActiveLayers,
     previous: ActiveLayers,
-    timeout_ms: i64,
-) -> Option<Duration> {
+    current: VisibilityWindow,
+    now: Instant,
+    config: OverlayConfig,
+) -> VisibilityWindow {
+    // A held layer whose activation delay has not elapsed yet.
+    let pending = now < current.from;
+
     match active {
-        ActiveLayers::Selected => None,
-        ActiveLayers::Excluded => Some(Duration::ZERO),
-        ActiveLayers::Base => {
-            if timeout_ms < 0 {
-                None
-            } else if previous == ActiveLayers::Excluded {
-                // Leaving an excluded layer must not surface the base layer.
-                Some(Duration::ZERO)
+        ActiveLayers::Selected => VisibilityWindow {
+            // A window still arming or already up keeps its start: layers added mid-hold
+            // must not restart the countdown, nor blink a visible overlay away.
+            from: if pending || current.is_visible(now) {
+                current.from
             } else {
-                Some(Duration::from_millis(timeout_ms as u64))
-            }
+                now + Duration::from_millis(config.activation_delay_ms as u64)
+            },
+            until: None,
+        },
+        ActiveLayers::Excluded => VisibilityWindow::hidden(now),
+        // Neither leaving an excluded layer nor releasing a layer before its activation
+        // delay elapsed may surface the base layer.
+        ActiveLayers::Base if previous == ActiveLayers::Excluded || pending => {
+            VisibilityWindow::hidden(now)
         }
+        ActiveLayers::Base => VisibilityWindow {
+            from: now,
+            until: (config.timeout_ms >= 0)
+                .then(|| now + Duration::from_millis(config.timeout_ms as u64)),
+        },
     }
 }
 
 pub struct Keyboard {
-    pub layout: KeyboardLayout,
-    pub time_to_hide_overlay: Arc<Mutex<Option<Instant>>>,
+    layout: Mutex<KeyboardLayout>,
+    overlay_visibility: Arc<Mutex<VisibilityWindow>>,
     matrix: Arc<Mutex<KeyMatrix>>,
     layer_state: Arc<Mutex<u32>>,
     default_layer_state: Arc<Mutex<u32>>,
-    timeout_ms: Arc<AtomicI64>,
-    visible_layers: Arc<AtomicU32>,
+    config: Arc<Mutex<OverlayConfig>>,
     alive: Arc<AtomicBool>,
+    command_tx: mpsc::Sender<KeymapCommand>,
+    write_support: WriteSupport,
     _keepalive: Option<mpsc::Sender<()>>,
+    action_filter: Option<crate::protocols::ActionFilter>,
+}
+
+/// A keymap command for the protocol, executed on the reader thread so writes
+/// and reads never race the same HID handle.
+pub enum KeymapCommand {
+    /// Opens the transient write session ahead of the first write (ZMK).
+    OpenEditSession {
+        respond: mpsc::Sender<Result<(), String>>,
+    },
+    SetKey {
+        layer_index: usize,
+        row: usize,
+        col: usize,
+        action: KeyAction,
+        respond: mpsc::Sender<Result<(), String>>,
+    },
+    Save {
+        respond: mpsc::Sender<Result<(), String>>,
+    },
+    /// Fire-and-forget; closes any transient write connection.
+    EndEditSession,
+}
+
+/// The error text shown for a failed write. Locked ZMK devices get a
+/// retryable message instead of the raw RPC error.
+fn write_error_text(error: Box<dyn Error>) -> String {
+    if error.is::<DeviceLocked>() {
+        "Device is locked. Press the ZMK Studio unlock key combination on your keyboard, \
+         then try again."
+            .to_string()
+    } else {
+        error.to_string()
+    }
+}
+
+/// Executes one command on the protocol. Runs on the reader thread.
+fn run_keymap_command(
+    protocol: &mut dyn KeyboardProtocol,
+    command: KeymapCommand,
+    layer_names: &[String],
+    matrix: &Arc<Mutex<KeyMatrix>>,
+    ui_wake: &UiWake,
+) {
+    match command {
+        KeymapCommand::OpenEditSession { respond } => {
+            let result = protocol.open_edit_session().map_err(write_error_text);
+            let _ = respond.send(result);
+        }
+        KeymapCommand::SetKey {
+            layer_index,
+            row,
+            col,
+            action,
+            respond,
+        } => {
+            let layer_info = matrix
+                .lock()
+                .unwrap()
+                .layer_infos()
+                .get(layer_index)
+                .cloned();
+
+            let result = layer_info
+                .ok_or_else(|| format!("Unknown layer index {layer_index}"))
+                .and_then(|layer| {
+                    protocol
+                        .set_key(&layer, layer_index, row, col, &action)
+                        .map_err(write_error_text)
+                });
+
+            if result.is_ok() {
+                let label = action.resolve_label(layer_names);
+                let mut guard = matrix.lock().unwrap();
+                if let Some(cell) = guard
+                    .keys
+                    .get_mut(layer_index)
+                    .and_then(|layer| layer.get_mut(row))
+                    .and_then(|r| r.get_mut(col))
+                {
+                    *cell = Some(BoundKey { label, action });
+                }
+                drop(guard);
+                ui_wake.request_repaint();
+            }
+            let _ = respond.send(result);
+        }
+        KeymapCommand::Save { respond } => {
+            let result = protocol.save_keymap().map_err(write_error_text);
+            let _ = respond.send(result);
+        }
+        KeymapCommand::EndEditSession => protocol.end_edit_session(),
+    }
 }
 
 impl Keyboard {
     pub fn new(
         protocol: Box<dyn KeyboardProtocol>,
         layout_name: String,
-        timeout: i64,
-        visible_layers: u32,
+        config: OverlayConfig,
         ui_wake: UiWake,
     ) -> Result<Self, String> {
         let definition = protocol.get_layout_definition();
@@ -95,18 +254,25 @@ impl Keyboard {
             .get_layout(&layout_name)
             .map_err(|_| "Failed to get layout".to_string())?;
 
-        let layers = protocol
-            .get_layer_count()
-            .map_err(|e| format!("Failed to get layer count: {e}"))?;
+        let snapshot = protocol
+            .read_keymap()
+            .map_err(|e| format!("Failed to read keymap: {e}"))?;
+        // Kept outside the matrix so command execution can resolve labels for
+        // freshly written actions without locking it.
+        let layer_names: Vec<String> = snapshot
+            .layers
+            .iter()
+            .map(|l| l.name.clone().unwrap_or_default())
+            .collect();
+        let matrix = KeyMatrix::from_snapshot(snapshot, definition.rows, definition.cols);
 
-        let keys = protocol.read_all_keys(layers, definition.rows, definition.cols);
-        let matrix = KeyMatrix::from_layout_keys(keys, definition.rows, definition.cols);
+        let write_support = protocol.write_support();
+        let (command_tx, command_rx) = mpsc::channel::<KeymapCommand>();
 
         let layer_state = Arc::new(Mutex::new(0));
         let default_layer_state = Arc::new(Mutex::new(0));
-        let time_to_hide_overlay = Arc::new(Mutex::new(Some(Instant::now())));
-        let timeout_ms = Arc::new(AtomicI64::new(timeout));
-        let visible_layers = Arc::new(AtomicU32::new(visible_layers));
+        let overlay_visibility = Arc::new(Mutex::new(VisibilityWindow::hidden(Instant::now())));
+        let config = Arc::new(Mutex::new(config));
         let matrix = Arc::new(Mutex::new(matrix));
         let alive = Arc::new(AtomicBool::new(true));
 
@@ -128,27 +294,30 @@ impl Keyboard {
                 tx
             });
 
+        let action_filter = protocol.action_filter();
         let keyboard = Keyboard {
-            layout,
+            layout: Mutex::new(layout),
             matrix: Arc::clone(&matrix),
-            time_to_hide_overlay: Arc::clone(&time_to_hide_overlay),
+            overlay_visibility: Arc::clone(&overlay_visibility),
             layer_state: Arc::clone(&layer_state),
             default_layer_state: Arc::clone(&default_layer_state),
-            timeout_ms: Arc::clone(&timeout_ms),
-            visible_layers: Arc::clone(&visible_layers),
+            config: Arc::clone(&config),
             alive: Arc::clone(&alive),
+            command_tx,
+            write_support,
             _keepalive: keepalive,
+            action_filter,
         };
 
         let layer_state_clone = Arc::clone(&keyboard.layer_state);
         let default_layer_state_clone = Arc::clone(&keyboard.default_layer_state);
-        let time_to_hide_clone = Arc::clone(&keyboard.time_to_hide_overlay);
-        let timeout_clone = Arc::clone(&keyboard.timeout_ms);
-        let visible_layers_clone = Arc::clone(&keyboard.visible_layers);
+        let visibility_clone = Arc::clone(&keyboard.overlay_visibility);
+        let config_clone = Arc::clone(&keyboard.config);
         let matrix_clone = Arc::clone(&matrix);
         let alive_clone = Arc::clone(&alive);
 
         thread::spawn(move || {
+            let mut protocol = protocol;
             // A dropped link (sleep, BLE/USB disconnect) makes `hid_read` error repeatedly.
             // Mark the connection dead after a few consecutive errors to trigger reconnect.
             const MAX_CONSECUTIVE_ERRORS: u32 = 5;
@@ -157,7 +326,6 @@ impl Keyboard {
 
             loop {
                 let response = match protocol.hid_read() {
-                    Ok(response) if response.is_empty() => continue,
                     Ok(response) => {
                         consecutive_errors = 0;
                         response
@@ -176,18 +344,10 @@ impl Keyboard {
 
                 let mut needs_repaint = false;
                 match response.first().copied() {
-                    Some(LAYER_STATE_PACKET) if response.len() >= 2 => {
+                    Some(LAYER_STATE_PACKET)
+                        if response.len() >= 2 && is_layer_state_packet(&response) =>
+                    {
                         let size = response[1] as usize;
-
-                        // Not every 0xff packet is a layer packet: firmware without this module
-                        // echoes our subscribe command back starting with 0xff. A real layer
-                        // packet's length is sizeof(layer_state_t) (<=4), so skip anything else.
-                        if size == 0
-                            || size > MAX_LAYER_STATE_BYTES
-                            || 2 + 2 * size > response.len()
-                        {
-                            continue;
-                        }
 
                         let mut default_bytes = [0u8; 4];
                         default_bytes[..size].copy_from_slice(&response[2..2 + size]);
@@ -197,22 +357,24 @@ impl Keyboard {
                         layer_bytes[..size].copy_from_slice(&response[2 + size..2 + 2 * size]);
                         let layer_state = u32::from_le_bytes(layer_bytes);
 
+                        let config = *config_clone.lock().unwrap();
                         let active_layers = ActiveLayers::classify(
                             layer_state,
                             default_layer_state,
-                            visible_layers_clone.load(Ordering::Relaxed),
+                            config.visible_layers,
                         );
-                        let visible_for = overlay_visible_duration(
-                            active_layers,
-                            previous_layers,
-                            timeout_clone.load(Ordering::Relaxed),
-                        );
-                        previous_layers = active_layers;
-                        *time_to_hide_clone.lock().unwrap() =
-                            visible_for.map(|duration| Instant::now() + duration);
-
                         *layer_state_clone.lock().unwrap() = layer_state;
                         *default_layer_state_clone.lock().unwrap() = default_layer_state;
+
+                        let mut visibility = visibility_clone.lock().unwrap();
+                        *visibility = next_visibility_window(
+                            active_layers,
+                            previous_layers,
+                            *visibility,
+                            Instant::now(),
+                            config,
+                        );
+                        previous_layers = active_layers;
                         needs_repaint = true;
                     }
                     Some(KEY_EVENT_PACKET) if response.len() >= 4 => {
@@ -222,17 +384,31 @@ impl Keyboard {
                         if let Ok(mut mat) = matrix_clone.lock() {
                             mat.set_pressed(row, col, pressed != 0);
                         }
-                        needs_repaint = time_to_hide_clone
-                            .lock()
-                            .unwrap()
-                            .as_ref()
-                            .is_none_or(|time_to_hide| Instant::now() < *time_to_hide);
+                        needs_repaint = visibility_clone.lock().unwrap().is_visible(Instant::now());
                     }
                     _ => {}
                 }
 
                 if needs_repaint {
                     ui_wake.request_repaint();
+                }
+
+                // Commands run once per loop iteration, after the read: writes
+                // and reads never race the same HID handle, and a command waits
+                // at most one `hid_read` timeout. If the sender disconnected,
+                // the owning `Keyboard` was dropped, so exit the thread cleanly.
+                loop {
+                    match command_rx.try_recv() {
+                        Ok(command) => run_keymap_command(
+                            protocol.as_mut(),
+                            command,
+                            &layer_names,
+                            &matrix_clone,
+                            &ui_wake,
+                        ),
+                        Err(mpsc::TryRecvError::Empty) => break,
+                        Err(mpsc::TryRecvError::Disconnected) => return,
+                    }
                 }
             }
         });
@@ -244,14 +420,23 @@ impl Keyboard {
         self.alive.load(Ordering::Relaxed)
     }
 
-    pub fn get_effective_key_layer(&self, row: usize, col: usize) -> (u8, bool) {
-        let layer_state = *self.layer_state.lock().unwrap();
-        let default_layer_state = *self.default_layer_state.lock().unwrap();
-        let matrix = self.matrix.lock().unwrap();
-        let num_layers = matrix.get_num_layers().min(32);
+    pub fn overlay_is_visible(&self, now: Instant) -> bool {
+        self.overlay_visibility.lock().unwrap().is_visible(now)
+    }
 
-        // Track if there is any active momentary layer above the effective layer
-        // (i.e, key should be shown as background key)
+    /// How long until the overlay appears or disappears on its own, for scheduling a repaint.
+    pub fn overlay_changes_in(&self, now: Instant) -> Option<Duration> {
+        self.overlay_visibility.lock().unwrap().changes_in(now)
+    }
+
+    fn effective_layer_from_matrix(
+        matrix: &KeyMatrix,
+        layer_state: u32,
+        default_layer_state: u32,
+        row: usize,
+        col: usize,
+    ) -> (u8, bool) {
+        let num_layers = matrix.get_num_layers().min(32);
         let mut active_layer_above = false;
 
         for i in (1..num_layers).rev() {
@@ -269,6 +454,13 @@ impl Keyboard {
         (0, active_layer_above)
     }
 
+    pub fn get_effective_key_layer(&self, row: usize, col: usize) -> (u8, bool) {
+        let layer_state = *self.layer_state.lock().unwrap();
+        let default_layer_state = *self.default_layer_state.lock().unwrap();
+        let matrix = self.matrix.lock().unwrap();
+        Self::effective_layer_from_matrix(&matrix, layer_state, default_layer_state, row, col)
+    }
+
     pub fn get_key(&self, layer: usize, row: usize, col: usize) -> Option<LayoutKey> {
         self.matrix
             .lock()
@@ -277,8 +469,80 @@ impl Keyboard {
             .cloned()
     }
 
+    pub fn layer_infos(&self) -> Vec<crate::key_action::LayerInfo> {
+        self.matrix.lock().unwrap().layer_infos().to_vec()
+    }
+
+    pub fn get_action(
+        &self,
+        layer: usize,
+        row: usize,
+        col: usize,
+    ) -> Option<crate::key_action::KeyAction> {
+        self.matrix
+            .lock()
+            .unwrap()
+            .get_action(layer, row, col)
+            .cloned()
+    }
+
     pub fn is_key_pressed(&self, row: usize, col: usize) -> bool {
         self.matrix.lock().unwrap().is_pressed(row, col)
+    }
+
+    pub fn write_support(&self) -> WriteSupport {
+        self.write_support
+    }
+
+    pub fn set_key(
+        &self,
+        layer_index: usize,
+        row: usize,
+        col: usize,
+        action: KeyAction,
+    ) -> mpsc::Receiver<Result<(), String>> {
+        self.send_keymap_command(|respond| KeymapCommand::SetKey {
+            layer_index,
+            row,
+            col,
+            action,
+            respond,
+        })
+    }
+
+    pub fn save_keymap(&self) -> mpsc::Receiver<Result<(), String>> {
+        self.send_keymap_command(|respond| KeymapCommand::Save { respond })
+    }
+
+    /// Opens the write session in the background to prepare for key editing.
+    pub fn open_edit_session(&self) -> mpsc::Receiver<Result<(), String>> {
+        self.send_keymap_command(|respond| KeymapCommand::OpenEditSession { respond })
+    }
+
+    /// Closes any active edit session on the keyboard protocol.
+    pub fn end_edit_session(&self) {
+        let _ = self.command_tx.send(KeymapCommand::EndEditSession);
+    }
+
+    /// Sends a command to the keyboard communication thread and returns a response receiver.
+    fn send_keymap_command(
+        &self,
+        build: impl FnOnce(mpsc::Sender<Result<(), String>>) -> KeymapCommand,
+    ) -> mpsc::Receiver<Result<(), String>> {
+        let (respond, receiver) = mpsc::channel();
+        let command = build(respond);
+
+        if let Err(send_error) = self.command_tx.send(command) {
+            match send_error.0 {
+                KeymapCommand::SetKey { respond, .. }
+                | KeymapCommand::Save { respond }
+                | KeymapCommand::OpenEditSession { respond } => {
+                    let _ = respond.send(Err("Connection lost".to_string()));
+                }
+                KeymapCommand::EndEditSession => {}
+            }
+        }
+        receiver
     }
 
     /// `HELD_MOD_SHIFT`/`HELD_MOD_RALT` bits OR'd over every pressed key's
@@ -286,12 +550,23 @@ impl Keyboard {
     /// RAlt is held right now", no matter which key holds it (dedicated key,
     /// home-row mod, One-Shot-Mod, ...).
     fn held_mod_mask(&self) -> u16 {
-        self.layout.keys.iter().fold(0u16, |acc, key| {
-            if !self.is_key_pressed(key.row, key.col) {
+        let guard = self.layout.lock().unwrap();
+        let matrix = self.matrix.lock().unwrap();
+        let layer_state = *self.layer_state.lock().unwrap();
+        let default_layer_state = *self.default_layer_state.lock().unwrap();
+
+        guard.keys.iter().fold(0u16, |acc, key| {
+            if !matrix.is_pressed(key.row, key.col) {
                 return acc;
             }
-            let (effective_layer, _) = self.get_effective_key_layer(key.row, key.col);
-            let mask = self
+            let (effective_layer, _) = Self::effective_layer_from_matrix(
+                &matrix,
+                layer_state,
+                default_layer_state,
+                key.row,
+                key.col,
+            );
+            let mask = matrix
                 .get_key(effective_layer as usize, key.row, key.col)
                 .and_then(|k| k.mod_mask)
                 .unwrap_or(0);
@@ -307,15 +582,85 @@ impl Keyboard {
         self.held_mod_mask() & crate::layout_key::HELD_MOD_RALT != 0
     }
 
-    pub fn set_timeout(&self, timeout: i64) {
-        self.timeout_ms.store(timeout, Ordering::Relaxed);
+    pub fn is_action_supported(&self, action: &KeyAction) -> bool {
+        self.action_filter
+            .as_ref()
+            .is_none_or(|filter| filter(action))
     }
 
-    pub fn set_visible_layers(&self, visible_layers: u32) {
-        self.visible_layers.store(visible_layers, Ordering::Relaxed);
+    pub fn set_config(&self, config: OverlayConfig) {
+        *self.config.lock().unwrap() = config;
     }
 
-    pub fn set_layout(&mut self, layout: KeyboardLayout) {
-        self.layout = layout;
+    pub fn layout(&self) -> KeyboardLayout {
+        self.layout.lock().unwrap().clone()
+    }
+
+    pub fn set_layout(&self, layout: KeyboardLayout) {
+        *self.layout.lock().unwrap() = layout;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ActiveLayers::{Base, Excluded, Selected};
+    use super::*;
+
+    const CONFIG: OverlayConfig = OverlayConfig {
+        timeout_ms: 2000,
+        activation_delay_ms: 300,
+        visible_layers: u32::MAX,
+    };
+
+    /// Walks the layer-state transitions the activation delay has to survive.
+    #[test]
+    fn activation_delay_gates_the_overlay() {
+        let start = Instant::now();
+        let at = |ms| start + Duration::from_millis(ms);
+        let hidden = VisibilityWindow::hidden(start);
+
+        // Holding a layer arms the delay; the overlay only shows once it has elapsed.
+        let held = next_visibility_window(Selected, Base, hidden, start, CONFIG);
+        assert!(!held.is_visible(at(299)));
+        assert!(held.is_visible(at(300)));
+        assert_eq!(held.changes_in(start), Some(Duration::from_millis(300)));
+
+        // A second layer added mid-hold keeps the original countdown.
+        let more = next_visibility_window(Selected, Selected, held, at(200), CONFIG);
+        assert!(more.is_visible(at(300)));
+
+        // Releasing before the delay elapsed shows nothing at all.
+        let tapped = next_visibility_window(Base, Selected, held, at(100), CONFIG);
+        assert!(!tapped.is_visible(at(100)));
+
+        // Releasing after it elapsed lingers for the display duration.
+        let released = next_visibility_window(Base, Selected, held, at(400), CONFIG);
+        assert!(released.is_visible(at(2399)));
+        assert!(!released.is_visible(at(2400)));
+
+        // A layer held while the overlay is still up must not blink it away.
+        let again = next_visibility_window(Selected, Base, released, at(500), CONFIG);
+        assert!(again.is_visible(at(500)));
+    }
+
+    /// Without a delay the overlay behaves as it does with the feature turned off.
+    #[test]
+    fn zero_delay_shows_the_overlay_right_away() {
+        let start = Instant::now();
+        let hidden = VisibilityWindow::hidden(start);
+        let no_delay = OverlayConfig {
+            activation_delay_ms: 0,
+            ..CONFIG
+        };
+
+        let held = next_visibility_window(Selected, Base, hidden, start, no_delay);
+        assert!(held.is_visible(start));
+        assert_eq!(held.changes_in(start), None);
+
+        // Leaving an excluded layer still must not surface the base layer.
+        let excluded = next_visibility_window(Excluded, Selected, held, start, no_delay);
+        assert!(!excluded.is_visible(start));
+        let base = next_visibility_window(Base, Excluded, excluded, start, no_delay);
+        assert!(!base.is_visible(start));
     }
 }

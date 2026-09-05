@@ -110,7 +110,7 @@ impl OverlayApp {
         self.session.connected_definition = Some(connected.definition);
         self.session.reopen = connected.reopen;
         self.session.connection = AppConnectionState::Connected {
-            keyboard: connected.keyboard,
+            keyboard: Arc::new(connected.keyboard),
         };
         self.session.ever_connected = true;
         self.ui.settings_error = None;
@@ -119,7 +119,7 @@ impl OverlayApp {
         self.persist_settings();
     }
 
-    pub(super) fn persist_settings(&self) {
+    pub(crate) fn persist_settings(&self) {
         if let Err(e) = self.settings.active.save() {
             eprintln!("Failed to save settings: {e}");
         }
@@ -181,8 +181,7 @@ impl OverlayApp {
     ) {
         let request = ConnectionRequest {
             spec,
-            timeout: self.settings.active.timeout,
-            visible_layers: self.settings.active.visible_layers.bits(),
+            overlay_config: self.overlay_config(),
             layout_name,
             reopen,
         };
@@ -200,6 +199,7 @@ impl OverlayApp {
     pub(super) fn maintain_connection(&mut self, ctx: &egui::Context) {
         if let AppConnectionState::Connected { keyboard } = &self.session.connection {
             if !keyboard.is_alive() {
+                self.close_editor();
                 self.session.connection = AppConnectionState::Reconnecting {
                     next_attempt_at: Instant::now(),
                 };

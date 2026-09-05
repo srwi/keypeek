@@ -1,13 +1,13 @@
 pub mod kle_parser;
 pub mod layout_geometry;
 pub mod mock;
+pub mod qmk_common;
 pub mod qmk_json_parser;
 pub mod via;
 pub mod vial;
 pub mod zmk;
 pub mod zmk_rpc;
 
-use crate::layout_key::LayoutKey;
 use qmk_via_api::api::KeyboardApi;
 use std::error::Error;
 use std::sync::Arc;
@@ -22,6 +22,8 @@ pub use self::zmk_rpc::DeviceLocked;
 pub const KEYPEEK_SUBSCRIBE_MARKER: u8 = 0xC0;
 pub const KEYPEEK_SUBSCRIBE_ACTIVE: u8 = 0xA1;
 pub const KEYPEEK_SUBSCRIBE_INACTIVE: u8 = 0xA0;
+
+pub type ActionFilter = Arc<dyn Fn(&crate::key_action::KeyAction) -> bool + Send + Sync>;
 
 pub type Row = usize;
 pub type Column = usize;
@@ -76,25 +78,65 @@ impl KeyboardDefinition {
     }
 }
 
+/// How a protocol persists keymap writes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WriteSupport {
+    /// The protocol cannot write keymaps.
+    None,
+    /// Every write persists at once (QMK/Vial/mock).
+    Immediate,
+    /// Writes live in RAM until `save_keymap` persists them (ZMK).
+    Session,
+}
+
 pub trait KeyboardProtocol: Send {
     fn get_layout_definition(&self) -> &KeyboardDefinition;
 
-    fn get_layer_count(&self) -> Result<usize, Box<dyn Error>>;
-
-    fn read_all_keys(
-        &self,
-        layers: usize,
-        rows: usize,
-        cols: usize,
-    ) -> Vec<Vec<Vec<Option<LayoutKey>>>>;
+    fn read_keymap(&self) -> Result<crate::key_action::KeymapSnapshot, Box<dyn Error>>;
 
     fn hid_read(&self) -> Result<Vec<u8>, Box<dyn Error>>;
+
+    fn write_support(&self) -> WriteSupport {
+        WriteSupport::None
+    }
+
+    /// Writes one binding. `layer` carries the stable ZMK layer id (`layer_index`
+    /// is the position in the layer list, which QMK keys off instead).
+    fn set_key(
+        &mut self,
+        _layer: &crate::key_action::LayerInfo,
+        _layer_index: usize,
+        _row: usize,
+        _col: usize,
+        _action: &crate::key_action::KeyAction,
+    ) -> Result<(), Box<dyn Error>> {
+        Err("not supported".into())
+    }
+
+    /// ZMK: persist pending writes. Immediate protocols: `Ok(())`.
+    fn save_keymap(&mut self) -> Result<(), Box<dyn Error>> {
+        Ok(())
+    }
+
+    /// Opens the transient write session ahead of the first write (ZMK Studio
+    /// client), so the first key change does not wait on a connection.
+    /// Protocols without a session are already ready.
+    fn open_edit_session(&mut self) -> Result<(), Box<dyn Error>> {
+        Ok(())
+    }
+
+    /// Closes any transient write connection (ZMK Studio client).
+    fn end_edit_session(&mut self) {}
 
     fn subscription_sender(&self) -> Result<Option<Box<dyn SubscriptionSender>>, Box<dyn Error>> {
         Ok(None)
     }
 
     fn reopener(&self) -> Option<Arc<dyn Reopener>> {
+        None
+    }
+
+    fn action_filter(&self) -> Option<ActionFilter> {
         None
     }
 }

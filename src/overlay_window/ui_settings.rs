@@ -1,17 +1,18 @@
 use super::state::AppConnectionState;
 use super::OverlayApp;
 use crate::settings::{
-    LayerMask, LegendMode, MonitorSelection, ThemeColor, ThemeSettings, WindowPosition,
+    LayerMask, LegendMode, MonitorSelection, Settings, ThemeColor, ThemeSettings, WindowPosition,
 };
+use crate::ui_widgets::titled_group;
 use egui::Window;
 
 impl OverlayApp {
     /// The color button that ends every theme row, right-aligned in the row.
     fn theme_color_button(ui: &mut egui::Ui, color: &mut ThemeColor) {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let mut display_color = Self::to_egui_color(*color);
+            let mut display_color = crate::key_paint::to_egui_color(*color);
             if ui.color_edit_button_srgba(&mut display_color).changed() {
-                *color = Self::from_egui_color(display_color);
+                *color = crate::key_paint::from_egui_color(display_color);
             }
         });
     }
@@ -102,9 +103,7 @@ impl OverlayApp {
             .collapsible(false)
             .resizable(false)
             .show(ctx, |ui| {
-                ui.group(|ui| {
-                    ui.heading("Connection");
-                    ui.add_space(8.0);
+                titled_group(ui, "Connection", |ui| {
                     let control_spacing = ui.spacing().item_spacing.x;
                     const RIGHT_COLUMN_WIDTH: f32 = 100.0;
 
@@ -207,12 +206,7 @@ impl OverlayApp {
                         });
                 });
 
-                ui.add_space(10.0);
-
-                ui.group(|ui| {
-                    ui.heading("Overlay Appearance");
-                    ui.add_space(8.0);
-
+                titled_group(ui, "Overlay Appearance", |ui| {
                     egui::Grid::new("appearance_grid")
                         .num_columns(2)
                         .striped(true)
@@ -285,6 +279,19 @@ impl OverlayApp {
                             self.settings.draft.timeout = Self::ui_value_to_timeout(timeout_ui);
                             ui.end_row();
 
+                            ui.label("Activation delay");
+                            ui.add_sized(
+                                ui.available_size(),
+                                egui::DragValue::new(&mut self.settings.draft.activation_delay)
+                                    .speed(10)
+                                    .range(0..=Settings::MAX_ACTIVATION_DELAY_MS)
+                                    .suffix(" ms"),
+                            )
+                            .on_hover_text(
+                                "How long a layer has to be held before the overlay appears",
+                            );
+                            ui.end_row();
+
                             ui.label("Distance from screen edge");
                             ui.add_sized(
                                 ui.available_size(),
@@ -349,12 +356,7 @@ impl OverlayApp {
                         });
                 });
 
-                ui.add_space(10.0);
-
-                ui.group(|ui| {
-                    ui.heading("Theme");
-                    ui.add_space(8.0);
-
+                titled_group(ui, "Theme", |ui| {
                     const LAYER_LABELS: [&str; ThemeSettings::OTHER_LAYERS as usize] = [
                         "Layer 0", "Layer 1", "Layer 2", "Layer 3", "Layer 4", "Layer 5",
                     ];
@@ -412,6 +414,7 @@ impl OverlayApp {
             self.ui.settings_visible = false;
             self.persist_settings();
             if !self.session.ever_connected {
+                self.request_close_editor();
                 host.request_close();
             }
         }

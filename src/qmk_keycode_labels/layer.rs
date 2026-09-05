@@ -1,59 +1,43 @@
 use crate::layout_key::{behavior_names, BorderStyle, Label, LayoutKey};
-use crate::qmk_keycode_labels::constants::*;
+use qmk_via_api::{QmkKeycode, QmkLayerOp};
 
 pub fn get_layer_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
     // Layer-switch keys are shown by their border alone (Solid = persists, Dashed =
     // sticky/one-shot, None = momentary) and carry no legend strip. Tap dance keeps a
     // name strip and default border.
-    let (behavior, tap, layer_ref, border) = match keycode_bytes {
-        b if QK_TO.contains(&b) => {
-            let l = (b - QK_TO.start) as u8;
-            (None, layer_label(l), Some(l), BorderStyle::Solid)
+    let (behavior, tap, layer_ref, border) = match QmkKeycode::from_u16(keycode_bytes) {
+        QmkKeycode::LayerOp { op, layer } => {
+            let (border, layer_ref) = match op {
+                QmkLayerOp::To | QmkLayerOp::Toggle => (BorderStyle::Solid, Some(layer)),
+                QmkLayerOp::Momentary | QmkLayerOp::TapToggle => (BorderStyle::None, Some(layer)),
+                QmkLayerOp::OneShot => (BorderStyle::Dashed, Some(layer)),
+                QmkLayerOp::Default => (BorderStyle::Solid, None),
+            };
+            let mut key = crate::hid_labels::layer_switch_key(layer, layer_label(layer), border);
+            key.layer_ref = layer_ref;
+            return Some(key);
         }
-        b if QK_MOMENTARY.contains(&b) => {
-            let l = (b - QK_MOMENTARY.start) as u8;
-            (None, layer_label(l), Some(l), BorderStyle::None)
-        }
-        b if QK_TOGGLE_LAYER.contains(&b) => {
-            let l = (b - QK_TOGGLE_LAYER.start) as u8;
-            (None, layer_label(l), Some(l), BorderStyle::Solid)
-        }
-        b if QK_ONE_SHOT_LAYER.contains(&b) => {
-            let l = (b - QK_ONE_SHOT_LAYER.start) as u8;
-            (None, layer_label(l), Some(l), BorderStyle::Dashed)
-        }
-        b if QK_LAYER_TAP_TOGGLE.contains(&b) => {
-            let l = (b - QK_LAYER_TAP_TOGGLE.start) as u8;
-            (None, layer_label(l), Some(l), BorderStyle::None)
-        }
-        b if QK_DEF_LAYER.contains(&b) => {
-            let l = (b - QK_DEF_LAYER.start) as u8;
-            (None, layer_label(l), None, BorderStyle::Solid)
-        }
-        b if QK_TAP_DANCE.contains(&b) => {
-            let n = b - QK_TAP_DANCE.start;
-            (
-                Some(behavior_names::TAP_DANCE.label()),
-                Label::new(n.to_string()),
-                None,
-                BorderStyle::None,
-            )
-        }
-        b if QK_MACRO.contains(&b) => (
-            None,
-            numbered_label("Macro", "M", b - QK_MACRO.start),
+        QmkKeycode::TapDance(n) => (
+            Some(behavior_names::TAP_DANCE.label()),
+            Label::new(n.to_string()),
             None,
             BorderStyle::None,
         ),
-        b if QK_KB.contains(&b) => (
-            None,
-            numbered_label("KB", "KB", b - QK_KB.start),
+        QmkKeycode::Macro(n) => (
+            Some(behavior_names::MACRO.label()),
+            Label::new(n.to_string()),
             None,
             BorderStyle::None,
         ),
-        b if QK_USER.contains(&b) => (
+        QmkKeycode::CustomKb(n) => (
+            Some(behavior_names::CUSTOM_KB.label()),
+            Label::new(n.to_string()),
             None,
-            numbered_label("User", "Usr", b - QK_USER.start),
+            BorderStyle::None,
+        ),
+        QmkKeycode::CustomUser(n) => (
+            Some(behavior_names::CUSTOM_USER.label()),
+            Label::new(n.to_string()),
             None,
             BorderStyle::None,
         ),
@@ -73,9 +57,28 @@ fn layer_label(layer: u8) -> Label {
     Label::new(format!("L{layer}"))
 }
 
-fn numbered_label(full_prefix: &str, short_prefix: &str, index: u16) -> Label {
-    Label::with_short(
-        format!("{full_prefix} {index}"),
-        format!("{short_prefix}{index}"),
-    )
+#[cfg(test)]
+mod tests {
+    use crate::qmk_keycode_labels::try_resolve_qmk_key;
+    use qmk_via_api::ranges::{QK_KB, QK_MACRO, QK_TAP_DANCE, QK_USER};
+
+    #[test]
+    fn custom_keys_render_top_strip_behavior_and_numeric_tap() {
+        let cases = [
+            (QK_TAP_DANCE.start + 5, "TD", "5"),
+            (QK_MACRO.start + 3, "M", "3"),
+            (QK_KB.start + 7, "KB", "7"),
+            (QK_USER.start + 12, "Usr", "12"),
+        ];
+
+        for (code, expected_behavior_short, expected_tap) in cases {
+            let key = try_resolve_qmk_key(code).expect("should resolve to Key");
+            assert_eq!(key.tap.full, expected_tap, "tap label for 0x{code:04X}");
+            assert_eq!(
+                key.behavior.as_ref().and_then(|b| b.short.as_deref()),
+                Some(expected_behavior_short),
+                "behavior short for 0x{code:04X}",
+            );
+        }
+    }
 }

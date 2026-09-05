@@ -1,8 +1,12 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 mod connection;
 mod device_discovery;
+mod hid_labels;
+mod key_action;
 mod key_matrix;
+mod key_paint;
 mod keyboard;
+mod keymap_editor;
 mod layout_key;
 mod os_layout;
 mod overlay_window;
@@ -12,6 +16,7 @@ mod qmk_keycode_labels;
 mod settings;
 mod tray;
 mod ui_wake;
+mod ui_widgets;
 mod zmk_keycode_labels;
 
 use device_discovery::discover_devices;

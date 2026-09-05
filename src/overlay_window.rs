@@ -20,10 +20,11 @@ pub struct OverlayApp {
     _tray: crate::tray::Tray,
     settings_requested: Arc<AtomicBool>,
     ui_wake: UiWake,
-    ui: UiState,
+    pub(crate) ui: UiState,
     settings: SettingsState,
     session: SessionState,
     connect: ConnectDraftState,
+    pub(crate) editor: crate::keymap_editor::EditorState,
 }
 
 impl OverlayApp {
@@ -68,6 +69,7 @@ impl OverlayApp {
                 },
                 pending_connect: None,
             },
+            editor: crate::keymap_editor::EditorState::new(),
         }
     }
 
@@ -81,8 +83,12 @@ impl OverlayApp {
         }
     }
 
+    pub(crate) fn is_any_window_open(&self) -> bool {
+        self.ui.settings_visible || self.editor.target.is_some()
+    }
+
     fn sync_mouse_passthrough(&mut self, host: &mut dyn OverlayHost) {
-        let mouse_passthrough = !self.ui.settings_visible;
+        let mouse_passthrough = !self.is_any_window_open();
         if self.ui.mouse_passthrough == Some(mouse_passthrough) {
             return;
         }
@@ -109,8 +115,28 @@ impl OverlayApp {
             });
     }
 
-    fn schedule_overlay_hide_repaint(&self, ctx: &egui::Context) {
-        if self.ui.settings_visible {
+    /// Requests the editor window to close, initiating a ZMK save first if changes
+    /// are pending; otherwise closes immediately.
+    pub(crate) fn request_close_editor(&mut self) {
+        if self.editor.request_close() {
+            if let AppConnectionState::Connected { keyboard } = &self.session.connection {
+                keyboard.end_edit_session();
+            }
+        }
+    }
+
+    /// Closes the editor window immediately and ends any open ZMK write session on the
+    /// connected keyboard, if one is present.
+    pub(crate) fn close_editor(&mut self) {
+        self.editor.reset();
+        if let AppConnectionState::Connected { keyboard } = &self.session.connection {
+            keyboard.end_edit_session();
+        }
+    }
+
+    /// Wakes the UI up when the overlay is due to appear or disappear on its own.
+    fn schedule_overlay_repaint(&self, ctx: &egui::Context) {
+        if self.is_any_window_open() {
             return;
         }
 
@@ -118,31 +144,28 @@ impl OverlayApp {
             return;
         };
 
-        let Some(time_to_hide) = keyboard
-            .time_to_hide_overlay
-            .lock()
-            .unwrap()
-            .as_ref()
-            .copied()
-        else {
-            return;
-        };
-
-        if let Some(delay) = time_to_hide.checked_duration_since(Instant::now()) {
+        if let Some(delay) = keyboard.overlay_changes_in(Instant::now()) {
             ctx.request_repaint_after(delay);
         }
     }
 }
 
 impl OverlayApp {
-    /// Backdrop color the host clears to before egui paints: dimmed while settings
-    /// are open, otherwise transparent so only the overlay is visible.
+    /// Backdrop color the host clears to before egui paints: dimmed while either
+    /// the settings or keymap editor window is open, otherwise transparent so only
+    /// the overlay is visible.
     pub fn clear_color(&self) -> egui::Rgba {
-        if self.ui.settings_visible {
+        if self.is_any_window_open() {
             egui::Rgba::from_black_alpha(0.65)
         } else {
             egui::Rgba::TRANSPARENT
         }
+    }
+
+    /// A [`KeyPaintStyle`] tuned for the given unit size (pixels per key-unit):
+    /// `active.size`-scaled keys on the overlay, miniature ones in pickers.
+    pub(crate) fn paint_style(&self, unit: f32) -> crate::key_paint::KeyPaintStyle {
+        crate::key_paint::KeyPaintStyle::from_settings(&self.settings.active).with_unit(unit)
     }
 
     pub fn ui(&mut self, ctx: &egui::Context, host: &mut dyn OverlayHost) {
@@ -164,9 +187,19 @@ impl OverlayApp {
         }
 
         self.sync_mouse_passthrough(host);
-
         if let AppConnectionState::Connected { keyboard } = &self.session.connection {
-            self.draw_overlay_window(ctx, keyboard, self.overlay_visible());
+            // Clone the shared keyboard so drawing can mutate app state (the
+            // editor) without holding a borrow on `self.session`.
+            let keyboard = Arc::clone(keyboard);
+            self.draw_overlay_window(ctx, &keyboard, self.overlay_visible());
+            if self.editor.target.is_some() {
+                let style = self.paint_style(crate::keymap_editor::KEY_UNIT);
+                self.editor.draw_window(ctx, &keyboard, &style);
+            }
+        } else if self.editor.target.is_some() {
+            // The connection dropped; close the editor. Unsaved ZMK changes
+            // died with the connection, so the dirty flag goes too.
+            self.close_editor();
         }
 
         if self.ui.settings_visible {
@@ -176,6 +209,6 @@ impl OverlayApp {
         Self::message_window(ctx, "Error", &mut self.ui.settings_error);
         Self::message_window(ctx, "Notice", &mut self.ui.settings_warning);
 
-        self.schedule_overlay_hide_repaint(ctx);
+        self.schedule_overlay_repaint(ctx);
     }
 }

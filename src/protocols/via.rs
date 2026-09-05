@@ -1,26 +1,35 @@
+use super::qmk_common::{qmk_action_filter, qmk_read_snapshot, qmk_set_key, QmkFeatures};
 use super::{
     qmk_json_parser, KeyboardDefinition, KeyboardProtocol, RawHidSubscription, SubscriptionSender,
+    WriteSupport,
 };
-use crate::layout_key::LayoutKey;
-use crate::qmk_keycode_labels::get_layout_key;
-use qmk_via_api::api::{KeyboardApi, MatrixInfo};
+use crate::key_action::{KeyAction, KeymapSnapshot};
+use qmk_via_api::api::KeyboardApi;
 use std::error::Error;
 
 pub struct ViaProtocol {
     api: KeyboardApi,
     definition: KeyboardDefinition,
+    features: QmkFeatures,
 }
 
 impl ViaProtocol {
     pub fn connect(json_path: &str) -> Result<Self, Box<dyn Error>> {
         let definition = qmk_json_parser::parse_qmk_json(json_path)?;
         let api = Self::get_api(definition.vid, definition.pid)?;
+        let features = QmkFeatures::probe(&api);
 
-        Ok(Self { api, definition })
+        Ok(Self {
+            api,
+            definition,
+            features,
+        })
     }
 
     fn get_api(vid: u16, pid: u16) -> Result<KeyboardApi, Box<dyn Error>> {
-        let api = KeyboardApi::new(vid, pid, 0xff60, None)
+        // A read timeout keeps command/response round trips bounded so the HID
+        // reader loop stays responsive between commands.
+        let api = KeyboardApi::new(vid, pid, 0xff60, Some(250))
             .map_err(|e| format!("Failed to connect to device ({vid:04x}:{pid:04x}): {e}"))?;
 
         let protocol_version = api
@@ -44,37 +53,8 @@ impl KeyboardProtocol for ViaProtocol {
         &self.definition
     }
 
-    fn get_layer_count(&self) -> Result<usize, Box<dyn Error>> {
-        let count = self
-            .api
-            .get_layer_count()
-            .map_err(|e| format!("Failed to get layer count: {e}"))?;
-        Ok(count as usize)
-    }
-
-    fn read_all_keys(
-        &self,
-        layers: usize,
-        rows: usize,
-        cols: usize,
-    ) -> Vec<Vec<Vec<Option<LayoutKey>>>> {
-        let mut keys = vec![vec![vec![None; cols]; rows]; layers];
-        let matrix_info = MatrixInfo {
-            rows: rows as u8,
-            cols: cols as u8,
-        };
-
-        for (layer, layer_keys) in keys.iter_mut().enumerate().take(layers) {
-            if let Ok(raw_matrix) = self.api.read_raw_matrix(matrix_info, layer as u8) {
-                for (i, &keycode) in raw_matrix.iter().enumerate() {
-                    let row = i / cols;
-                    let col = i % cols;
-                    layer_keys[row][col] = get_layout_key(keycode);
-                }
-            }
-        }
-
-        keys
+    fn read_keymap(&self) -> Result<KeymapSnapshot, Box<dyn Error>> {
+        qmk_read_snapshot(&self.api, &self.definition)
     }
 
     fn hid_read(&self) -> Result<Vec<u8>, Box<dyn Error>> {
@@ -83,7 +63,26 @@ impl KeyboardProtocol for ViaProtocol {
             .map_err(|e| format!("HID read error: {e}").into())
     }
 
+    fn write_support(&self) -> WriteSupport {
+        WriteSupport::Immediate
+    }
+
+    fn set_key(
+        &mut self,
+        _layer: &crate::key_action::LayerInfo,
+        layer_index: usize,
+        row: usize,
+        col: usize,
+        action: &KeyAction,
+    ) -> Result<(), Box<dyn Error>> {
+        qmk_set_key(&self.api, layer_index, row, col, action)
+    }
+
     fn subscription_sender(&self) -> Result<Option<Box<dyn SubscriptionSender>>, Box<dyn Error>> {
         RawHidSubscription::open(self.definition.vid, self.definition.pid)
+    }
+
+    fn action_filter(&self) -> Option<super::ActionFilter> {
+        qmk_action_filter(self.features)
     }
 }

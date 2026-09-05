@@ -1,32 +1,41 @@
 use super::layout_geometry::flattened_top_left_after_center_rotation;
-use super::zmk_rpc::{self, ZmkData, ZmkTransport};
-use super::{Key, KeyboardDefinition, KeyboardLayout, KeyboardProtocol, Reopener};
-use crate::layout_key::LayoutKey;
+use super::zmk_rpc::{self, ZmkData, ZmkStudioSession, ZmkTransport};
+use super::{Key, KeyboardDefinition, KeyboardLayout, KeyboardProtocol, Reopener, WriteSupport};
+use crate::key_action::{KeyAction, KeymapSnapshot, LayerInfo};
 use hidapi::{HidApi, HidDevice};
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use zmk_studio_api::{BehaviorBindingParametersSet, BehaviorRole, ClientError, ResolvedLayer};
 
-type LayerKeys3d = Vec<Vec<Vec<Option<LayoutKey>>>>;
 const ZMK_USAGE_PAGE: u16 = 0xff60;
 
 struct ZmkLayout {
     definition: KeyboardDefinition,
-    layout_keys: LayerKeys3d,
+    snapshot: Mutex<KeymapSnapshot>,
+    supported_behaviors: HashSet<BehaviorRole>,
+    behavior_metadata: HashMap<BehaviorRole, Vec<BehaviorBindingParametersSet>>,
 }
 
 pub struct ZmkProtocol {
     hid_device: HidDevice,
     layout: Arc<ZmkLayout>,
+    transport: ZmkTransport,
+    session: Option<ZmkStudioSession>,
 }
 
 struct ZmkReopener {
     layout: Arc<ZmkLayout>,
+    transport: ZmkTransport,
 }
 
 impl Reopener for ZmkReopener {
     fn reopen(&self) -> Result<Box<dyn KeyboardProtocol>, Box<dyn Error>> {
-        Ok(Box::new(ZmkProtocol::open_hid(Arc::clone(&self.layout))?))
+        Ok(Box::new(ZmkProtocol::open_hid(
+            Arc::clone(&self.layout),
+            self.transport.clone(),
+        )?))
     }
 }
 
@@ -38,10 +47,10 @@ impl ZmkProtocol {
     ) -> Result<Self, Box<dyn Error>> {
         let zmk_data = zmk_rpc::fetch_zmk_data(transport)?;
         let layout = build_from_zmk_data(vid, pid, zmk_data)?;
-        Self::open_hid(Arc::new(layout))
+        Self::open_hid(Arc::new(layout), transport.clone())
     }
 
-    fn open_hid(layout: Arc<ZmkLayout>) -> Result<Self, Box<dyn Error>> {
+    fn open_hid(layout: Arc<ZmkLayout>, transport: ZmkTransport) -> Result<Self, Box<dyn Error>> {
         let (vid, pid) = (layout.definition.vid, layout.definition.pid);
         wait_for_hid_reappearance(vid, pid, ZMK_USAGE_PAGE, Duration::from_secs(8))
             .map_err(std::io::Error::other)?;
@@ -51,8 +60,63 @@ impl ZmkProtocol {
             ))
         })?;
 
-        Ok(Self { hid_device, layout })
+        Ok(Self {
+            hid_device,
+            layout,
+            transport,
+            session: None,
+        })
     }
+
+    /// Executes an operation with an active ZMK studio session.
+    fn with_session<T>(
+        &mut self,
+        write: impl FnOnce(&mut ZmkStudioSession) -> Result<T, Box<dyn Error>>,
+    ) -> Result<T, Box<dyn Error>> {
+        if self.session.is_none() {
+            self.session = Some(ZmkStudioSession::open(&self.transport)?);
+        }
+        let result = write(self.session.as_mut().unwrap());
+        if let Err(ref err) = result {
+            if should_drop_session(err.as_ref()) {
+                self.session = None;
+            }
+        }
+        result
+    }
+
+    fn update_cached_action(&self, layer_index: usize, row: usize, col: usize, action: KeyAction) {
+        let mut snapshot = self.layout.snapshot.lock().unwrap();
+        if let Some(cell) = snapshot
+            .actions
+            .get_mut(layer_index)
+            .and_then(|layer| layer.get_mut(row))
+            .and_then(|r| r.get_mut(col))
+        {
+            *cell = Some(action);
+        }
+    }
+}
+
+/// Returns true if the RPC error requires dropping the session.
+fn should_drop_session(err: &(dyn Error + 'static)) -> bool {
+    let Some(client_err) = err.downcast_ref::<ClientError>() else {
+        return true;
+    };
+    !matches!(
+        client_err,
+        ClientError::SetLayerBindingFailed(_)
+            | ClientError::SaveChangesFailed(_)
+            | ClientError::SetActivePhysicalLayoutFailed(_)
+            | ClientError::MoveLayerFailed(_)
+            | ClientError::AddLayerFailed(_)
+            | ClientError::RemoveLayerFailed(_)
+            | ClientError::RestoreLayerFailed(_)
+            | ClientError::SetLayerPropsFailed(_)
+            | ClientError::InvalidLayerOrPosition { .. }
+            | ClientError::MissingBehaviorRole(_)
+            | ClientError::BehaviorIdOutOfRange { .. }
+    )
 }
 
 fn open_zmk_hid(vid: u16, pid: u16) -> Result<HidDevice, String> {
@@ -121,12 +185,8 @@ impl KeyboardProtocol for ZmkProtocol {
         &self.layout.definition
     }
 
-    fn get_layer_count(&self) -> Result<usize, Box<dyn Error>> {
-        Ok(self.layout.layout_keys.len())
-    }
-
-    fn read_all_keys(&self, _layers: usize, _rows: usize, _cols: usize) -> LayerKeys3d {
-        self.layout.layout_keys.clone()
+    fn read_keymap(&self) -> Result<KeymapSnapshot, Box<dyn Error>> {
+        Ok(self.layout.snapshot.lock().unwrap().clone())
     }
 
     fn hid_read(&self) -> Result<Vec<u8>, Box<dyn Error>> {
@@ -138,9 +198,70 @@ impl KeyboardProtocol for ZmkProtocol {
         Ok(buffer[..read].to_vec())
     }
 
+    fn write_support(&self) -> WriteSupport {
+        WriteSupport::Session
+    }
+
+    fn set_key(
+        &mut self,
+        layer: &LayerInfo,
+        layer_index: usize,
+        row: usize,
+        col: usize,
+        action: &KeyAction,
+    ) -> Result<(), Box<dyn Error>> {
+        let behavior = match action {
+            KeyAction::Zmk(behavior) => behavior.clone(),
+            KeyAction::Qmk(_) => return Err("Cannot apply a QMK keycode to a ZMK keyboard".into()),
+        };
+        if row != 0 {
+            return Err(format!("Invalid ZMK key position {row}:{col}").into());
+        }
+
+        // ZMK's matrix is 1×N: the column is the key position, and the write
+        // RPC addresses layers by their stable id.
+        self.with_session(|session| session.set_key(layer.id, col as i32, behavior))?;
+        self.update_cached_action(layer_index, row, col, action.clone());
+        Ok(())
+    }
+
+    fn save_keymap(&mut self) -> Result<(), Box<dyn Error>> {
+        self.with_session(|session| session.save())
+    }
+
+    fn open_edit_session(&mut self) -> Result<(), Box<dyn Error>> {
+        self.with_session(|_session| Ok(()))
+    }
+
+    fn end_edit_session(&mut self) {
+        self.session = None;
+    }
+
     fn reopener(&self) -> Option<Arc<dyn Reopener>> {
         Some(Arc::new(ZmkReopener {
             layout: Arc::clone(&self.layout),
+            transport: self.transport.clone(),
+        }))
+    }
+
+    fn action_filter(
+        &self,
+    ) -> Option<Arc<dyn Fn(&crate::key_action::KeyAction) -> bool + Send + Sync>> {
+        let supported = self.layout.supported_behaviors.clone();
+        let metadata = self.layout.behavior_metadata.clone();
+        Some(Arc::new(move |action| match action {
+            crate::key_action::KeyAction::Zmk(behavior) => match behavior.role() {
+                Some(role) => {
+                    if !supported.is_empty() && !supported.contains(&role) {
+                        return false;
+                    }
+                    metadata
+                        .get(&role)
+                        .is_none_or(|sets| behavior.matches_metadata(sets))
+                }
+                None => true,
+            },
+            _ => true,
         }))
     }
 }
@@ -201,18 +322,40 @@ fn build_from_zmk_data(vid: u16, pid: u16, data: ZmkData) -> Result<ZmkLayout, B
         }],
     };
 
-    let layout_keys: LayerKeys3d = data
-        .layout_keys
-        .into_iter()
+    let snapshot = snapshot_from_resolved(&data.resolved_layers, num_keys);
+
+    Ok(ZmkLayout {
+        definition,
+        snapshot: Mutex::new(snapshot),
+        supported_behaviors: data.supported_behaviors,
+        behavior_metadata: data.behavior_metadata,
+    })
+}
+
+/// Builds a keymap snapshot from the device's resolved layers. Bindings beyond
+/// `num_keys` are dropped and short layers are padded with `None`, matching the
+/// matrix dimensions.
+fn snapshot_from_resolved(resolved: &[ResolvedLayer], num_keys: usize) -> KeymapSnapshot {
+    let layers = resolved
+        .iter()
+        .map(|layer| LayerInfo {
+            id: layer.id,
+            name: (!layer.name.is_empty()).then(|| layer.name.clone()),
+        })
+        .collect();
+
+    let actions = resolved
+        .iter()
         .map(|layer| {
-            let mut row: Vec<Option<LayoutKey>> = layer.into_iter().take(num_keys).collect();
+            let mut row: Vec<Option<KeyAction>> = layer
+                .bindings
+                .iter()
+                .map(|b| Some(KeyAction::Zmk(b.clone())))
+                .collect();
             row.resize(num_keys, None);
             vec![row]
         })
         .collect();
 
-    Ok(ZmkLayout {
-        definition,
-        layout_keys,
-    })
+    KeymapSnapshot { layers, actions }
 }

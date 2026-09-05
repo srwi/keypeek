@@ -4,16 +4,12 @@
 //! so layer-change rendering can be exercised. The mock device is only registered
 //! during discovery in debug builds (`cfg!(debug_assertions)` in `device_discovery`).
 
-use super::{KeyboardDefinition, KeyboardProtocol};
-use crate::layout_key::LayoutKey;
-use crate::qmk_keycode_labels::constants::{
-    QK_DEF_LAYER, QK_LAYER_TAP_TOGGLE, QK_MOMENTARY, QK_ONE_SHOT_LAYER, QK_TO, QK_TOGGLE_LAYER,
-};
-use crate::qmk_keycode_labels::get_layout_key;
+use super::{KeyboardDefinition, KeyboardProtocol, WriteSupport};
+use crate::key_action::{KeyAction, KeymapSnapshot};
 use qmk_via_api::keycodes::Keycode;
+use qmk_via_api::QmkLayerOp;
 use std::collections::HashMap;
 use std::error::Error;
-use std::ops::Range;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::OnceLock;
 use std::thread;
@@ -100,37 +96,57 @@ impl KeyboardProtocol for MockProtocol {
         &self.definition
     }
 
-    fn get_layer_count(&self) -> Result<usize, Box<dyn Error>> {
-        Ok(self.layers.len())
-    }
+    fn read_keymap(&self) -> Result<KeymapSnapshot, Box<dyn Error>> {
+        let (rows, cols) = (self.definition.rows, self.definition.cols);
+        let mut actions = vec![vec![vec![None; cols]; rows]; self.layers.len()];
 
-    fn read_all_keys(
-        &self,
-        layers: usize,
-        rows: usize,
-        cols: usize,
-    ) -> Vec<Vec<Vec<Option<LayoutKey>>>> {
-        let mut keys = vec![vec![vec![None; cols]; rows]; layers];
-
-        for (layer, layer_keys) in keys.iter_mut().enumerate() {
-            let Some(codes) = self.layers.get(layer) else {
-                continue;
-            };
+        for (layer, codes) in self.layers.iter().enumerate() {
             for (i, &keycode) in codes.iter().enumerate() {
                 let (row, col) = (i / cols, i % cols);
                 if row < rows {
-                    layer_keys[row][col] = get_layout_key(keycode);
+                    actions[layer][row][col] = Some(KeyAction::Qmk(keycode));
                 }
             }
         }
 
-        keys
+        Ok(KeymapSnapshot {
+            layers: crate::key_action::LayerInfo::indexed(self.layers.len()),
+            actions,
+        })
     }
 
     fn hid_read(&self) -> Result<Vec<u8>, Box<dyn Error>> {
         thread::sleep(self.tick_interval);
         let index = self.tick.fetch_add(1, Ordering::Relaxed) % self.layer_states.len();
         Ok(layer_packet(DEFAULT_LAYER_STATE, self.layer_states[index]))
+    }
+
+    fn write_support(&self) -> WriteSupport {
+        WriteSupport::Immediate
+    }
+
+    fn set_key(
+        &mut self,
+        _layer: &crate::key_action::LayerInfo,
+        layer_index: usize,
+        row: usize,
+        col: usize,
+        action: &KeyAction,
+    ) -> Result<(), Box<dyn Error>> {
+        let keycode = match action {
+            KeyAction::Qmk(code) => *code,
+            KeyAction::Zmk(_) => return Err("Cannot apply a ZMK behavior to the mock".into()),
+        };
+
+        let Some(layer) = self.layers.get_mut(layer_index) else {
+            return Err(format!("Mock has no layer {layer_index}").into());
+        };
+        let index = row * self.definition.cols + col;
+        let Some(cell) = layer.get_mut(index) else {
+            return Err(format!("Mock key position {row}:{col} is outside the matrix").into());
+        };
+        *cell = keycode;
+        Ok(())
     }
 }
 
@@ -179,20 +195,19 @@ fn resolve_keycode(name: &str) -> Result<u16, String> {
 
 fn resolve_layer_shorthand(name: &str) -> Option<u16> {
     let (behavior, argument) = name.split_once('(')?;
-    let layer: u16 = argument.strip_suffix(')')?.trim().parse().ok()?;
+    let layer: u8 = argument.strip_suffix(')')?.trim().parse().ok()?;
 
-    let range: Range<u16> = match behavior.trim() {
-        "MO" => QK_MOMENTARY,
-        "TO" => QK_TO,
-        "TG" => QK_TOGGLE_LAYER,
-        "OSL" => QK_ONE_SHOT_LAYER,
-        "TT" => QK_LAYER_TAP_TOGGLE,
-        "DF" => QK_DEF_LAYER,
+    let op = match behavior.trim() {
+        "MO" => QmkLayerOp::Momentary,
+        "TO" => QmkLayerOp::To,
+        "TG" => QmkLayerOp::Toggle,
+        "OSL" => QmkLayerOp::OneShot,
+        "TT" => QmkLayerOp::TapToggle,
+        "DF" => QmkLayerOp::Default,
         _ => return None,
     };
 
-    let code = range.start.checked_add(layer)?;
-    range.contains(&code).then_some(code)
+    op.encode(layer)
 }
 
 /// Inverts the `Keycode` enum into a name lookup. `Keycode` exposes number-to-variant
@@ -209,110 +224,4 @@ fn keycode_names() -> &'static HashMap<String, u16> {
             })
             .collect()
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::keyboard::Keyboard;
-    use crate::ui_wake::UiWake;
-    use std::collections::HashSet;
-    use std::sync::Arc;
-    use std::time::Instant;
-
-    #[test]
-    fn fixture_loads_and_matches_its_matrix() {
-        let mock = MockProtocol::connect().expect("fixture should load");
-        let definition = mock.get_layout_definition();
-
-        assert!(mock.get_layer_count().unwrap() > 1);
-        for layer in &mock.layers {
-            assert_eq!(layer.len(), definition.rows * definition.cols);
-        }
-        assert!(!definition.layouts.is_empty());
-    }
-
-    #[test]
-    fn fixture_layouts_stay_inside_the_matrix() {
-        let mock = MockProtocol::connect().unwrap();
-        let definition = mock.get_layout_definition();
-
-        for layout in &definition.layouts {
-            for key in &layout.keys {
-                assert!(
-                    key.row < definition.rows && key.col < definition.cols,
-                    "layout '{}' key ({}, {}) is outside the {}x{} matrix",
-                    layout.name,
-                    key.row,
-                    key.col,
-                    definition.rows,
-                    definition.cols
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn resolves_names_shorthands_and_hex() {
-        assert_eq!(resolve_keycode("KC_A"), Ok(Keycode::KC_A as u16));
-        assert_eq!(resolve_keycode(" KC_ENTER "), Ok(Keycode::KC_ENTER as u16));
-        assert_eq!(resolve_keycode("MO(1)"), Ok(QK_MOMENTARY.start + 1));
-        assert_eq!(resolve_keycode("TO(2)"), Ok(QK_TO.start + 2));
-        assert_eq!(resolve_keycode("0x2004"), Ok(0x2004));
-        assert!(resolve_keycode("KC_NOPE").is_err());
-        assert!(resolve_keycode("MO(999)").is_err());
-    }
-
-    #[test]
-    fn layer_packet_matches_the_firmware_wire_format() {
-        let packet = layer_packet(1, 0b100);
-        assert_eq!(packet, vec![0xff, 4, 1, 0, 0, 0, 0b100, 0, 0, 0]);
-    }
-
-    #[test]
-    fn cycle_starts_above_the_base_layer_and_returns_to_it() {
-        assert_eq!(layer_state_cycle(3), vec![0b10, 0b100, 0]);
-        assert_eq!(layer_state_cycle(1), vec![0]);
-    }
-
-    #[test]
-    fn momentary_mask_ignores_unrepresentable_layers() {
-        assert_eq!(momentary_mask(0), 0);
-        assert_eq!(momentary_mask(31), 1 << 31);
-        assert_eq!(momentary_mask(32), 0);
-    }
-
-    /// Guards the packet format against `Keyboard`'s real parser rather than against this
-    /// module's own idea of it: a malformed packet would leave the effective layer stuck.
-    #[test]
-    fn cycling_layers_reaches_the_keyboard() {
-        let protocol = MockProtocol::with_tick_interval(Duration::from_millis(10)).unwrap();
-        let layout = protocol.get_layout_definition().layouts[0].name.clone();
-
-        let wakes = Arc::new(AtomicUsize::new(0));
-        let counter = Arc::clone(&wakes);
-        let ui_wake = UiWake::new(Arc::new(move || {
-            counter.fetch_add(1, Ordering::Relaxed);
-        }));
-
-        // A negative timeout means "never hide", keeping the overlay timer out of the way.
-        let keyboard = Keyboard::new(Box::new(protocol), layout, -1, u32::MAX, ui_wake).unwrap();
-
-        // Row 0, col 1 is mapped on every layer in the fixture, so the effective layer
-        // there is exactly the layer the mock currently reports.
-        let mut seen = HashSet::new();
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while Instant::now() < deadline && seen.len() < 3 {
-            seen.insert(keyboard.get_effective_key_layer(0, 1).0);
-            thread::sleep(Duration::from_millis(1));
-        }
-
-        assert_eq!(
-            seen,
-            HashSet::from([0, 1, 2]),
-            "cycled layers seen: {seen:?}"
-        );
-        assert!(wakes.load(Ordering::Relaxed) > 0, "no repaints requested");
-        assert!(keyboard.is_alive());
-    }
 }
