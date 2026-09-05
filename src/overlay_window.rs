@@ -45,6 +45,7 @@ impl OverlayApp {
                 settings_warning: None,
                 mouse_passthrough: None,
                 file_dialog: egui_file_dialog::FileDialog::new(),
+                available_monitors: Vec::new(),
             },
             settings: SettingsState {
                 active: base_settings.clone(),
@@ -69,6 +70,16 @@ impl OverlayApp {
                 pending_connect: None,
             },
             editor: crate::keymap_editor::EditorState::new(),
+        }
+    }
+
+    pub fn active_monitor(&self) -> &crate::settings::MonitorSelection {
+        &self.settings.active.monitor
+    }
+
+    pub fn set_available_monitors(&mut self, names: Vec<String>) {
+        if self.ui.available_monitors != names {
+            self.ui.available_monitors = names;
         }
     }
 

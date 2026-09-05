@@ -52,11 +52,50 @@ use egui_glow::glow;
 use crate::device_discovery::DiscoveredDevice;
 use crate::overlay_window::OverlayApp;
 use crate::platform::OverlayHost;
-use crate::settings::Settings;
+use crate::settings::{MonitorSelection, Settings};
 use crate::ui_wake::UiWake;
 
 use egl::EglState;
 use input::InputState;
+
+// Separate from WaylandApp: resolving the target output has to happen before
+// the layer surface exists, but WaylandApp needs that surface to construct.
+struct OutputProbe {
+    registry_state: RegistryState,
+    output_state: OutputState,
+}
+
+impl OutputHandler for OutputProbe {
+    fn output_state(&mut self) -> &mut OutputState {
+        &mut self.output_state
+    }
+    fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlOutput) {}
+    fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlOutput) {}
+    fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlOutput) {}
+}
+
+impl ProvidesRegistryState for OutputProbe {
+    fn registry(&mut self) -> &mut RegistryState {
+        &mut self.registry_state
+    }
+    registry_handlers![OutputState];
+}
+
+delegate_dispatch2!(OutputProbe);
+delegate_registry!(OutputProbe);
+
+// None means "let the compositor pick" — Wayland has no "primary output" flag.
+fn resolve_target_output(
+    output_state: &OutputState,
+    selection: &MonitorSelection,
+) -> Option<WlOutput> {
+    let MonitorSelection::Named(name) = selection else {
+        return None;
+    };
+    output_state
+        .outputs()
+        .find(|o| output_state.info(o).and_then(|i| i.name).as_deref() == Some(name.as_str()))
+}
 
 /// Records the egui UI's host requests during one frame, applied after `ui()` returns
 /// (we can't touch the Wayland objects while the app borrow is live).
@@ -119,10 +158,30 @@ pub fn run(
     let compositor_state = CompositorState::bind(&globals, &qh)?;
     let shell = LayerShell::bind(&globals, &qh)?;
 
+    // The layer surface's output is fixed at creation (so a changed monitor
+    // setting only takes effect on next launch, not live) — resolve it first,
+    // on a throwaway queue since WaylandApp itself isn't constructible yet.
+    let target_output = {
+        let mut probe_queue = conn.new_event_queue::<OutputProbe>();
+        let probe_qh = probe_queue.handle();
+        let mut probe = OutputProbe {
+            registry_state: RegistryState::new(&globals),
+            output_state: OutputState::new(&globals, &probe_qh),
+        };
+        probe_queue.roundtrip(&mut probe)?;
+        resolve_target_output(&probe.output_state, &settings.monitor)
+    };
+
     // Build the overlay layer surface: above everything, covering the whole output,
     // initially interactive because the settings window opens on first launch.
     let surface = compositor_state.create_surface(&qh);
-    let layer = shell.create_layer_surface(&qh, surface, Layer::Overlay, Some("keypeek"), None);
+    let layer = shell.create_layer_surface(
+        &qh,
+        surface,
+        Layer::Overlay,
+        Some("keypeek"),
+        target_output.as_ref(),
+    );
     layer.set_anchor(Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT);
     layer.set_exclusive_zone(-1);
     layer.set_keyboard_interactivity(KeyboardInteractivity::OnDemand);
@@ -281,6 +340,14 @@ impl WaylandApp {
 
         self.egui_ctx.set_pixels_per_point(self.scale as f32);
         let raw_input = self.input.take_raw_input((self.width, self.height));
+
+        // Picking one here only takes effect on next launch (see run()).
+        let monitor_names: Vec<String> = self
+            .output_state
+            .outputs()
+            .filter_map(|o| self.output_state.info(&o).and_then(|i| i.name))
+            .collect();
+        self.app.set_available_monitors(monitor_names);
 
         let ctx = self.egui_ctx.clone();
         let mut host = WaylandHost::default();
