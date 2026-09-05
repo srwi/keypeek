@@ -385,8 +385,8 @@ impl OverlayApp {
         if self.ui.settings_visible && !open {
             self.ui.settings_visible = false;
             self.persist_settings();
-            self.request_close_editor();
             if !self.session.ever_connected {
+                self.request_close_editor();
                 host.request_close();
             }
         }

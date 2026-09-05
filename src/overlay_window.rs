@@ -72,8 +72,12 @@ impl OverlayApp {
         }
     }
 
+    pub(crate) fn is_any_window_open(&self) -> bool {
+        self.ui.settings_visible || self.editor.target.is_some()
+    }
+
     fn sync_mouse_passthrough(&mut self, host: &mut dyn OverlayHost) {
-        let mouse_passthrough = !self.ui.settings_visible;
+        let mouse_passthrough = !self.is_any_window_open();
         if self.ui.mouse_passthrough == Some(mouse_passthrough) {
             return;
         }
@@ -121,7 +125,7 @@ impl OverlayApp {
 
     /// Wakes the UI up when the overlay is due to appear or disappear on its own.
     fn schedule_overlay_repaint(&self, ctx: &egui::Context) {
-        if self.ui.settings_visible {
+        if self.is_any_window_open() {
             return;
         }
 
@@ -136,10 +140,11 @@ impl OverlayApp {
 }
 
 impl OverlayApp {
-    /// Backdrop color the host clears to before egui paints: dimmed while settings
-    /// are open, otherwise transparent so only the overlay is visible.
+    /// Backdrop color the host clears to before egui paints: dimmed while either
+    /// the settings or keymap editor window is open, otherwise transparent so only
+    /// the overlay is visible.
     pub fn clear_color(&self) -> egui::Rgba {
-        if self.ui.settings_visible {
+        if self.is_any_window_open() {
             egui::Rgba::from_black_alpha(0.65)
         } else {
             egui::Rgba::TRANSPARENT

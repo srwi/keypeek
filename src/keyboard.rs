@@ -395,15 +395,20 @@ impl Keyboard {
 
                 // Commands run once per loop iteration, after the read: writes
                 // and reads never race the same HID handle, and a command waits
-                // at most one `hid_read` timeout.
-                while let Ok(command) = command_rx.try_recv() {
-                    run_keymap_command(
-                        protocol.as_mut(),
-                        command,
-                        &layer_names,
-                        &matrix_clone,
-                        &ui_wake,
-                    );
+                // at most one `hid_read` timeout. If the sender disconnected,
+                // the owning `Keyboard` was dropped, so exit the thread cleanly.
+                loop {
+                    match command_rx.try_recv() {
+                        Ok(command) => run_keymap_command(
+                            protocol.as_mut(),
+                            command,
+                            &layer_names,
+                            &matrix_clone,
+                            &ui_wake,
+                        ),
+                        Err(mpsc::TryRecvError::Empty) => break,
+                        Err(mpsc::TryRecvError::Disconnected) => return,
+                    }
                 }
             }
         });

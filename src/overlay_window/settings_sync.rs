@@ -83,7 +83,7 @@ impl OverlayApp {
         match &self.session.connection {
             AppConnectionState::Disconnected | AppConnectionState::Reconnecting { .. } => false,
             AppConnectionState::Connected { keyboard } => {
-                self.ui.settings_visible || keyboard.overlay_is_visible(Instant::now())
+                self.is_any_window_open() || keyboard.overlay_is_visible(Instant::now())
             }
         }
     }
