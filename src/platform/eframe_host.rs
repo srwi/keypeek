@@ -60,31 +60,14 @@ impl EframeApp {
             return;
         };
 
-        let scale = monitor.scale_factor();
-        let pos = monitor.position().to_logical::<f32>(scale);
-
-        // Windows: an explicit InnerSize breaks DWM's per-pixel-alpha
-        // compositing on HDR systems. Un-maximize, move, re-maximize instead —
-        // Windows does the sizing itself. Other platforms keep explicit sizing.
-        #[cfg(target_os = "windows")]
-        {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
-            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(
-                pos.x, pos.y,
-            )));
-            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            let size = monitor.size().to_logical::<f32>(scale);
-            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(
-                pos.x, pos.y,
-            )));
-            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
-                size.width,
-                size.height,
-            )));
-        }
+        // Physical, monitor-native coordinates via winit directly -- avoids
+        // the previous logical-coord conversion using the wrong monitor's
+        // scale factor (root cause of the X11 off-placement report on
+        // mixed-DPI setups). Also drops the Windows-only maximize dance:
+        // suggested by @srwi in PR review, confirmed to fix Windows HDR/DWM
+        // per-pixel-alpha sizing without it.
+        window.set_outer_position(monitor.position());
+        let _ = window.request_inner_size(monitor.size());
 
         // Moving/maximizing can drop always-on-top — re-assert.
         ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
