@@ -3,6 +3,11 @@ use super::{Key, KeyboardDefinition, KeyboardLayout};
 use serde_json::Value;
 use std::error::Error;
 
+struct ParsedKey {
+    key: Key,
+    options: Vec<(usize, usize)>,
+}
+
 pub fn parse_vial_definition(
     json: &Value,
     vid: u16,
@@ -31,23 +36,31 @@ pub fn parse_vial_definition(
         .and_then(|v| v.as_array())
         .ok_or_else(|| Box::<dyn Error>::from("No 'keymap' array in layouts"))?;
 
-    let keys = parse_kle_keymap(keymap)?;
+    let parsed_keys = parse_kle_keymap(keymap)?;
+    let keys = parsed_keys
+        .iter()
+        .map(|parsed| parsed.key.clone())
+        .collect();
 
-    let layout = KeyboardLayout {
+    let mut layouts = vec![KeyboardLayout {
         name: "default".to_string(),
         keys,
-    };
+    }];
+
+    if let Some(labels) = layouts_obj.get("labels").and_then(|v| v.as_array()) {
+        layouts.extend(parse_option_layouts(labels, &parsed_keys));
+    }
 
     Ok(KeyboardDefinition {
         vid,
         pid,
         rows,
         cols,
-        layouts: vec![layout],
+        layouts,
     })
 }
 
-fn parse_kle_keymap(keymap: &[Value]) -> Result<Vec<Key>, Box<dyn Error>> {
+fn parse_kle_keymap(keymap: &[Value]) -> Result<Vec<ParsedKey>, Box<dyn Error>> {
     let mut keys = Vec::new();
     let mut current_y: f32 = 0.0;
 
@@ -103,7 +116,7 @@ fn parse_kle_keymap(keymap: &[Value]) -> Result<Vec<Key>, Box<dyn Error>> {
                 }
             } else if let Some(label) = item.as_str() {
                 // This is a key with a label
-                if let Some((row, col)) = parse_matrix_label(label) {
+                if let Some((row, col, options)) = parse_matrix_label(label) {
                     // Normalize KLE-relative coordinates to absolute space, then flatten rotation.
                     let absolute_x = rotation_x + current_x;
                     let absolute_y = rotation_y + current_y;
@@ -117,14 +130,17 @@ fn parse_kle_keymap(keymap: &[Value]) -> Result<Vec<Key>, Box<dyn Error>> {
                         rotation_y,
                     );
 
-                    keys.push(Key {
-                        row,
-                        col,
-                        x: final_x,
-                        y: final_y,
-                        w: current_w,
-                        h: current_h,
-                        r: rotation_angle,
+                    keys.push(ParsedKey {
+                        key: Key {
+                            row,
+                            col,
+                            x: final_x,
+                            y: final_y,
+                            w: current_w,
+                            h: current_h,
+                            r: rotation_angle,
+                        },
+                        options,
                     });
                 }
 
@@ -141,15 +157,100 @@ fn parse_kle_keymap(keymap: &[Value]) -> Result<Vec<Key>, Box<dyn Error>> {
     Ok(keys)
 }
 
-fn parse_matrix_label(label: &str) -> Option<(usize, usize)> {
+fn parse_option_layouts(labels: &[Value], parsed_keys: &[ParsedKey]) -> Vec<KeyboardLayout> {
+    let mut layouts = Vec::new();
+
+    for (option_index, label) in labels.iter().enumerate() {
+        let Some(label_array) = label.as_array() else {
+            continue;
+        };
+
+        // Vial/VIA layout-option arrays use the first string as the option group label.
+        for (choice_index, choice) in label_array.iter().skip(1).enumerate() {
+            let Some(choice_name) = choice.as_str() else {
+                continue;
+            };
+
+            let keys = parsed_keys
+                .iter()
+                .filter(|parsed| {
+                    parsed
+                        .options
+                        .iter()
+                        .find(|(key_option, _)| *key_option == option_index)
+                        .is_none_or(|(_, key_choice)| *key_choice == choice_index)
+                })
+                .map(|parsed| parsed.key.clone())
+                .collect();
+
+            layouts.push(KeyboardLayout {
+                name: choice_name.to_string(),
+                keys,
+            });
+        }
+    }
+
+    layouts
+}
+
+fn parse_matrix_label(label: &str) -> Option<(usize, usize, Vec<(usize, usize)>)> {
     let first_line = label.lines().next().unwrap_or(label);
 
     let parts: Vec<&str> = first_line.split(',').collect();
     if parts.len() >= 2 {
         let row = parts[0].trim().parse::<usize>().ok()?;
         let col = parts[1].trim().parse::<usize>().ok()?;
-        return Some((row, col));
+        let options = label
+            .lines()
+            .skip(1)
+            .filter_map(parse_option_label)
+            .collect();
+
+        return Some((row, col, options));
     }
 
     None
+}
+
+fn parse_option_label(line: &str) -> Option<(usize, usize)> {
+    let mut parts = line.split(',').map(str::trim);
+    let option = parts.next()?.parse().ok()?;
+    let choice = parts.next()?.parse().ok()?;
+
+    if parts.next().is_some() {
+        return None;
+    }
+
+    Some((option, choice))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn vial_layout_options_filter_optional_keys() {
+        let json = json!({
+            "matrix": { "rows": 1, "cols": 2 },
+            "layouts": {
+                "labels": [
+                    "Normal",
+                    ["2S", "No 2S", "2S"]
+                ],
+                "keymap": [[
+                    "0,0",
+                    "0,1\n\n\n1,1",
+                    { "d": true },
+                    "\n\n\n1,0"
+                ]]
+            }
+        });
+
+        let definition = parse_vial_definition(&json, 0, 0).unwrap();
+
+        assert_eq!(definition.get_layout("default").unwrap().keys.len(), 2);
+        assert_eq!(definition.get_layout("No 2S").unwrap().keys.len(), 1);
+        assert_eq!(definition.get_layout("2S").unwrap().keys.len(), 2);
+    }
 }
