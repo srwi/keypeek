@@ -18,8 +18,7 @@ use smithay_client_toolkit::reexports::protocols::wp::{
 };
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState, Region},
-    delegate_compositor, delegate_keyboard, delegate_layer, delegate_output, delegate_pointer,
-    delegate_registry, delegate_seat,
+    delegate_dispatch2, delegate_registry,
     output::{OutputHandler, OutputState},
     reexports::calloop::{ping::make_ping, EventLoop},
     reexports::calloop_wayland_source::WaylandSource,
@@ -285,7 +284,7 @@ impl WaylandApp {
 
         let ctx = self.egui_ctx.clone();
         let mut host = WaylandHost::default();
-        let full_output = {
+        let mut full_output = {
             let app = &mut self.app;
             ctx.begin_pass(raw_input);
             app.ui(&ctx, &mut host);
@@ -302,7 +301,7 @@ impl WaylandApp {
                 size_px,
                 full_output.pixels_per_point,
                 &primitives,
-                &full_output.textures_delta,
+                &mut full_output.textures_delta,
             );
         }
         // Apply host requests only after this, the last use of the `self.egl` borrow.
@@ -651,10 +650,5 @@ impl ProvidesRegistryState for WaylandApp {
     registry_handlers![OutputState, SeatState];
 }
 
-delegate_compositor!(WaylandApp);
-delegate_output!(WaylandApp);
-delegate_seat!(WaylandApp);
-delegate_keyboard!(WaylandApp);
-delegate_pointer!(WaylandApp);
-delegate_layer!(WaylandApp);
 delegate_registry!(WaylandApp);
+delegate_dispatch2!(WaylandApp);
