@@ -90,7 +90,6 @@ impl eframe::App for EframeApp {
         #[cfg(target_os = "linux")]
         if self.x11_above_ticks > 0 {
             self.x11_above_ticks -= 1;
-            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
             ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
                 egui::WindowLevel::AlwaysOnTop,
             ));
@@ -199,14 +198,13 @@ fn run_inner(
     let mut viewport = egui::ViewportBuilder::default()
         .with_decorations(false)
         .with_taskbar(false)
-        .with_maximized(true)
         .with_transparent(true)
         .with_has_shadow(false)
         .with_always_on_top();
 
     #[cfg(target_os = "linux")]
     {
-        viewport = viewport.with_window_type(egui::X11WindowType::Utility);
+        viewport = viewport.with_window_type(egui::X11WindowType::Dock);
     }
 
     #[allow(unused_mut)]
