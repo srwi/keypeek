@@ -37,15 +37,14 @@ struct EframeApp {
 }
 
 impl EframeApp {
-    fn apply_monitor_placement(&mut self, ctx: &egui::Context, frame: &eframe::Frame) {
+    fn apply_monitor_placement(&mut self, ctx: &egui::Context, frame: &eframe::Frame) -> bool {
         let target = self.app.active_monitor().clone();
         if self.last_applied_monitor.as_ref() == Some(&target) {
-            return;
+            return false;
         }
 
-        // Not available on the very first frame — retried next frame.
         let Some(window) = frame.winit_window() else {
-            return;
+            return false;
         };
 
         let monitor = match &target {
@@ -58,19 +57,31 @@ impl EframeApp {
         .or_else(|| window.available_monitors().next());
 
         let Some(monitor) = monitor else {
-            return;
+            return false;
         };
 
-        // Ensure the window fits on the target monitor
-        let current_size = window.inner_size();
-        let target_size = monitor.size();
+        #[cfg(not(target_os = "linux"))]
+        {
+            if window.current_monitor().as_ref() != Some(&monitor) || !window.is_maximized() {
+                window.set_maximized(false);
+                window.set_outer_position(monitor.position());
+                window.set_maximized(true);
+            }
+        }
 
-        if target_size.width < current_size.width || target_size.height < current_size.height {
-            let _ = window.request_inner_size(target_size);
-            window.set_outer_position(monitor.position());
-        } else {
-            window.set_outer_position(monitor.position());
-            let _ = window.request_inner_size(target_size);
+        #[cfg(target_os = "linux")]
+        {
+            // Ensure the window fits on the target monitor
+            let current_size = window.inner_size();
+            let target_size = monitor.size();
+
+            if target_size.width < current_size.width || target_size.height < current_size.height {
+                let _ = window.request_inner_size(target_size);
+                window.set_outer_position(monitor.position());
+            } else {
+                window.set_outer_position(monitor.position());
+                let _ = window.request_inner_size(target_size);
+            }
         }
 
         // Moving/maximizing can drop always-on-top — re-assert.
@@ -79,6 +90,7 @@ impl EframeApp {
         ));
 
         self.last_applied_monitor = Some(target);
+        true
     }
 }
 
@@ -100,7 +112,10 @@ impl eframe::App for EframeApp {
             ctx.request_repaint();
         }
 
-        self.apply_monitor_placement(&ctx, frame);
+        if self.apply_monitor_placement(&ctx, frame) {
+            ctx.request_repaint();
+            return;
+        }
         if let Some(window) = frame.winit_window() {
             let names: Vec<String> = window
                 .available_monitors()
@@ -205,6 +220,11 @@ fn run_inner(
         .with_transparent(true)
         .with_has_shadow(false)
         .with_always_on_top();
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        viewport = viewport.with_maximized(true);
+    }
 
     #[cfg(target_os = "linux")]
     {
