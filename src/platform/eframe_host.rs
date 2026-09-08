@@ -38,8 +38,8 @@ struct EframeApp {
 
 #[cfg(target_os = "macos")]
 fn get_macos_display_names(monitors: &[winit::monitor::MonitorHandle]) -> Vec<String> {
+    use objc2::MainThreadMarker;
     use objc2_app_kit::NSScreen;
-    use objc2_foundation::MainThreadMarker;
 
     let screens = MainThreadMarker::new().map(NSScreen::screens);
 
@@ -62,7 +62,7 @@ fn get_macos_display_names(monitors: &[winit::monitor::MonitorHandle]) -> Vec<St
                 }
 
                 if screens.len() == 1 && monitors.len() == 1 {
-                    if let Some(first) = screens.first() {
+                    if let Some(first) = screens.iter().next() {
                         return first.localizedName().to_string();
                     }
                 }
