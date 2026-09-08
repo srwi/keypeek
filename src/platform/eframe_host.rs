@@ -36,6 +36,51 @@ struct EframeApp {
     x11_above_ticks: u32,
 }
 
+fn find_target_monitor(
+    window: &winit::window::Window,
+    target: &MonitorSelection,
+) -> Option<winit::monitor::MonitorHandle> {
+    match target {
+        MonitorSelection::Primary => window.primary_monitor(),
+        MonitorSelection::Named(name) => window
+            .available_monitors()
+            .find(|m| m.name().as_deref().map(clean_monitor_name) == Some(name.as_str())),
+    }
+    .or_else(|| window.primary_monitor())
+    .or_else(|| window.available_monitors().next())
+}
+
+/// Position the overlay window to cover the selected monitor.
+#[cfg(target_os = "linux")]
+fn place_overlay_window(window: &winit::window::Window, monitor: &winit::monitor::MonitorHandle) {
+    // On X11, WMs drop AlwaysOnTop when a window is WM-maximized, so we manually
+    // size and position it. When moving between different resolutions, order matters
+    // to avoid WM boundary clamping: shrink before moving, or move before expanding.
+    let current = window.inner_size();
+    let target = monitor.size();
+    let pos = monitor.position();
+
+    if target.width < current.width || target.height < current.height {
+        let _ = window.request_inner_size(target);
+        window.set_outer_position(pos);
+    } else {
+        window.set_outer_position(pos);
+        let _ = window.request_inner_size(target);
+    }
+}
+
+/// Position the overlay window to cover the selected monitor.
+#[cfg(not(target_os = "linux"))]
+fn place_overlay_window(window: &winit::window::Window, monitor: &winit::monitor::MonitorHandle) {
+    // Windows/macOS: window maximization respects the work area (taskbar/dock).
+    // On Windows, unmaximize -> move -> maximize also preserves DWM HDR alpha compositing.
+    if window.current_monitor().as_ref() != Some(monitor) || !window.is_maximized() {
+        window.set_maximized(false);
+        window.set_outer_position(monitor.position());
+        window.set_maximized(true);
+    }
+}
+
 impl EframeApp {
     fn apply_monitor_placement(&mut self, ctx: &egui::Context, frame: &eframe::Frame) -> bool {
         let target = self.app.active_monitor().clone();
@@ -47,42 +92,11 @@ impl EframeApp {
             return false;
         };
 
-        let monitor = match &target {
-            MonitorSelection::Primary => window.primary_monitor(),
-            MonitorSelection::Named(name) => window
-                .available_monitors()
-                .find(|m| m.name().as_deref().map(clean_monitor_name) == Some(name.as_str())),
-        }
-        .or_else(|| window.primary_monitor())
-        .or_else(|| window.available_monitors().next());
-
-        let Some(monitor) = monitor else {
+        let Some(monitor) = find_target_monitor(window.as_ref(), &target) else {
             return false;
         };
 
-        #[cfg(not(target_os = "linux"))]
-        {
-            if window.current_monitor().as_ref() != Some(&monitor) || !window.is_maximized() {
-                window.set_maximized(false);
-                window.set_outer_position(monitor.position());
-                window.set_maximized(true);
-            }
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            // Ensure the window fits on the target monitor
-            let current_size = window.inner_size();
-            let target_size = monitor.size();
-
-            if target_size.width < current_size.width || target_size.height < current_size.height {
-                let _ = window.request_inner_size(target_size);
-                window.set_outer_position(monitor.position());
-            } else {
-                window.set_outer_position(monitor.position());
-                let _ = window.request_inner_size(target_size);
-            }
-        }
+        place_overlay_window(window.as_ref(), &monitor);
 
         // Moving/maximizing can drop always-on-top — re-assert.
         ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
