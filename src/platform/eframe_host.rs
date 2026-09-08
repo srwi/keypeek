@@ -89,8 +89,22 @@ impl EframeApp {
             egui::WindowLevel::AlwaysOnTop,
         ));
 
+        self.update_available_monitors(window.as_ref());
+
+        #[cfg(target_os = "windows")]
+        enable_dwm_per_pixel_alpha(window.as_ref());
+
         self.last_applied_monitor = Some(target);
         true
+    }
+
+    fn update_available_monitors(&mut self, window: &winit::window::Window) {
+        let names: Vec<String> = window
+            .available_monitors()
+            .filter_map(|m| m.name())
+            .map(|n| clean_monitor_name(&n).to_string())
+            .collect();
+        self.app.set_available_monitors(names);
     }
 }
 
@@ -116,16 +130,11 @@ impl eframe::App for EframeApp {
             ctx.request_repaint();
             return;
         }
-        if let Some(window) = frame.winit_window() {
-            let names: Vec<String> = window
-                .available_monitors()
-                .filter_map(|m| m.name())
-                .map(|n| clean_monitor_name(&n).to_string())
-                .collect();
-            self.app.set_available_monitors(names);
 
-            #[cfg(target_os = "windows")]
-            enable_dwm_per_pixel_alpha(window.as_ref());
+        if self.app.ui.settings_visible {
+            if let Some(window) = frame.winit_window() {
+                self.update_available_monitors(window.as_ref());
+            }
         }
 
         let mut host = EframeHost { ctx: &ctx };

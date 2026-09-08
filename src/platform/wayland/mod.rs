@@ -183,6 +183,7 @@ pub fn run(
 
     // Roundtrip once on the main queue so output_state receives all outputs and their names.
     event_queue.roundtrip(&mut state)?;
+    state.update_available_monitors();
     let target_output = resolve_target_output(&state.output_state, &settings.monitor);
 
     // Build the overlay layer surface: above everything, covering the whole output,
@@ -264,6 +265,15 @@ impl WaylandApp {
         self.layer.as_ref().expect("layer surface initialized")
     }
 
+    fn update_available_monitors(&mut self) {
+        let monitor_names: Vec<String> = self
+            .output_state
+            .outputs()
+            .filter_map(|o| self.output_state.info(&o).and_then(|i| i.name))
+            .collect();
+        self.app.set_available_monitors(monitor_names);
+    }
+
     fn size_px(&self) -> [u32; 2] {
         [
             (self.width as f64 * self.scale).round().max(1.0) as u32,
@@ -319,14 +329,6 @@ impl WaylandApp {
 
         self.egui_ctx.set_pixels_per_point(self.scale as f32);
         let raw_input = self.input.take_raw_input((self.width, self.height));
-
-        // Picking one here only takes effect on next launch (see run()).
-        let monitor_names: Vec<String> = self
-            .output_state
-            .outputs()
-            .filter_map(|o| self.output_state.info(&o).and_then(|i| i.name))
-            .collect();
-        self.app.set_available_monitors(monitor_names);
 
         let ctx = self.egui_ctx.clone();
         let mut host = WaylandHost::default();
@@ -658,8 +660,12 @@ impl OutputHandler for WaylandApp {
     }
 
     fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlOutput) {}
-    fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlOutput) {}
-    fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlOutput) {}
+    fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlOutput) {
+        self.update_available_monitors();
+    }
+    fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlOutput) {
+        self.update_available_monitors();
+    }
 }
 
 impl Dispatch<WpFractionalScaleV1, ()> for WaylandApp {

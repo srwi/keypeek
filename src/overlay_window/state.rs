@@ -51,7 +51,6 @@ pub struct UiState {
     pub settings_warning: Option<String>,
     pub mouse_passthrough: Option<bool>,
     pub file_dialog: FileDialog,
-    // Empty where the backend can't enumerate monitors (e.g. native Wayland).
     pub available_monitors: Vec<String>,
 }
 
