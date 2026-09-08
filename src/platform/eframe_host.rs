@@ -30,6 +30,7 @@ impl OverlayHost for EframeHost<'_> {
 struct EframeApp {
     app: OverlayApp,
     last_applied_monitor: Option<MonitorSelection>,
+    settings_was_visible: bool,
     // winit's always-on-top request is sent before the window is mapped, which
     // EWMH WMs like Mutter ignore, so re-assert it for a few frames after mapping.
     #[cfg(target_os = "linux")]
@@ -121,26 +122,32 @@ fn get_available_monitors(
     unique_names.into_iter().zip(monitors).collect()
 }
 
+fn base_monitor_name(name: &str) -> &str {
+    name.strip_suffix(" (1)").unwrap_or(name)
+}
+
 fn find_target_monitor(
     available: &[(String, winit::monitor::MonitorHandle)],
     window: &winit::window::Window,
     target: &MonitorSelection,
 ) -> Option<winit::monitor::MonitorHandle> {
-    match target {
-        MonitorSelection::Primary => window.primary_monitor(),
+    let target_handle = match target {
+        MonitorSelection::Primary => None,
         MonitorSelection::Named(name) => available
             .iter()
             .find(|(n, _)| n == name)
-            .map(|(_, m)| m.clone())
             .or_else(|| {
+                let base_target = base_monitor_name(name);
                 available
                     .iter()
-                    .find(|(n, _)| n.strip_suffix(" (1)").unwrap_or(n) == name)
-                    .map(|(_, m)| m.clone())
-            }),
-    }
-    .or_else(|| window.primary_monitor())
-    .or_else(|| available.first().map(|(_, m)| m.clone()))
+                    .find(|(n, _)| base_monitor_name(n) == base_target)
+            })
+            .map(|(_, m)| m.clone()),
+    };
+
+    target_handle
+        .or_else(|| window.primary_monitor())
+        .or_else(|| available.first().map(|(_, m)| m.clone()))
 }
 
 /// Position the overlay window to cover the selected monitor.
@@ -239,11 +246,13 @@ impl eframe::App for EframeApp {
             return;
         }
 
-        if self.app.ui.settings_visible {
+        let settings_open = self.app.ui.settings_visible;
+        if settings_open && !self.settings_was_visible {
             if let Some(window) = frame.winit_window() {
                 self.update_available_monitors(window.as_ref());
             }
         }
+        self.settings_was_visible = settings_open;
 
         let mut host = EframeHost { ctx: &ctx };
         self.app.ui(&ctx, &mut host);
@@ -400,9 +409,11 @@ fn run_inner(
             cc.egui_ctx.set_fonts(fonts);
 
             let app = OverlayApp::new(tray_icon, settings_requested, ui_wake, settings, devices);
+            let settings_was_visible = app.ui.settings_visible;
             Ok(Box::new(EframeApp {
                 app,
                 last_applied_monitor: None,
+                settings_was_visible,
                 #[cfg(target_os = "linux")]
                 x11_above_ticks: 10,
             }))

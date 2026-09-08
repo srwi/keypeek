@@ -19,8 +19,9 @@ pub enum ProtocolType {
 pub struct ParseSettingsError;
 
 // Persisted by name, not index — indices shift when displays change, names don't.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub enum MonitorSelection {
+    #[default]
     Primary,
     Named(String),
 }
@@ -280,7 +281,7 @@ impl Default for Settings {
             visible_layers: LayerMask::ALL,
             theme: ThemeSettings::default(),
             legend_mode: LegendMode::Stacked,
-            monitor: MonitorSelection::Primary,
+            monitor: MonitorSelection::default(),
         }
     }
 }

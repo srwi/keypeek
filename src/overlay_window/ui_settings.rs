@@ -242,7 +242,7 @@ impl OverlayApp {
                                     ui.selectable_value(
                                         &mut self.settings.draft.monitor,
                                         MonitorSelection::Primary,
-                                        MonitorSelection::Primary.to_string(),
+                                        "Primary",
                                     );
                                     for name in &self.ui.available_monitors {
                                         ui.selectable_value(
