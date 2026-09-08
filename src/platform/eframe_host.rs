@@ -36,18 +36,111 @@ struct EframeApp {
     x11_above_ticks: u32,
 }
 
+#[cfg(target_os = "macos")]
+fn get_macos_display_names(monitors: &[winit::monitor::MonitorHandle]) -> Vec<String> {
+    use objc2_app_kit::NSScreen;
+    use objc2_foundation::MainThreadMarker;
+
+    let screens = MainThreadMarker::new().map(NSScreen::screens);
+
+    monitors
+        .iter()
+        .map(|m| {
+            if let Some(screens) = &screens {
+                let scale = m.scale_factor();
+                let log_x = (m.position().x as f64 / scale).round() as i32;
+                let log_w = (m.size().width as f64 / scale).round() as i32;
+                let log_h = (m.size().height as f64 / scale).round() as i32;
+
+                if let Some(screen) = screens.iter().find(|s| {
+                    let f = s.frame();
+                    f.origin.x.round() as i32 == log_x
+                        && f.size.width.round() as i32 == log_w
+                        && f.size.height.round() as i32 == log_h
+                }) {
+                    return screen.localizedName().to_string();
+                }
+
+                if screens.len() == 1 && monitors.len() == 1 {
+                    if let Some(first) = screens.first() {
+                        return first.localizedName().to_string();
+                    }
+                }
+            }
+
+            m.name().unwrap_or_else(|| "Display".to_string())
+        })
+        .collect()
+}
+
+fn disambiguate_names(base_names: &[String]) -> Vec<String> {
+    use std::collections::HashMap;
+
+    let mut counts = HashMap::new();
+    for name in base_names {
+        *counts.entry(name.as_str()).or_insert(0usize) += 1;
+    }
+
+    let mut seen = HashMap::new();
+    base_names
+        .iter()
+        .map(|name| {
+            if counts.get(name.as_str()).copied().unwrap_or(0) > 1 {
+                let index = seen.entry(name.as_str()).or_insert(0usize);
+                *index += 1;
+                format!("{name} ({index})")
+            } else {
+                name.clone()
+            }
+        })
+        .collect()
+}
+
+fn get_available_monitors(
+    window: &winit::window::Window,
+) -> Vec<(String, winit::monitor::MonitorHandle)> {
+    let monitors: Vec<winit::monitor::MonitorHandle> = window.available_monitors().collect();
+    if monitors.is_empty() {
+        return Vec::new();
+    }
+
+    #[cfg(target_os = "macos")]
+    let base_names = get_macos_display_names(&monitors);
+
+    #[cfg(not(target_os = "macos"))]
+    let base_names: Vec<String> = monitors
+        .iter()
+        .map(|m| {
+            m.name()
+                .map(|n| clean_monitor_name(&n).to_string())
+                .unwrap_or_else(|| "Display".to_string())
+        })
+        .collect();
+
+    let unique_names = disambiguate_names(&base_names);
+    unique_names.into_iter().zip(monitors).collect()
+}
+
 fn find_target_monitor(
+    available: &[(String, winit::monitor::MonitorHandle)],
     window: &winit::window::Window,
     target: &MonitorSelection,
 ) -> Option<winit::monitor::MonitorHandle> {
     match target {
         MonitorSelection::Primary => window.primary_monitor(),
-        MonitorSelection::Named(name) => window
-            .available_monitors()
-            .find(|m| m.name().as_deref().map(clean_monitor_name) == Some(name.as_str())),
+        MonitorSelection::Named(name) => available
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, m)| m.clone())
+            .or_else(|| {
+                available
+                    .iter()
+                    .find(|(n, _)| n.strip_suffix(" (1)").unwrap_or(n) == name)
+                    .map(|(_, m)| m.clone())
+            }),
     }
     .or_else(|| window.primary_monitor())
-    .or_else(|| window.available_monitors().next())
+    .or_else(|| available.first().map(|(_, m)| m.clone()))
 }
 
 /// Position the overlay window to cover the selected monitor.
@@ -92,7 +185,8 @@ impl EframeApp {
             return false;
         };
 
-        let Some(monitor) = find_target_monitor(window.as_ref(), &target) else {
+        let available = get_available_monitors(window.as_ref());
+        let Some(monitor) = find_target_monitor(&available, window.as_ref(), &target) else {
             return false;
         };
 
@@ -103,7 +197,8 @@ impl EframeApp {
             egui::WindowLevel::AlwaysOnTop,
         ));
 
-        self.update_available_monitors(window.as_ref());
+        let names: Vec<String> = available.into_iter().map(|(name, _)| name).collect();
+        self.app.set_available_monitors(names);
 
         #[cfg(target_os = "windows")]
         enable_dwm_per_pixel_alpha(window.as_ref());
@@ -113,10 +208,9 @@ impl EframeApp {
     }
 
     fn update_available_monitors(&mut self, window: &winit::window::Window) {
-        let names: Vec<String> = window
-            .available_monitors()
-            .filter_map(|m| m.name())
-            .map(|n| clean_monitor_name(&n).to_string())
+        let names: Vec<String> = get_available_monitors(window)
+            .into_iter()
+            .map(|(name, _)| name)
             .collect();
         self.app.set_available_monitors(names);
     }
