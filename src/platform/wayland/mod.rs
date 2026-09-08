@@ -58,32 +58,6 @@ use crate::ui_wake::UiWake;
 use egl::EglState;
 use input::InputState;
 
-// Separate from WaylandApp: resolving the target output has to happen before
-// the layer surface exists, but WaylandApp needs that surface to construct.
-struct OutputProbe {
-    registry_state: RegistryState,
-    output_state: OutputState,
-}
-
-impl OutputHandler for OutputProbe {
-    fn output_state(&mut self) -> &mut OutputState {
-        &mut self.output_state
-    }
-    fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlOutput) {}
-    fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlOutput) {}
-    fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlOutput) {}
-}
-
-impl ProvidesRegistryState for OutputProbe {
-    fn registry(&mut self) -> &mut RegistryState {
-        &mut self.registry_state
-    }
-    registry_handlers![OutputState];
-}
-
-delegate_dispatch2!(OutputProbe);
-delegate_registry!(OutputProbe);
-
 // None means "let the compositor pick" — Wayland has no "primary output" flag.
 fn resolve_target_output(
     output_state: &OutputState,
@@ -121,7 +95,7 @@ struct WaylandApp {
     seat_state: SeatState,
     compositor_state: CompositorState,
 
-    layer: LayerSurface,
+    layer: Option<LayerSurface>,
     /// Maps the buffer to the logical surface size under fractional scaling;
     /// `None` when the compositor lacks wp-fractional-scale/wp-viewporter.
     viewport: Option<WpViewport>,
@@ -152,29 +126,68 @@ pub fn run(
     devices: Vec<DiscoveredDevice>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let conn = Connection::connect_to_env()?;
-    let (globals, event_queue) = registry_queue_init::<WaylandApp>(&conn)?;
+    let (globals, mut event_queue) = registry_queue_init::<WaylandApp>(&conn)?;
     let qh = event_queue.handle();
 
     let compositor_state = CompositorState::bind(&globals, &qh)?;
     let shell = LayerShell::bind(&globals, &qh)?;
 
-    // The layer surface's output is fixed at creation (so a changed monitor
-    // setting only takes effect on next launch, not live) — resolve it first,
-    // on a throwaway queue since WaylandApp itself isn't constructible yet.
-    let target_output = {
-        let mut probe_queue = conn.new_event_queue::<OutputProbe>();
-        let probe_qh = probe_queue.handle();
-        let mut probe = OutputProbe {
-            registry_state: RegistryState::new(&globals),
-            output_state: OutputState::new(&globals, &probe_qh),
-        };
-        probe_queue.roundtrip(&mut probe)?;
-        resolve_target_output(&probe.output_state, &settings.monitor)
+    let egui_ctx = egui::Context::default();
+    egui_extras::install_image_loaders(&egui_ctx);
+    let mut fonts = egui::FontDefinitions::default();
+    super::add_phosphor_to_fonts(&mut fonts);
+    egui_ctx.set_fonts(fonts);
+
+    let (ping, ping_source) = make_ping()?;
+    let ui_wake = UiWake::new(Arc::new(move || ping.ping()));
+    let settings_requested = Arc::new(AtomicBool::new(false));
+    let tray_icon = crate::tray::create_tray_icon({
+        let settings_requested = settings_requested.clone();
+        let ui_wake = ui_wake.clone();
+        Arc::new(move || {
+            settings_requested.store(true, Ordering::Relaxed);
+            ui_wake.request_repaint();
+        })
+    });
+    let app = OverlayApp::new(
+        tray_icon,
+        settings_requested,
+        ui_wake,
+        settings.clone(),
+        devices,
+    );
+
+    let mut state = WaylandApp {
+        registry_state: RegistryState::new(&globals),
+        output_state: OutputState::new(&globals, &qh),
+        seat_state: SeatState::new(&globals, &qh),
+        compositor_state,
+        layer: None,
+        viewport: None,
+        keyboard: None,
+        pointer: None,
+        egui_ctx,
+        app,
+        input: InputState::default(),
+        egl: None,
+        painter: None,
+        gl: None,
+        width: 0,
+        height: 0,
+        scale: 1.0,
+        configured: false,
+        needs_redraw: false,
+        exit: false,
+        repaint_at: None,
     };
+
+    // Roundtrip once on the main queue so output_state receives all outputs and their names.
+    event_queue.roundtrip(&mut state)?;
+    let target_output = resolve_target_output(&state.output_state, &settings.monitor);
 
     // Build the overlay layer surface: above everything, covering the whole output,
     // initially interactive because the settings window opens on first launch.
-    let surface = compositor_state.create_surface(&qh);
+    let surface = state.compositor_state.create_surface(&qh);
     let layer = shell.create_layer_surface(
         &qh,
         surface,
@@ -204,6 +217,9 @@ pub fn run(
         _ => None,
     };
 
+    state.layer = Some(layer);
+    state.viewport = viewport;
+
     // calloop loop, plus a ping the worker threads use to request repaints.
     let mut event_loop: EventLoop<WaylandApp> = EventLoop::try_new()?;
     let loop_handle = event_loop.handle();
@@ -211,54 +227,11 @@ pub fn run(
         .insert(loop_handle.clone())
         .map_err(|e| format!("failed to insert Wayland event source: {e}"))?;
 
-    let (ping, ping_source) = make_ping()?;
     loop_handle
         .insert_source(ping_source, |_, _, app: &mut WaylandApp| {
             app.needs_redraw = true;
         })
         .map_err(|e| format!("failed to insert repaint ping source: {e}"))?;
-
-    let egui_ctx = egui::Context::default();
-    egui_extras::install_image_loaders(&egui_ctx);
-    let mut fonts = egui::FontDefinitions::default();
-    super::add_phosphor_to_fonts(&mut fonts);
-    egui_ctx.set_fonts(fonts);
-
-    let ui_wake = UiWake::new(Arc::new(move || ping.ping()));
-    let settings_requested = Arc::new(AtomicBool::new(false));
-    let tray_icon = crate::tray::create_tray_icon({
-        let settings_requested = settings_requested.clone();
-        let ui_wake = ui_wake.clone();
-        Arc::new(move || {
-            settings_requested.store(true, Ordering::Relaxed);
-            ui_wake.request_repaint();
-        })
-    });
-    let app = OverlayApp::new(tray_icon, settings_requested, ui_wake, settings, devices);
-
-    let mut state = WaylandApp {
-        registry_state: RegistryState::new(&globals),
-        output_state: OutputState::new(&globals, &qh),
-        seat_state: SeatState::new(&globals, &qh),
-        compositor_state,
-        layer,
-        viewport,
-        keyboard: None,
-        pointer: None,
-        egui_ctx,
-        app,
-        input: InputState::default(),
-        egl: None,
-        painter: None,
-        gl: None,
-        width: 0,
-        height: 0,
-        scale: 1.0,
-        configured: false,
-        needs_redraw: false,
-        exit: false,
-        repaint_at: None,
-    };
 
     while !state.exit {
         // Sleep until the next scheduled repaint; wake immediately when a redraw is
@@ -287,6 +260,10 @@ pub fn run(
 }
 
 impl WaylandApp {
+    fn layer(&self) -> &LayerSurface {
+        self.layer.as_ref().expect("layer surface initialized")
+    }
+
     fn size_px(&self) -> [u32; 2] {
         [
             (self.width as f64 * self.scale).round().max(1.0) as u32,
@@ -302,7 +279,9 @@ impl WaylandApp {
             // logical surface size.
             viewport.set_destination(self.width.max(1), self.height.max(1));
         } else {
-            self.layer.wl_surface().set_buffer_scale(self.scale as i32);
+            self.layer()
+                .wl_surface()
+                .set_buffer_scale(self.scale as i32);
         }
 
         // Already initialized: just resize the EGL window.
@@ -312,7 +291,7 @@ impl WaylandApp {
         }
 
         // First-time setup.
-        let surface = self.layer.wl_surface();
+        let surface = self.layer().wl_surface();
         match EglState::new(conn, surface, w as i32, h as i32) {
             Ok(egl) => {
                 let gl = egl.gl.clone();
@@ -394,18 +373,18 @@ impl WaylandApp {
 
     /// Toggle click-through + focus to match the eframe `MousePassthrough` behavior.
     fn apply_passthrough(&mut self, passthrough: bool) {
-        let surface = self.layer.wl_surface();
+        let surface = self.layer().wl_surface();
         if passthrough {
             // An empty input region makes every pointer/touch event fall through.
             if let Ok(region) = Region::new(&self.compositor_state) {
                 surface.set_input_region(Some(region.wl_region()));
             }
-            self.layer
+            self.layer()
                 .set_keyboard_interactivity(KeyboardInteractivity::None);
         } else {
             // `None` input region = the whole surface receives input again.
             surface.set_input_region(None);
-            self.layer
+            self.layer()
                 .set_keyboard_interactivity(KeyboardInteractivity::OnDemand);
         }
         surface.commit();
