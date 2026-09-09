@@ -119,6 +119,9 @@ struct WaylandApp {
     needs_redraw: bool,
     exit: bool,
     repaint_at: Option<Instant>,
+
+    /// First pass done; see `draw()`.
+    primed: bool,
 }
 
 pub fn run(
@@ -179,12 +182,22 @@ pub fn run(
         needs_redraw: false,
         exit: false,
         repaint_at: None,
+        primed: false,
     };
 
     // Roundtrip once on the main queue so output_state receives all outputs and their names.
     event_queue.roundtrip(&mut state)?;
     state.update_available_monitors();
     let target_output = resolve_target_output(&state.output_state, &settings.monitor);
+    if let Some(scale) = target_output
+        .as_ref()
+        .and_then(|o| state.output_state.info(o))
+        .map(|info| info.scale_factor as f64)
+    {
+        if scale > 0.0 {
+            state.scale = scale;
+        }
+    }
 
     // Build the overlay layer surface: above everything, covering the whole output,
     // initially interactive because the settings window opens on first launch.
@@ -324,6 +337,20 @@ impl WaylandApp {
             return;
         };
         if egl.make_current().is_err() {
+            return;
+        }
+
+        // Commit an empty transparent frame on the very first pass so the compositor
+        // assigns the surface to the output and delivers preferred_scale/configure
+        // before egui calculates window placements.
+        if !self.primed {
+            self.primed = true;
+            let size_px = self.size_px();
+            if let Some(gl) = self.gl.as_ref() {
+                egui_glow::painter::clear(gl, size_px, [0.0, 0.0, 0.0, 0.0]);
+            }
+            let _ = egl.swap_buffers();
+            self.needs_redraw = true;
             return;
         }
 
