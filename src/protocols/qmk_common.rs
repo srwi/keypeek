@@ -1,6 +1,6 @@
 use crate::key_action::{KeyAction, KeymapSnapshot};
 use crate::protocols::{
-    pump_hid_reader, DeviceEvent, KeyboardDefinition, KeyboardProtocol, WriteSupport,
+    pump_hid_reader, DeviceError, DeviceEvent, KeyboardDefinition, KeyboardProtocol, WriteSupport,
 };
 use qmk_via_api::api::KeyboardApi;
 pub use qmk_via_api::QmkFeatures;
@@ -22,12 +22,12 @@ struct RawHidSubscription {
 }
 
 impl RawHidSubscription {
-    fn open(vid: u16, pid: u16) -> Result<Option<Box<dyn SubscriptionSender>>, Box<dyn Error>> {
+    fn open(vid: u16, pid: u16) -> Result<Option<Box<dyn SubscriptionSender>>, DeviceError> {
         let api = KeyboardApi::new(vid, pid, 0xff60, None).map_err(|e| {
-            format!(
+            DeviceError::Transport(format!(
                 "Could not open the RAW HID interface ({vid:04x}:{pid:04x}) to subscribe to \
                  layer events: {e}. The overlay cannot follow layer changes without it."
-            )
+            ))
         })?;
         Ok(Some(Box::new(Self { api })))
     }
@@ -57,7 +57,7 @@ pub fn qmk_subscribe_events(
     api: Arc<Mutex<KeyboardApi>>,
     vid: u16,
     pid: u16,
-) -> Result<QmkSubscription, Box<dyn Error>> {
+) -> Result<QmkSubscription, DeviceError> {
     // 1. Start keepalive loop if subscription interface is available
     let keepalive = RawHidSubscription::open(vid, pid)?.map(|sender| {
         let (tx, rx) = mpsc::channel::<()>();
@@ -120,11 +120,11 @@ impl KeyboardProtocol for QmkProtocol {
         &self.definition
     }
 
-    fn read_keymap(&self) -> Result<KeymapSnapshot, Box<dyn Error>> {
+    fn read_keymap(&self) -> Result<KeymapSnapshot, DeviceError> {
         qmk_read_snapshot(&self.api.lock().unwrap(), &self.definition)
     }
 
-    fn subscribe_events(&mut self) -> Result<mpsc::Receiver<DeviceEvent>, Box<dyn Error>> {
+    fn subscribe_events(&mut self) -> Result<mpsc::Receiver<DeviceEvent>, DeviceError> {
         let subscription = qmk_subscribe_events(
             Arc::clone(&self.api),
             self.definition.vid,
@@ -145,7 +145,7 @@ impl KeyboardProtocol for QmkProtocol {
         row: usize,
         col: usize,
         action: &KeyAction,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), DeviceError> {
         qmk_set_key(&self.api.lock().unwrap(), layer_index, row, col, action)
     }
 
@@ -166,10 +166,11 @@ pub fn qmk_action_filter(features: QmkFeatures) -> Option<super::ActionFilter> {
 pub fn qmk_read_snapshot(
     api: &KeyboardApi,
     definition: &super::KeyboardDefinition,
-) -> Result<KeymapSnapshot, Box<dyn Error>> {
+) -> Result<KeymapSnapshot, DeviceError> {
     let layer_count = api
         .get_layer_count()
-        .map_err(|e| format!("Failed to get layer count: {e}"))? as usize;
+        .map_err(|e| DeviceError::Protocol(format!("Failed to get layer count: {e}")))?
+        as usize;
     let (rows, cols) = (definition.rows, definition.cols);
     let matrix_info = qmk_via_api::api::MatrixInfo {
         rows: rows as u8,
@@ -178,9 +179,9 @@ pub fn qmk_read_snapshot(
 
     let mut actions = vec![vec![vec![None; cols]; rows]; layer_count];
     for (layer, layer_actions) in actions.iter_mut().enumerate() {
-        let raw_matrix = api
-            .read_raw_matrix(matrix_info, layer as u8)
-            .map_err(|e| format!("Failed to read layer {layer} keymap: {e}"))?;
+        let raw_matrix = api.read_raw_matrix(matrix_info, layer as u8).map_err(|e| {
+            DeviceError::Protocol(format!("Failed to read layer {layer} keymap: {e}"))
+        })?;
         for (i, &keycode) in raw_matrix.iter().enumerate() {
             let row = i / cols;
             let col = i % cols;
@@ -203,10 +204,12 @@ pub fn qmk_set_key(
     row: usize,
     col: usize,
     action: &KeyAction,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), DeviceError> {
     match action {
         KeyAction::Qmk(code) => qmk_set_key_with_retry(api, layer_index, row, col, *code),
-        KeyAction::Zmk(_) => Err("Cannot apply a ZMK behavior to a QMK keyboard".into()),
+        KeyAction::Zmk(_) => Err(DeviceError::Unsupported(
+            "Cannot apply a ZMK behavior to a QMK keyboard".to_string(),
+        )),
     }
 }
 
@@ -217,7 +220,7 @@ pub(crate) fn qmk_set_key_with_retry(
     row: usize,
     col: usize,
     code: u16,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), DeviceError> {
     match api.set_key(layer_index as u8, row as u8, col as u8, code) {
         Ok(_) => Ok(()),
         Err(qmk_via_api::Error::BadCommandResponse(_)) => {
@@ -229,9 +232,11 @@ pub(crate) fn qmk_set_key_with_retry(
                     }
                 }
             }
-            Err("Failed to set key: the device did not confirm the write".into())
+            Err(DeviceError::Protocol(
+                "Failed to set key: the device did not confirm the write".to_string(),
+            ))
         }
-        Err(e) => Err(format!("Failed to set key: {e}").into()),
+        Err(e) => Err(DeviceError::Protocol(format!("Failed to set key: {e}"))),
     }
 }
 

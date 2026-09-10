@@ -1,13 +1,10 @@
 use crate::keyboard::{Keyboard, OverlayConfig};
 use crate::protocols::{
-    connect_protocol, ConnectionSpec, DeviceLocked, KeyboardDefinition, KeyboardProtocol, Reopener,
+    connect_protocol, ConnectionSpec, DeviceError, KeyboardDefinition, KeyboardProtocol, Reopener,
 };
 use crate::ui_wake::UiWake;
-use std::error::Error;
 use std::sync::mpsc::{self, TryRecvError};
 use std::sync::Arc;
-
-const ZMK_LOCKED_ERROR: &str = "Device is locked. Please press the ZMK Studio unlock key combination on your keyboard, then click Connect again.";
 
 pub struct ConnectionRequest {
     pub spec: ConnectionSpec,
@@ -22,7 +19,7 @@ impl ConnectionRequest {
             Some(reopener) => reopener.reopen(),
             None => connect_protocol(&self.spec),
         };
-        result.map_err(|e| format_connect_error(&self.spec, e.as_ref()))
+        result.map_err(|e| format_connect_error(&self.spec, &e))
     }
 
     fn pick_layout_name(&self, layout_names: &[String]) -> Result<String, String> {
@@ -40,15 +37,12 @@ impl ConnectionRequest {
     }
 }
 
-fn format_connect_error(spec: &ConnectionSpec, error: &(dyn Error + 'static)) -> String {
-    if matches!(spec, ConnectionSpec::Zmk { .. }) {
-        if error.downcast_ref::<DeviceLocked>().is_some() {
-            return ZMK_LOCKED_ERROR.to_string();
-        }
-        return format!("ZMK error: {error}");
+fn format_connect_error(spec: &ConnectionSpec, error: &DeviceError) -> String {
+    match error {
+        DeviceError::DeviceLocked => error.to_string(),
+        _ if matches!(spec, ConnectionSpec::Zmk { .. }) => format!("ZMK error: {error}"),
+        _ => format!("Failed to connect to device: {error}"),
     }
-
-    format!("Failed to connect to device: {error}")
 }
 
 pub struct ConnectedState {

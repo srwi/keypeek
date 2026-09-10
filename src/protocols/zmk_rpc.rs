@@ -24,16 +24,7 @@ pub enum ZmkTransport {
     BleDevice(String),
 }
 
-#[derive(Debug)]
-pub struct DeviceLocked;
-
-impl std::fmt::Display for DeviceLocked {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ZMK Studio device is locked")
-    }
-}
-
-impl Error for DeviceLocked {}
+use crate::protocols::DeviceError;
 
 pub fn scan_serial_ports() -> Vec<ZmkSerialDevice> {
     let Ok(ports) = serialport::available_ports() else {
@@ -143,7 +134,7 @@ impl ZmkStudioSession {
         };
 
         if session.lock_state()? == core::LockState::ZmkStudioCoreLockStateLocked {
-            return Err(Box::new(DeviceLocked));
+            return Err(Box::new(DeviceError::DeviceLocked));
         }
         session.ensure_behavior_catalog()?;
 
@@ -234,7 +225,7 @@ fn fetch_zmk_data_from_client<T: Read + Write>(
     let lock_state = client.get_lock_state()?;
     if lock_state == core::LockState::ZmkStudioCoreLockStateLocked {
         drop(client);
-        return Err(Box::new(DeviceLocked));
+        return Err(Box::new(DeviceError::DeviceLocked));
     }
 
     let physical_layouts = client.get_physical_layouts()?;

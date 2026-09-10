@@ -1,6 +1,6 @@
 use super::kle_parser;
 use super::qmk_common::{QmkFeatures, QmkProtocol};
-use super::KeyboardDefinition;
+use super::{DeviceError, KeyboardDefinition};
 use qmk_via_api::api::KeyboardApi;
 use std::error::Error;
 
@@ -16,23 +16,30 @@ enum VialCommand {
 pub struct VialProtocol;
 
 impl VialProtocol {
-    pub fn connect(vid: u16, pid: u16) -> Result<QmkProtocol, Box<dyn Error>> {
+    pub fn connect(vid: u16, pid: u16) -> Result<QmkProtocol, DeviceError> {
         // A read timeout keeps command/response round trips bounded so the HID
         // reader loop stays responsive between commands.
-        let api = KeyboardApi::new(vid, pid, 0xff60, Some(250))
-            .map_err(|e| format!("Failed to connect to device ({vid:04x}:{pid:04x}): {e}"))?;
+        let api = KeyboardApi::new(vid, pid, 0xff60, Some(250)).map_err(|e| {
+            DeviceError::Transport(format!(
+                "Failed to connect to device ({vid:04x}:{pid:04x}): {e}"
+            ))
+        })?;
 
         Self::init_from_api(api, vid, pid)
     }
 
-    fn init_from_api(api: KeyboardApi, vid: u16, pid: u16) -> Result<QmkProtocol, Box<dyn Error>> {
-        let (protocol_version, _keyboard_uid) = Self::get_keyboard_id(&api)?;
+    fn init_from_api(api: KeyboardApi, vid: u16, pid: u16) -> Result<QmkProtocol, DeviceError> {
+        let (protocol_version, _keyboard_uid) =
+            Self::get_keyboard_id(&api).map_err(|e| DeviceError::Protocol(e.to_string()))?;
 
         if protocol_version == 0 {
-            return Err("Device does not support VIAL protocol".into());
+            return Err(DeviceError::Unsupported(
+                "Device does not support VIAL protocol".to_string(),
+            ));
         }
 
-        let definition = Self::fetch_definition(&api, vid, pid)?;
+        let definition = Self::fetch_definition(&api, vid, pid)
+            .map_err(|e| DeviceError::Protocol(e.to_string()))?;
         let features = QmkFeatures::probe(&api);
 
         Ok(QmkProtocol::new(api, definition, features))

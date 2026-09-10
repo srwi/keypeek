@@ -7,9 +7,8 @@ use std::time::{Duration, Instant};
 use crate::key_action::KeyAction;
 use crate::key_matrix::{BoundKey, KeyMatrix};
 use crate::layout_key::LayoutKey;
-use crate::protocols::{DeviceEvent, DeviceLocked, KeyboardLayout, KeyboardProtocol, WriteSupport};
+use crate::protocols::{DeviceEvent, KeyboardLayout, KeyboardProtocol, WriteSupport};
 use crate::ui_wake::UiWake;
-use std::error::Error;
 
 /// The active layers as seen through the visible-layer bitmask (bit `i` selects layer
 /// `i`; see `Settings::visible_layers`).
@@ -154,18 +153,6 @@ pub enum KeymapCommand {
     EndEditSession,
 }
 
-/// The error text shown for a failed write. Locked ZMK devices get a
-/// retryable message instead of the raw RPC error.
-fn write_error_text(error: Box<dyn Error>) -> String {
-    if error.is::<DeviceLocked>() {
-        "Device is locked. Press the ZMK Studio unlock key combination on your keyboard, \
-         then try again."
-            .to_string()
-    } else {
-        error.to_string()
-    }
-}
-
 /// Executes one command on the protocol. Runs on the reader thread.
 fn run_keymap_command(
     protocol: &mut dyn KeyboardProtocol,
@@ -176,7 +163,7 @@ fn run_keymap_command(
 ) {
     match command {
         KeymapCommand::OpenEditSession { respond } => {
-            let result = protocol.open_edit_session().map_err(write_error_text);
+            let result = protocol.open_edit_session().map_err(|e| e.to_string());
             let _ = respond.send(result);
         }
         KeymapCommand::SetKey {
@@ -198,7 +185,7 @@ fn run_keymap_command(
                 .and_then(|layer| {
                     protocol
                         .set_key(&layer, layer_index, row, col, &action)
-                        .map_err(write_error_text)
+                        .map_err(|e| e.to_string())
                 });
 
             if result.is_ok() {
@@ -218,7 +205,7 @@ fn run_keymap_command(
             let _ = respond.send(result);
         }
         KeymapCommand::Save { respond } => {
-            let result = protocol.save_keymap().map_err(write_error_text);
+            let result = protocol.save_keymap().map_err(|e| e.to_string());
             let _ = respond.send(result);
         }
         KeymapCommand::EndEditSession => protocol.end_edit_session(),

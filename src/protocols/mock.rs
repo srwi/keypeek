@@ -4,12 +4,11 @@
 //! so layer-change rendering can be exercised. The mock device is only registered
 //! during discovery in debug builds (`cfg!(debug_assertions)` in `device_discovery`).
 
-use super::{DeviceEvent, KeyboardDefinition, KeyboardProtocol, WriteSupport};
+use super::{DeviceError, DeviceEvent, KeyboardDefinition, KeyboardProtocol, WriteSupport};
 use crate::key_action::{KeyAction, KeymapSnapshot};
 use qmk_via_api::keycodes::Keycode;
 use qmk_via_api::QmkLayerOp;
 use std::collections::HashMap;
-use std::error::Error;
 use std::sync::mpsc;
 use std::sync::OnceLock;
 use std::thread;
@@ -42,22 +41,26 @@ pub struct MockProtocol {
 }
 
 impl MockProtocol {
-    pub fn connect() -> Result<Self, Box<dyn Error>> {
+    pub fn connect() -> Result<Self, DeviceError> {
         Self::with_tick_interval(TICK_INTERVAL)
     }
 
     /// The interval is a parameter so tests can cycle layers without waiting on the
     /// human-paced default.
-    fn with_tick_interval(tick_interval: Duration) -> Result<Self, Box<dyn Error>> {
+    fn with_tick_interval(tick_interval: Duration) -> Result<Self, DeviceError> {
         let fixture: MockFixture = serde_json::from_str(FIXTURE)
-            .map_err(|e| format!("Invalid mock keyboard fixture: {e}"))?;
+            .map_err(|e| DeviceError::Protocol(format!("Invalid mock keyboard fixture: {e}")))?;
 
         let (rows, cols) = (fixture.definition.rows, fixture.definition.cols);
         if rows == 0 || cols == 0 {
-            return Err("Mock keyboard fixture has an empty matrix".into());
+            return Err(DeviceError::Protocol(
+                "Mock keyboard fixture has an empty matrix".to_string(),
+            ));
         }
         if fixture.layers.is_empty() {
-            return Err("Mock keyboard fixture has no layers".into());
+            return Err(DeviceError::Protocol(
+                "Mock keyboard fixture has no layers".to_string(),
+            ));
         }
 
         let mut layers = Vec::with_capacity(fixture.layers.len());
@@ -73,10 +76,11 @@ impl MockProtocol {
             let codes = layer
                 .iter()
                 .map(|name| {
-                    resolve_keycode(name)
-                        .map_err(|e| format!("Mock keyboard layer {index}: {e}").into())
+                    resolve_keycode(name).map_err(|e| {
+                        DeviceError::Protocol(format!("Mock keyboard layer {index}: {e}"))
+                    })
                 })
-                .collect::<Result<Vec<u16>, Box<dyn Error>>>()?;
+                .collect::<Result<Vec<u16>, DeviceError>>()?;
             layers.push(codes);
         }
 
@@ -94,7 +98,7 @@ impl KeyboardProtocol for MockProtocol {
         &self.definition
     }
 
-    fn read_keymap(&self) -> Result<KeymapSnapshot, Box<dyn Error>> {
+    fn read_keymap(&self) -> Result<KeymapSnapshot, DeviceError> {
         let (rows, cols) = (self.definition.rows, self.definition.cols);
         let mut actions = vec![vec![vec![None; cols]; rows]; self.layers.len()];
 
@@ -113,7 +117,7 @@ impl KeyboardProtocol for MockProtocol {
         })
     }
 
-    fn subscribe_events(&mut self) -> Result<mpsc::Receiver<DeviceEvent>, Box<dyn Error>> {
+    fn subscribe_events(&mut self) -> Result<mpsc::Receiver<DeviceEvent>, DeviceError> {
         let (event_tx, event_rx) = mpsc::channel();
         let tick_interval = self.tick_interval;
         let layer_states = self.layer_states.clone();
@@ -148,18 +152,26 @@ impl KeyboardProtocol for MockProtocol {
         row: usize,
         col: usize,
         action: &KeyAction,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), DeviceError> {
         let keycode = match action {
             KeyAction::Qmk(code) => *code,
-            KeyAction::Zmk(_) => return Err("Cannot apply a ZMK behavior to the mock".into()),
+            KeyAction::Zmk(_) => {
+                return Err(DeviceError::Unsupported(
+                    "Cannot apply a ZMK behavior to the mock".to_string(),
+                ))
+            }
         };
 
         let Some(layer) = self.layers.get_mut(layer_index) else {
-            return Err(format!("Mock has no layer {layer_index}").into());
+            return Err(DeviceError::Protocol(format!(
+                "Mock has no layer {layer_index}"
+            )));
         };
         let index = row * self.definition.cols + col;
         let Some(cell) = layer.get_mut(index) else {
-            return Err(format!("Mock key position {row}:{col} is outside the matrix").into());
+            return Err(DeviceError::Protocol(format!(
+                "Mock key position {row}:{col} is outside the matrix"
+            )));
         };
         *cell = keycode;
         Ok(())

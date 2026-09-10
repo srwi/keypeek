@@ -9,6 +9,7 @@ pub mod zmk;
 pub mod zmk_rpc;
 
 use std::error::Error;
+use std::fmt;
 use std::sync::{mpsc, Arc};
 
 use self::mock::MockProtocol;
@@ -16,7 +17,55 @@ use self::via::ViaProtocol;
 use self::vial::VialProtocol;
 use self::zmk::ZmkProtocol;
 
-pub use self::zmk_rpc::DeviceLocked;
+/// Unified domain error for keyboard communication, configuration, and driver operations.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DeviceError {
+    /// Device is locked (e.g. ZMK Studio unlock combination required).
+    DeviceLocked,
+    /// Physical or transport connection error (e.g. serial port, BLE, HID I/O).
+    Transport(String),
+    /// Protocol communication error or unexpected payload.
+    Protocol(String),
+    /// Feature, operation, or binding not supported by this keyboard or protocol.
+    Unsupported(String),
+}
+
+impl fmt::Display for DeviceError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DeviceLocked => write!(
+                f,
+                "Device is locked. Press the ZMK Studio unlock key combination on your keyboard, then try again."
+            ),
+            Self::Transport(msg) => write!(f, "Transport error: {msg}"),
+            Self::Protocol(msg) => write!(f, "Protocol error: {msg}"),
+            Self::Unsupported(msg) => write!(f, "Unsupported: {msg}"),
+        }
+    }
+}
+
+impl Error for DeviceError {}
+
+impl From<Box<dyn Error>> for DeviceError {
+    fn from(err: Box<dyn Error>) -> Self {
+        if let Some(device_err) = err.downcast_ref::<DeviceError>() {
+            return device_err.clone();
+        }
+        Self::Protocol(err.to_string())
+    }
+}
+
+impl From<String> for DeviceError {
+    fn from(msg: String) -> Self {
+        Self::Protocol(msg)
+    }
+}
+
+impl From<&str> for DeviceError {
+    fn from(msg: &str) -> Self {
+        Self::Protocol(msg.to_string())
+    }
+}
 
 /// Strongly-typed events emitted by a keyboard driver or protocol adapter.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -178,11 +227,11 @@ pub enum WriteSupport {
 pub trait KeyboardProtocol: Send {
     fn get_layout_definition(&self) -> &KeyboardDefinition;
 
-    fn read_keymap(&self) -> Result<crate::key_action::KeymapSnapshot, Box<dyn Error>>;
+    fn read_keymap(&self) -> Result<crate::key_action::KeymapSnapshot, DeviceError>;
 
     /// Subscribes to live layer-state and key-press events emitted by the device.
     /// The adapter manages its own background reading and keepalive heartbeats.
-    fn subscribe_events(&mut self) -> Result<mpsc::Receiver<DeviceEvent>, Box<dyn Error>>;
+    fn subscribe_events(&mut self) -> Result<mpsc::Receiver<DeviceEvent>, DeviceError>;
 
     fn write_support(&self) -> WriteSupport {
         WriteSupport::None
@@ -197,19 +246,19 @@ pub trait KeyboardProtocol: Send {
         _row: usize,
         _col: usize,
         _action: &crate::key_action::KeyAction,
-    ) -> Result<(), Box<dyn Error>> {
-        Err("not supported".into())
+    ) -> Result<(), DeviceError> {
+        Err(DeviceError::Unsupported("write not supported".to_string()))
     }
 
     /// ZMK: persist pending writes. Immediate protocols: `Ok(())`.
-    fn save_keymap(&mut self) -> Result<(), Box<dyn Error>> {
+    fn save_keymap(&mut self) -> Result<(), DeviceError> {
         Ok(())
     }
 
     /// Opens the transient write session ahead of the first write (ZMK Studio
     /// client), so the first key change does not wait on a connection.
     /// Protocols without a session are already ready.
-    fn open_edit_session(&mut self) -> Result<(), Box<dyn Error>> {
+    fn open_edit_session(&mut self) -> Result<(), DeviceError> {
         Ok(())
     }
 
@@ -226,7 +275,7 @@ pub trait KeyboardProtocol: Send {
 }
 
 pub trait Reopener: Send + Sync {
-    fn reopen(&self) -> Result<Box<dyn KeyboardProtocol>, Box<dyn Error>>;
+    fn reopen(&self) -> Result<Box<dyn KeyboardProtocol>, DeviceError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -252,9 +301,7 @@ pub enum ConnectionSpec {
     Mock,
 }
 
-pub fn connect_protocol(
-    spec: &ConnectionSpec,
-) -> Result<Box<dyn KeyboardProtocol>, Box<dyn Error>> {
+pub fn connect_protocol(spec: &ConnectionSpec) -> Result<Box<dyn KeyboardProtocol>, DeviceError> {
     match spec {
         ConnectionSpec::Via { json_path } => {
             let protocol = ViaProtocol::connect(json_path)?;

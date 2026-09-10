@@ -1,8 +1,8 @@
 use super::layout_geometry::flattened_top_left_after_center_rotation;
 use super::zmk_rpc::{self, ZmkData, ZmkStudioSession, ZmkTransport};
 use super::{
-    pump_hid_reader, DeviceEvent, Key, KeyboardDefinition, KeyboardLayout, KeyboardProtocol,
-    Reopener, WriteSupport,
+    pump_hid_reader, DeviceError, DeviceEvent, Key, KeyboardDefinition, KeyboardLayout,
+    KeyboardProtocol, Reopener, WriteSupport,
 };
 use crate::key_action::{KeyAction, KeymapSnapshot, LayerInfo};
 use hidapi::{HidApi, HidDevice};
@@ -34,7 +34,7 @@ struct ZmkReopener {
 }
 
 impl Reopener for ZmkReopener {
-    fn reopen(&self) -> Result<Box<dyn KeyboardProtocol>, Box<dyn Error>> {
+    fn reopen(&self) -> Result<Box<dyn KeyboardProtocol>, DeviceError> {
         Ok(Box::new(ZmkProtocol::open_hid(
             Arc::clone(&self.layout),
             self.transport.clone(),
@@ -43,22 +43,19 @@ impl Reopener for ZmkReopener {
 }
 
 impl ZmkProtocol {
-    pub fn connect_live(
-        vid: u16,
-        pid: u16,
-        transport: &ZmkTransport,
-    ) -> Result<Self, Box<dyn Error>> {
+    pub fn connect_live(vid: u16, pid: u16, transport: &ZmkTransport) -> Result<Self, DeviceError> {
         let zmk_data = zmk_rpc::fetch_zmk_data(transport)?;
-        let layout = build_from_zmk_data(vid, pid, zmk_data)?;
+        let layout = build_from_zmk_data(vid, pid, zmk_data)
+            .map_err(|e| DeviceError::Protocol(e.to_string()))?;
         Self::open_hid(Arc::new(layout), transport.clone())
     }
 
-    fn open_hid(layout: Arc<ZmkLayout>, transport: ZmkTransport) -> Result<Self, Box<dyn Error>> {
+    fn open_hid(layout: Arc<ZmkLayout>, transport: ZmkTransport) -> Result<Self, DeviceError> {
         let (vid, pid) = (layout.definition.vid, layout.definition.pid);
         wait_for_hid_reappearance(vid, pid, ZMK_USAGE_PAGE, Duration::from_secs(8))
-            .map_err(std::io::Error::other)?;
+            .map_err(DeviceError::Transport)?;
         let hid_device = open_zmk_hid(vid, pid).map_err(|e| {
-            std::io::Error::other(format!(
+            DeviceError::Transport(format!(
                 "Failed to connect HID ({vid:04x}:{pid:04x}) after reappearance: {e}"
             ))
         })?;
@@ -75,7 +72,7 @@ impl ZmkProtocol {
     fn with_session<T>(
         &mut self,
         write: impl FnOnce(&mut ZmkStudioSession) -> Result<T, Box<dyn Error>>,
-    ) -> Result<T, Box<dyn Error>> {
+    ) -> Result<T, DeviceError> {
         if self.session.is_none() {
             self.session = Some(ZmkStudioSession::open(&self.transport)?);
         }
@@ -85,7 +82,7 @@ impl ZmkProtocol {
                 self.session = None;
             }
         }
-        result
+        result.map_err(DeviceError::from)
     }
 
     fn update_cached_action(&self, layer_index: usize, row: usize, col: usize, action: KeyAction) {
@@ -188,15 +185,15 @@ impl KeyboardProtocol for ZmkProtocol {
         &self.layout.definition
     }
 
-    fn read_keymap(&self) -> Result<KeymapSnapshot, Box<dyn Error>> {
+    fn read_keymap(&self) -> Result<KeymapSnapshot, DeviceError> {
         Ok(self.layout.snapshot.lock().unwrap().clone())
     }
 
-    fn subscribe_events(&mut self) -> Result<mpsc::Receiver<DeviceEvent>, Box<dyn Error>> {
+    fn subscribe_events(&mut self) -> Result<mpsc::Receiver<DeviceEvent>, DeviceError> {
         let hid_device = self
             .hid_device
             .take()
-            .ok_or_else(|| "Already subscribed to ZMK events".to_string())?;
+            .ok_or_else(|| DeviceError::Protocol("Already subscribed to ZMK events".to_string()))?;
         let (event_tx, event_rx) = mpsc::channel();
 
         std::thread::spawn(move || {
@@ -226,13 +223,19 @@ impl KeyboardProtocol for ZmkProtocol {
         row: usize,
         col: usize,
         action: &KeyAction,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), DeviceError> {
         let behavior = match action {
             KeyAction::Zmk(behavior) => behavior.clone(),
-            KeyAction::Qmk(_) => return Err("Cannot apply a QMK keycode to a ZMK keyboard".into()),
+            KeyAction::Qmk(_) => {
+                return Err(DeviceError::Unsupported(
+                    "Cannot apply a QMK keycode to a ZMK keyboard".to_string(),
+                ))
+            }
         };
         if row != 0 {
-            return Err(format!("Invalid ZMK key position {row}:{col}").into());
+            return Err(DeviceError::Unsupported(format!(
+                "Invalid ZMK key position {row}:{col}"
+            )));
         }
 
         // ZMK's matrix is 1×N: the column is the key position, and the write
@@ -242,11 +245,11 @@ impl KeyboardProtocol for ZmkProtocol {
         Ok(())
     }
 
-    fn save_keymap(&mut self) -> Result<(), Box<dyn Error>> {
+    fn save_keymap(&mut self) -> Result<(), DeviceError> {
         self.with_session(|session| session.save())
     }
 
-    fn open_edit_session(&mut self) -> Result<(), Box<dyn Error>> {
+    fn open_edit_session(&mut self) -> Result<(), DeviceError> {
         self.with_session(|_session| Ok(()))
     }
 
