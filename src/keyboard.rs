@@ -1,5 +1,5 @@
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, RecvTimeoutError};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -7,24 +7,9 @@ use std::time::{Duration, Instant};
 use crate::key_action::KeyAction;
 use crate::key_matrix::{BoundKey, KeyMatrix};
 use crate::layout_key::LayoutKey;
-use crate::protocols::{DeviceLocked, KeyboardLayout, KeyboardProtocol, WriteSupport};
+use crate::protocols::{DeviceEvent, DeviceLocked, KeyboardLayout, KeyboardProtocol, WriteSupport};
 use crate::ui_wake::UiWake;
 use std::error::Error;
-
-/// A layer packet's size field is `sizeof(layer_state_t)` and at most 4 bytes.
-const MAX_LAYER_STATE_BYTES: usize = 4;
-/// Leading byte of a layer-state packet, followed by a size and two bitmasks.
-const LAYER_STATE_PACKET: u8 = 0xff;
-/// Leading byte of a key event packet, followed by `row`, `col`, `pressed`.
-const KEY_EVENT_PACKET: u8 = 0xF1;
-
-/// A `0xff`-led packet is only a real layer-state packet when its size field is
-/// `sizeof(layer_state_t)` and both bitmasks fit; firmware without this module
-/// echoes other packets with the same leading byte.
-fn is_layer_state_packet(response: &[u8]) -> bool {
-    let size = response[1] as usize;
-    size != 0 && size <= MAX_LAYER_STATE_BYTES && 2 + 2 * size <= response.len()
-}
 
 /// The active layers as seen through the visible-layer bitmask (bit `i` selects layer
 /// `i`; see `Settings::visible_layers`).
@@ -145,7 +130,6 @@ pub struct Keyboard {
     alive: Arc<AtomicBool>,
     command_tx: mpsc::Sender<KeymapCommand>,
     write_support: WriteSupport,
-    _keepalive: Option<mpsc::Sender<()>>,
     action_filter: Option<crate::protocols::ActionFilter>,
 }
 
@@ -243,7 +227,7 @@ fn run_keymap_command(
 
 impl Keyboard {
     pub fn new(
-        protocol: Box<dyn KeyboardProtocol>,
+        mut protocol: Box<dyn KeyboardProtocol>,
         layout_name: String,
         config: OverlayConfig,
         ui_wake: UiWake,
@@ -267,6 +251,10 @@ impl Keyboard {
         let matrix = KeyMatrix::from_snapshot(snapshot, definition.rows, definition.cols);
 
         let write_support = protocol.write_support();
+        let event_rx = protocol
+            .subscribe_events()
+            .map_err(|e| format!("Failed to subscribe to keyboard events: {e}"))?;
+
         let (command_tx, command_rx) = mpsc::channel::<KeymapCommand>();
 
         let layer_state = Arc::new(Mutex::new(0));
@@ -275,24 +263,6 @@ impl Keyboard {
         let config = Arc::new(Mutex::new(config));
         let matrix = Arc::new(Mutex::new(matrix));
         let alive = Arc::new(AtomicBool::new(true));
-
-        let keepalive = protocol
-            .subscription_sender()
-            .map_err(|e| e.to_string())?
-            .map(|sender| {
-                let (tx, rx) = mpsc::channel::<()>();
-                thread::spawn(move || {
-                    loop {
-                        let _ = sender.set_active(true);
-                        match rx.recv_timeout(Duration::from_millis(1000)) {
-                            Err(RecvTimeoutError::Timeout) => continue,
-                            _ => break,
-                        }
-                    }
-                    let _ = sender.set_active(false);
-                });
-                tx
-            });
 
         let action_filter = protocol.action_filter();
         let keyboard = Keyboard {
@@ -305,7 +275,6 @@ impl Keyboard {
             alive: Arc::clone(&alive),
             command_tx,
             write_support,
-            _keepalive: keepalive,
             action_filter,
         };
 
@@ -315,101 +284,71 @@ impl Keyboard {
         let config_clone = Arc::clone(&keyboard.config);
         let matrix_clone = Arc::clone(&matrix);
         let alive_clone = Arc::clone(&alive);
+        let ui_wake_events = ui_wake.clone();
 
+        // 1. Live event consumer loop (pure domain logic)
         thread::spawn(move || {
-            let mut protocol = protocol;
-            // A dropped link (sleep, BLE/USB disconnect) makes `hid_read` error repeatedly.
-            // Mark the connection dead after a few consecutive errors to trigger reconnect.
-            const MAX_CONSECUTIVE_ERRORS: u32 = 5;
-            let mut consecutive_errors: u32 = 0;
             let mut previous_layers = ActiveLayers::Base;
-
-            loop {
-                let response = match protocol.hid_read() {
-                    Ok(response) => {
-                        consecutive_errors = 0;
-                        response
-                    }
-                    Err(_) => {
-                        consecutive_errors += 1;
-                        if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
-                            alive_clone.store(false, Ordering::Relaxed);
-                            ui_wake.request_repaint();
-                            break;
-                        }
-                        thread::sleep(Duration::from_millis(200));
-                        continue;
-                    }
-                };
-
-                let mut needs_repaint = false;
-                match response.first().copied() {
-                    Some(LAYER_STATE_PACKET)
-                        if response.len() >= 2 && is_layer_state_packet(&response) =>
-                    {
-                        let size = response[1] as usize;
-
-                        let mut default_bytes = [0u8; 4];
-                        default_bytes[..size].copy_from_slice(&response[2..2 + size]);
-                        let default_layer_state = u32::from_le_bytes(default_bytes);
-
-                        let mut layer_bytes = [0u8; 4];
-                        layer_bytes[..size].copy_from_slice(&response[2 + size..2 + 2 * size]);
-                        let layer_state = u32::from_le_bytes(layer_bytes);
-
+            while let Ok(event) = event_rx.recv() {
+                let needs_repaint = match event {
+                    DeviceEvent::LayersChanged {
+                        active_layers,
+                        default_layers,
+                    } => {
                         let config = *config_clone.lock().unwrap();
-                        let active_layers = ActiveLayers::classify(
-                            layer_state,
-                            default_layer_state,
+                        let active = ActiveLayers::classify(
+                            active_layers,
+                            default_layers,
                             config.visible_layers,
                         );
-                        *layer_state_clone.lock().unwrap() = layer_state;
-                        *default_layer_state_clone.lock().unwrap() = default_layer_state;
+                        *layer_state_clone.lock().unwrap() = active_layers;
+                        *default_layer_state_clone.lock().unwrap() = default_layers;
 
                         let mut visibility = visibility_clone.lock().unwrap();
                         *visibility = next_visibility_window(
-                            active_layers,
+                            active,
                             previous_layers,
                             *visibility,
                             Instant::now(),
                             config,
                         );
-                        previous_layers = active_layers;
-                        needs_repaint = true;
+                        previous_layers = active;
+                        true
                     }
-                    Some(KEY_EVENT_PACKET) if response.len() >= 4 => {
-                        let row = response[1] as usize;
-                        let col = response[2] as usize;
-                        let pressed = response[3];
+                    DeviceEvent::KeyPressed { row, col, pressed } => {
                         if let Ok(mut mat) = matrix_clone.lock() {
-                            mat.set_pressed(row, col, pressed != 0);
+                            mat.set_pressed(row, col, pressed);
                         }
-                        needs_repaint = visibility_clone.lock().unwrap().is_visible(Instant::now());
+                        visibility_clone.lock().unwrap().is_visible(Instant::now())
                     }
-                    _ => {}
-                }
+                    DeviceEvent::Disconnected(_) => {
+                        alive_clone.store(false, Ordering::Relaxed);
+                        ui_wake_events.request_repaint();
+                        break;
+                    }
+                };
 
                 if needs_repaint {
-                    ui_wake.request_repaint();
+                    ui_wake_events.request_repaint();
                 }
+            }
+            alive_clone.store(false, Ordering::Relaxed);
+            ui_wake_events.request_repaint();
+        });
 
-                // Commands run once per loop iteration, after the read: writes
-                // and reads never race the same HID handle, and a command waits
-                // at most one `hid_read` timeout. If the sender disconnected,
-                // the owning `Keyboard` was dropped, so exit the thread cleanly.
-                loop {
-                    match command_rx.try_recv() {
-                        Ok(command) => run_keymap_command(
-                            protocol.as_mut(),
-                            command,
-                            &layer_names,
-                            &matrix_clone,
-                            &ui_wake,
-                        ),
-                        Err(mpsc::TryRecvError::Empty) => break,
-                        Err(mpsc::TryRecvError::Disconnected) => return,
-                    }
-                }
+        // 2. Command execution loop (runs writes on dedicated worker)
+        let matrix_for_cmd = Arc::clone(&matrix);
+        let ui_wake_cmd = ui_wake;
+        thread::spawn(move || {
+            let mut protocol = protocol;
+            while let Ok(command) = command_rx.recv() {
+                run_keymap_command(
+                    protocol.as_mut(),
+                    command,
+                    &layer_names,
+                    &matrix_for_cmd,
+                    &ui_wake_cmd,
+                );
             }
         });
 

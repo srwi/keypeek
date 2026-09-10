@@ -1,11 +1,14 @@
 use super::layout_geometry::flattened_top_left_after_center_rotation;
 use super::zmk_rpc::{self, ZmkData, ZmkStudioSession, ZmkTransport};
-use super::{Key, KeyboardDefinition, KeyboardLayout, KeyboardProtocol, Reopener, WriteSupport};
+use super::{
+    pump_hid_reader, DeviceEvent, Key, KeyboardDefinition, KeyboardLayout, KeyboardProtocol,
+    Reopener, WriteSupport,
+};
 use crate::key_action::{KeyAction, KeymapSnapshot, LayerInfo};
 use hidapi::{HidApi, HidDevice};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 use zmk_studio_api::{BehaviorBindingParametersSet, BehaviorRole, ClientError, ResolvedLayer};
 
@@ -19,7 +22,7 @@ struct ZmkLayout {
 }
 
 pub struct ZmkProtocol {
-    hid_device: HidDevice,
+    hid_device: Option<HidDevice>,
     layout: Arc<ZmkLayout>,
     transport: ZmkTransport,
     session: Option<ZmkStudioSession>,
@@ -61,7 +64,7 @@ impl ZmkProtocol {
         })?;
 
         Ok(Self {
-            hid_device,
+            hid_device: Some(hid_device),
             layout,
             transport,
             session: None,
@@ -189,13 +192,27 @@ impl KeyboardProtocol for ZmkProtocol {
         Ok(self.layout.snapshot.lock().unwrap().clone())
     }
 
-    fn hid_read(&self) -> Result<Vec<u8>, Box<dyn Error>> {
-        let mut buffer = [0u8; 32];
-        let read = self
+    fn subscribe_events(&mut self) -> Result<mpsc::Receiver<DeviceEvent>, Box<dyn Error>> {
+        let hid_device = self
             .hid_device
-            .read_timeout(&mut buffer, 200)
-            .map_err(|e| format!("HID read error: {e}"))?;
-        Ok(buffer[..read].to_vec())
+            .take()
+            .ok_or_else(|| "Already subscribed to ZMK events".to_string())?;
+        let (event_tx, event_rx) = mpsc::channel();
+
+        std::thread::spawn(move || {
+            let mut buffer = [0u8; 32];
+            pump_hid_reader(
+                || match hid_device.read_timeout(&mut buffer, 200) {
+                    Ok(read) if read > 0 => Ok(Some(buffer[..read].to_vec())),
+                    Ok(_) => Ok(None),
+                    Err(e) => Err(e.to_string()),
+                },
+                event_tx,
+                "ZMK HID device disconnected",
+            );
+        });
+
+        Ok(event_rx)
     }
 
     fn write_support(&self) -> WriteSupport {

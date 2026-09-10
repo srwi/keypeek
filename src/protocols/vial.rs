@@ -1,9 +1,6 @@
-use super::qmk_common::{qmk_action_filter, qmk_read_snapshot, qmk_set_key, QmkFeatures};
-use super::{
-    kle_parser, KeyboardDefinition, KeyboardProtocol, RawHidSubscription, SubscriptionSender,
-    WriteSupport,
-};
-use crate::key_action::{KeyAction, KeymapSnapshot};
+use super::kle_parser;
+use super::qmk_common::{QmkFeatures, QmkProtocol};
+use super::KeyboardDefinition;
 use qmk_via_api::api::KeyboardApi;
 use std::error::Error;
 
@@ -16,14 +13,10 @@ enum VialCommand {
     Def = 0x02,
 }
 
-pub struct VialProtocol {
-    api: KeyboardApi,
-    definition: KeyboardDefinition,
-    features: QmkFeatures,
-}
+pub struct VialProtocol;
 
 impl VialProtocol {
-    pub fn connect(vid: u16, pid: u16) -> Result<Self, Box<dyn Error>> {
+    pub fn connect(vid: u16, pid: u16) -> Result<QmkProtocol, Box<dyn Error>> {
         // A read timeout keeps command/response round trips bounded so the HID
         // reader loop stays responsive between commands.
         let api = KeyboardApi::new(vid, pid, 0xff60, Some(250))
@@ -32,7 +25,7 @@ impl VialProtocol {
         Self::init_from_api(api, vid, pid)
     }
 
-    fn init_from_api(api: KeyboardApi, vid: u16, pid: u16) -> Result<Self, Box<dyn Error>> {
+    fn init_from_api(api: KeyboardApi, vid: u16, pid: u16) -> Result<QmkProtocol, Box<dyn Error>> {
         let (protocol_version, _keyboard_uid) = Self::get_keyboard_id(&api)?;
 
         if protocol_version == 0 {
@@ -42,11 +35,7 @@ impl VialProtocol {
         let definition = Self::fetch_definition(&api, vid, pid)?;
         let features = QmkFeatures::probe(&api);
 
-        Ok(Self {
-            api,
-            definition,
-            features,
-        })
+        Ok(QmkProtocol::new(api, definition, features))
     }
 
     fn vial_command(
@@ -138,44 +127,5 @@ impl VialProtocol {
             .map_err(|e| format!("Failed to parse VIAL definition JSON: {e}"))?;
 
         kle_parser::parse_vial_definition(&json, vid, pid)
-    }
-}
-
-impl KeyboardProtocol for VialProtocol {
-    fn get_layout_definition(&self) -> &KeyboardDefinition {
-        &self.definition
-    }
-
-    fn read_keymap(&self) -> Result<KeymapSnapshot, Box<dyn Error>> {
-        qmk_read_snapshot(&self.api, &self.definition)
-    }
-
-    fn hid_read(&self) -> Result<Vec<u8>, Box<dyn Error>> {
-        self.api
-            .hid_read()
-            .map_err(|e| format!("HID read error: {e}").into())
-    }
-
-    fn write_support(&self) -> WriteSupport {
-        WriteSupport::Immediate
-    }
-
-    fn set_key(
-        &mut self,
-        _layer: &crate::key_action::LayerInfo,
-        layer_index: usize,
-        row: usize,
-        col: usize,
-        action: &KeyAction,
-    ) -> Result<(), Box<dyn Error>> {
-        qmk_set_key(&self.api, layer_index, row, col, action)
-    }
-
-    fn subscription_sender(&self) -> Result<Option<Box<dyn SubscriptionSender>>, Box<dyn Error>> {
-        RawHidSubscription::open(self.definition.vid, self.definition.pid)
-    }
-
-    fn action_filter(&self) -> Option<super::ActionFilter> {
-        qmk_action_filter(self.features)
     }
 }

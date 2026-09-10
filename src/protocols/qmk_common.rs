@@ -1,12 +1,158 @@
-//! Shared transport, feature probing, and key writing utilities for QMK/VIA/VIAL protocols.
-
 use crate::key_action::{KeyAction, KeymapSnapshot};
+use crate::protocols::{
+    pump_hid_reader, DeviceEvent, KeyboardDefinition, KeyboardProtocol, WriteSupport,
+};
 use qmk_via_api::api::KeyboardApi;
 pub use qmk_via_api::QmkFeatures;
 use std::error::Error;
-use std::sync::Arc;
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+
+const KEYPEEK_SUBSCRIBE_MARKER: u8 = 0xC0;
+const KEYPEEK_SUBSCRIBE_ACTIVE: u8 = 0xA1;
+const KEYPEEK_SUBSCRIBE_INACTIVE: u8 = 0xA0;
+
+trait SubscriptionSender: Send {
+    fn set_active(&self, active: bool) -> Result<(), Box<dyn Error>>;
+}
+
+struct RawHidSubscription {
+    api: KeyboardApi,
+}
+
+impl RawHidSubscription {
+    fn open(vid: u16, pid: u16) -> Result<Option<Box<dyn SubscriptionSender>>, Box<dyn Error>> {
+        let api = KeyboardApi::new(vid, pid, 0xff60, None).map_err(|e| {
+            format!(
+                "Could not open the RAW HID interface ({vid:04x}:{pid:04x}) to subscribe to \
+                 layer events: {e}. The overlay cannot follow layer changes without it."
+            )
+        })?;
+        Ok(Some(Box::new(Self { api })))
+    }
+}
+
+impl SubscriptionSender for RawHidSubscription {
+    fn set_active(&self, active: bool) -> Result<(), Box<dyn Error>> {
+        let value = if active {
+            KEYPEEK_SUBSCRIBE_ACTIVE
+        } else {
+            KEYPEEK_SUBSCRIBE_INACTIVE
+        };
+        self.api
+            .hid_send(vec![KEYPEEK_SUBSCRIBE_MARKER, value])
+            .map_err(|e| format!("Subscription keepalive write error: {e}").into())
+    }
+}
+
+pub struct QmkSubscription {
+    pub events: mpsc::Receiver<DeviceEvent>,
+    pub keepalive: Option<mpsc::Sender<()>>,
+}
+
+/// Subscribes to live layer and key events from a QMK-based keyboard, managing the
+/// keepalive heartbeat thread and raw HID reader loop internally.
+pub fn qmk_subscribe_events(
+    api: Arc<Mutex<KeyboardApi>>,
+    vid: u16,
+    pid: u16,
+) -> Result<QmkSubscription, Box<dyn Error>> {
+    // 1. Start keepalive loop if subscription interface is available
+    let keepalive = RawHidSubscription::open(vid, pid)?.map(|sender| {
+        let (tx, rx) = mpsc::channel::<()>();
+        thread::spawn(move || {
+            loop {
+                let _ = sender.set_active(true);
+                match rx.recv_timeout(Duration::from_millis(1000)) {
+                    Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                    _ => break,
+                }
+            }
+            let _ = sender.set_active(false);
+        });
+        tx
+    });
+
+    // 2. Spawn event reader thread using pump_hid_reader
+    let (event_tx, event_rx) = mpsc::channel();
+    thread::spawn(move || {
+        pump_hid_reader(
+            || {
+                let api_guard = match api.lock() {
+                    Ok(g) => g,
+                    Err(_) => return Err("poisoned mutex".to_string()),
+                };
+                api_guard.hid_read().map(Some).map_err(|e| e.to_string())
+            },
+            event_tx,
+            "QMK device disconnected",
+        );
+    });
+
+    Ok(QmkSubscription {
+        events: event_rx,
+        keepalive,
+    })
+}
+
+/// A connected QMK/VIA/Vial keyboard communicating over raw HID.
+pub struct QmkProtocol {
+    api: Arc<Mutex<KeyboardApi>>,
+    definition: KeyboardDefinition,
+    features: QmkFeatures,
+    _keepalive: Option<mpsc::Sender<()>>,
+}
+
+impl QmkProtocol {
+    pub fn new(api: KeyboardApi, definition: KeyboardDefinition, features: QmkFeatures) -> Self {
+        Self {
+            api: Arc::new(Mutex::new(api)),
+            definition,
+            features,
+            _keepalive: None,
+        }
+    }
+}
+
+impl KeyboardProtocol for QmkProtocol {
+    fn get_layout_definition(&self) -> &KeyboardDefinition {
+        &self.definition
+    }
+
+    fn read_keymap(&self) -> Result<KeymapSnapshot, Box<dyn Error>> {
+        qmk_read_snapshot(&self.api.lock().unwrap(), &self.definition)
+    }
+
+    fn subscribe_events(&mut self) -> Result<mpsc::Receiver<DeviceEvent>, Box<dyn Error>> {
+        let subscription = qmk_subscribe_events(
+            Arc::clone(&self.api),
+            self.definition.vid,
+            self.definition.pid,
+        )?;
+        self._keepalive = subscription.keepalive;
+        Ok(subscription.events)
+    }
+
+    fn write_support(&self) -> WriteSupport {
+        WriteSupport::Immediate
+    }
+
+    fn set_key(
+        &mut self,
+        _layer: &crate::key_action::LayerInfo,
+        layer_index: usize,
+        row: usize,
+        col: usize,
+        action: &KeyAction,
+    ) -> Result<(), Box<dyn Error>> {
+        qmk_set_key(&self.api.lock().unwrap(), layer_index, row, col, action)
+    }
+
+    fn action_filter(&self) -> Option<crate::protocols::ActionFilter> {
+        qmk_action_filter(self.features)
+    }
+}
 
 /// Returns an action filter that disables keycodes not supported by the keyboard's features.
 pub fn qmk_action_filter(features: QmkFeatures) -> Option<super::ActionFilter> {

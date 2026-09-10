@@ -8,9 +8,8 @@ pub mod vial;
 pub mod zmk;
 pub mod zmk_rpc;
 
-use qmk_via_api::api::KeyboardApi;
 use std::error::Error;
-use std::sync::Arc;
+use std::sync::{mpsc, Arc};
 
 use self::mock::MockProtocol;
 use self::via::ViaProtocol;
@@ -19,9 +18,96 @@ use self::zmk::ZmkProtocol;
 
 pub use self::zmk_rpc::DeviceLocked;
 
-pub const KEYPEEK_SUBSCRIBE_MARKER: u8 = 0xC0;
-pub const KEYPEEK_SUBSCRIBE_ACTIVE: u8 = 0xA1;
-pub const KEYPEEK_SUBSCRIBE_INACTIVE: u8 = 0xA0;
+/// Strongly-typed events emitted by a keyboard driver or protocol adapter.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DeviceEvent {
+    /// Layer bitmasks changed.
+    LayersChanged {
+        active_layers: u32,
+        default_layers: u32,
+    },
+    /// A physical key at (row, col) was pressed or released.
+    KeyPressed {
+        row: usize,
+        col: usize,
+        pressed: bool,
+    },
+    /// The physical connection was dropped.
+    Disconnected(String),
+}
+
+/// A layer packet's size field is `sizeof(layer_state_t)` and at most 4 bytes.
+const MAX_LAYER_STATE_BYTES: usize = 4;
+/// Leading byte of a layer-state packet, followed by a size and two bitmasks.
+const LAYER_STATE_PACKET: u8 = 0xff;
+/// Leading byte of a key event packet, followed by `row`, `col`, `pressed`.
+const KEY_EVENT_PACKET: u8 = 0xF1;
+
+/// Decodes raw HID packets emitted by KeyPeek companion firmware modules
+/// (QMK/Vial `srwi/keypeek_layer_notify` and ZMK raw-HID adapter).
+pub fn decode_raw_hid_packet(response: &[u8]) -> Option<DeviceEvent> {
+    match response.first().copied() {
+        Some(LAYER_STATE_PACKET) if response.len() >= 2 => {
+            let size = response[1] as usize;
+            if size != 0 && size <= MAX_LAYER_STATE_BYTES && 2 + 2 * size <= response.len() {
+                let mut default_bytes = [0u8; 4];
+                default_bytes[..size].copy_from_slice(&response[2..2 + size]);
+                let default_layers = u32::from_le_bytes(default_bytes);
+
+                let mut layer_bytes = [0u8; 4];
+                layer_bytes[..size].copy_from_slice(&response[2 + size..2 + 2 * size]);
+                let active_layers = u32::from_le_bytes(layer_bytes);
+
+                Some(DeviceEvent::LayersChanged {
+                    active_layers,
+                    default_layers,
+                })
+            } else {
+                None
+            }
+        }
+        Some(KEY_EVENT_PACKET) if response.len() >= 4 => {
+            let row = response[1] as usize;
+            let col = response[2] as usize;
+            let pressed = response[3] != 0;
+            Some(DeviceEvent::KeyPressed { row, col, pressed })
+        }
+        _ => None,
+    }
+}
+
+/// Pumps raw HID responses through `decode_raw_hid_packet` and sends resulting `DeviceEvent`s.
+/// Retries on transient errors and emits `DeviceEvent::Disconnected` after consecutive failures.
+pub fn pump_hid_reader<F>(mut read: F, event_tx: mpsc::Sender<DeviceEvent>, disconnect_msg: &str)
+where
+    F: FnMut() -> Result<Option<Vec<u8>>, String>,
+{
+    const MAX_CONSECUTIVE_ERRORS: u32 = 5;
+    let mut consecutive_errors: u32 = 0;
+    loop {
+        match read() {
+            Ok(Some(bytes)) => {
+                consecutive_errors = 0;
+                if let Some(event) = decode_raw_hid_packet(&bytes) {
+                    if event_tx.send(event).is_err() {
+                        break;
+                    }
+                }
+            }
+            Ok(None) => {
+                // Timeout / no data, continue
+            }
+            Err(_) => {
+                consecutive_errors += 1;
+                if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                    let _ = event_tx.send(DeviceEvent::Disconnected(disconnect_msg.to_string()));
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+        }
+    }
+}
 
 pub type ActionFilter = Arc<dyn Fn(&crate::key_action::KeyAction) -> bool + Send + Sync>;
 
@@ -94,7 +180,9 @@ pub trait KeyboardProtocol: Send {
 
     fn read_keymap(&self) -> Result<crate::key_action::KeymapSnapshot, Box<dyn Error>>;
 
-    fn hid_read(&self) -> Result<Vec<u8>, Box<dyn Error>>;
+    /// Subscribes to live layer-state and key-press events emitted by the device.
+    /// The adapter manages its own background reading and keepalive heartbeats.
+    fn subscribe_events(&mut self) -> Result<mpsc::Receiver<DeviceEvent>, Box<dyn Error>>;
 
     fn write_support(&self) -> WriteSupport {
         WriteSupport::None
@@ -128,10 +216,6 @@ pub trait KeyboardProtocol: Send {
     /// Closes any transient write connection (ZMK Studio client).
     fn end_edit_session(&mut self) {}
 
-    fn subscription_sender(&self) -> Result<Option<Box<dyn SubscriptionSender>>, Box<dyn Error>> {
-        Ok(None)
-    }
-
     fn reopener(&self) -> Option<Arc<dyn Reopener>> {
         None
     }
@@ -143,39 +227,6 @@ pub trait KeyboardProtocol: Send {
 
 pub trait Reopener: Send + Sync {
     fn reopen(&self) -> Result<Box<dyn KeyboardProtocol>, Box<dyn Error>>;
-}
-
-pub trait SubscriptionSender: Send {
-    fn set_active(&self, active: bool) -> Result<(), Box<dyn Error>>;
-}
-
-pub struct RawHidSubscription {
-    api: KeyboardApi,
-}
-
-impl RawHidSubscription {
-    pub fn open(vid: u16, pid: u16) -> Result<Option<Box<dyn SubscriptionSender>>, Box<dyn Error>> {
-        let api = KeyboardApi::new(vid, pid, 0xff60, None).map_err(|e| {
-            format!(
-                "Could not open the RAW HID interface ({vid:04x}:{pid:04x}) to subscribe to \
-                 layer events: {e}. The overlay cannot follow layer changes without it."
-            )
-        })?;
-        Ok(Some(Box::new(Self { api })))
-    }
-}
-
-impl SubscriptionSender for RawHidSubscription {
-    fn set_active(&self, active: bool) -> Result<(), Box<dyn Error>> {
-        let value = if active {
-            KEYPEEK_SUBSCRIBE_ACTIVE
-        } else {
-            KEYPEEK_SUBSCRIBE_INACTIVE
-        };
-        self.api
-            .hid_send(vec![KEYPEEK_SUBSCRIBE_MARKER, value])
-            .map_err(|e| format!("Subscription keepalive write error: {e}").into())
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -233,5 +284,76 @@ pub fn connect_protocol(
             let protocol = MockProtocol::connect()?;
             Ok(Box::new(protocol))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_decode_layer_state_packet() {
+        // Valid 0xff layer packet: [0xff, size=4, default_state (le), layer_state (le)]
+        let mut packet = vec![0xff, 4];
+        packet.extend_from_slice(&1u32.to_le_bytes()); // default layer = 1
+        packet.extend_from_slice(&4u32.to_le_bytes()); // active layer = 4
+
+        let event = decode_raw_hid_packet(&packet);
+        assert_eq!(
+            event,
+            Some(DeviceEvent::LayersChanged {
+                active_layers: 4,
+                default_layers: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn test_decode_layer_state_invalid_size() {
+        // Size 0 is invalid
+        let packet = vec![0xff, 0, 1, 0, 0, 0, 4, 0, 0, 0];
+        assert_eq!(decode_raw_hid_packet(&packet), None);
+
+        // Size > 4 is invalid
+        let packet = vec![0xff, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        assert_eq!(decode_raw_hid_packet(&packet), None);
+
+        // Truncated buffer
+        let packet = vec![0xff, 4, 1, 0];
+        assert_eq!(decode_raw_hid_packet(&packet), None);
+    }
+
+    #[test]
+    fn test_decode_key_event_packet() {
+        // Key press: [0xF1, row, col, pressed]
+        let packet = vec![0xF1, 2, 5, 1];
+        assert_eq!(
+            decode_raw_hid_packet(&packet),
+            Some(DeviceEvent::KeyPressed {
+                row: 2,
+                col: 5,
+                pressed: true,
+            })
+        );
+
+        // Key release
+        let packet = vec![0xF1, 2, 5, 0];
+        assert_eq!(
+            decode_raw_hid_packet(&packet),
+            Some(DeviceEvent::KeyPressed {
+                row: 2,
+                col: 5,
+                pressed: false,
+            })
+        );
+    }
+
+    #[test]
+    fn test_decode_unknown_packet() {
+        let packet = vec![0x00, 1, 2, 3];
+        assert_eq!(decode_raw_hid_packet(&packet), None);
+
+        let empty: [u8; 0] = [];
+        assert_eq!(decode_raw_hid_packet(&empty), None);
     }
 }

@@ -4,13 +4,13 @@
 //! so layer-change rendering can be exercised. The mock device is only registered
 //! during discovery in debug builds (`cfg!(debug_assertions)` in `device_discovery`).
 
-use super::{KeyboardDefinition, KeyboardProtocol, WriteSupport};
+use super::{DeviceEvent, KeyboardDefinition, KeyboardProtocol, WriteSupport};
 use crate::key_action::{KeyAction, KeymapSnapshot};
 use qmk_via_api::keycodes::Keycode;
 use qmk_via_api::QmkLayerOp;
 use std::collections::HashMap;
 use std::error::Error;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc;
 use std::sync::OnceLock;
 use std::thread;
 use std::time::Duration;
@@ -38,7 +38,6 @@ pub struct MockProtocol {
     layers: Vec<Vec<u16>>,
     /// The `layer_state` masks emitted by successive `hid_read` calls, cycled in order.
     layer_states: Vec<u32>,
-    tick: AtomicUsize,
     tick_interval: Duration,
 }
 
@@ -85,7 +84,6 @@ impl MockProtocol {
             definition: fixture.definition,
             layer_states: layer_state_cycle(layers.len()),
             layers,
-            tick: AtomicUsize::new(0),
             tick_interval,
         })
     }
@@ -115,10 +113,28 @@ impl KeyboardProtocol for MockProtocol {
         })
     }
 
-    fn hid_read(&self) -> Result<Vec<u8>, Box<dyn Error>> {
-        thread::sleep(self.tick_interval);
-        let index = self.tick.fetch_add(1, Ordering::Relaxed) % self.layer_states.len();
-        Ok(layer_packet(DEFAULT_LAYER_STATE, self.layer_states[index]))
+    fn subscribe_events(&mut self) -> Result<mpsc::Receiver<DeviceEvent>, Box<dyn Error>> {
+        let (event_tx, event_rx) = mpsc::channel();
+        let tick_interval = self.tick_interval;
+        let layer_states = self.layer_states.clone();
+
+        thread::spawn(move || {
+            let mut tick = 0;
+            loop {
+                thread::sleep(tick_interval);
+                let index = tick % layer_states.len();
+                tick += 1;
+                let event = DeviceEvent::LayersChanged {
+                    active_layers: layer_states[index],
+                    default_layers: DEFAULT_LAYER_STATE,
+                };
+                if event_tx.send(event).is_err() {
+                    break;
+                }
+            }
+        });
+
+        Ok(event_rx)
     }
 
     fn write_support(&self) -> WriteSupport {
@@ -148,15 +164,6 @@ impl KeyboardProtocol for MockProtocol {
         *cell = keycode;
         Ok(())
     }
-}
-
-/// Builds the layer-change packet that [`crate::keyboard::Keyboard`] expects: a `0xff`
-/// marker, the width of `layer_state_t`, then the default and momentary layer bitmasks.
-fn layer_packet(default_layer_state: u32, layer_state: u32) -> Vec<u8> {
-    let mut packet = vec![0xff, 4];
-    packet.extend_from_slice(&default_layer_state.to_le_bytes());
-    packet.extend_from_slice(&layer_state.to_le_bytes());
-    packet
 }
 
 /// Cycles the momentary layers, starting above the base layer so the overlay is visible
