@@ -4,7 +4,8 @@ use super::{
     pump_hid_reader, DeviceError, DeviceEvent, Key, KeyboardDefinition, KeyboardLayout,
     KeyboardProtocol, Reopener, WriteSupport,
 };
-use crate::key_action::{KeyAction, KeymapSnapshot, LayerInfo};
+use crate::key_spec::{KeySpec, KeymapSnapshot, LayerInfo};
+use crate::protocols::zmk_codec;
 use hidapi::{HidApi, HidDevice};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
@@ -85,7 +86,7 @@ impl ZmkProtocol {
         result.map_err(DeviceError::from)
     }
 
-    fn update_cached_action(&self, layer_index: usize, row: usize, col: usize, action: KeyAction) {
+    fn update_cached_action(&self, layer_index: usize, row: usize, col: usize, action: KeySpec) {
         let mut snapshot = self.layout.snapshot.lock().unwrap();
         if let Some(cell) = snapshot
             .actions
@@ -222,16 +223,9 @@ impl KeyboardProtocol for ZmkProtocol {
         layer_index: usize,
         row: usize,
         col: usize,
-        action: &KeyAction,
+        spec: &KeySpec,
     ) -> Result<(), DeviceError> {
-        let behavior = match action {
-            KeyAction::Zmk(behavior) => behavior.clone(),
-            KeyAction::Qmk(_) => {
-                return Err(DeviceError::Unsupported(
-                    "Cannot apply a QMK keycode to a ZMK keyboard".to_string(),
-                ))
-            }
-        };
+        let behavior = zmk_codec::keyspec_to_zmk(spec)?;
         if row != 0 {
             return Err(DeviceError::Unsupported(format!(
                 "Invalid ZMK key position {row}:{col}"
@@ -241,7 +235,7 @@ impl KeyboardProtocol for ZmkProtocol {
         // ZMK's matrix is 1×N: the column is the key position, and the write
         // RPC addresses layers by their stable id.
         self.with_session(|session| session.set_key(layer.id, col as i32, behavior))?;
-        self.update_cached_action(layer_index, row, col, action.clone());
+        self.update_cached_action(layer_index, row, col, spec.clone());
         Ok(())
     }
 
@@ -264,24 +258,24 @@ impl KeyboardProtocol for ZmkProtocol {
         }))
     }
 
-    fn action_filter(
-        &self,
-    ) -> Option<Arc<dyn Fn(&crate::key_action::KeyAction) -> bool + Send + Sync>> {
+    fn action_filter(&self) -> Option<crate::protocols::ActionFilter> {
         let supported = self.layout.supported_behaviors.clone();
         let metadata = self.layout.behavior_metadata.clone();
-        Some(Arc::new(move |action| match action {
-            crate::key_action::KeyAction::Zmk(behavior) => match behavior.role() {
-                Some(role) => {
-                    if !supported.is_empty() && !supported.contains(&role) {
-                        return false;
+        Some(Arc::new(move |spec| {
+            match zmk_codec::keyspec_to_zmk(spec) {
+                Ok(behavior) => match behavior.role() {
+                    Some(role) => {
+                        if !supported.is_empty() && !supported.contains(&role) {
+                            return false;
+                        }
+                        metadata
+                            .get(&role)
+                            .is_none_or(|sets| behavior.matches_metadata(sets))
                     }
-                    metadata
-                        .get(&role)
-                        .is_none_or(|sets| behavior.matches_metadata(sets))
-                }
-                None => true,
-            },
-            _ => true,
+                    None => true,
+                },
+                Err(_) => false,
+            }
         }))
     }
 }
@@ -367,10 +361,10 @@ fn snapshot_from_resolved(resolved: &[ResolvedLayer], num_keys: usize) -> Keymap
     let actions = resolved
         .iter()
         .map(|layer| {
-            let mut row: Vec<Option<KeyAction>> = layer
+            let mut row: Vec<Option<KeySpec>> = layer
                 .bindings
                 .iter()
-                .map(|b| Some(KeyAction::Zmk(b.clone())))
+                .map(|b| Some(zmk_codec::zmk_to_keyspec(b)))
                 .collect();
             row.resize(num_keys, None);
             vec![row]

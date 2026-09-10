@@ -5,7 +5,7 @@ use super::picker::{
     SelectedKey,
 };
 use super::{EditTarget, EditorState};
-use crate::key_action::KeyAction;
+use crate::key_spec::KeySpec;
 use crate::keyboard::Keyboard;
 use crate::ui_widgets::titled_group;
 
@@ -184,23 +184,18 @@ impl Default for QmkDraft {
 
 impl QmkDraft {
     /// Initializes draft for a section, preserving the active keycode if it matches the section.
-    pub(super) fn for_section(section: Section, current_action: Option<&KeyAction>) -> Self {
-        match current_action {
-            Some(KeyAction::Qmk(code)) => {
-                let d = Self::from_keycode(*code);
-                if d.section == section {
-                    d
-                } else {
-                    Self {
-                        section,
-                        ..Default::default()
-                    }
-                }
+    pub(super) fn for_section(section: Section, current_action: Option<&KeySpec>) -> Self {
+        let current_code =
+            current_action.and_then(|spec| crate::protocols::qmk_codec::keyspec_to_qmk(spec).ok());
+        if let Some(code) = current_code {
+            let d = Self::from_keycode(code);
+            if d.section == section {
+                return d;
             }
-            _ => Self {
-                section,
-                ..Default::default()
-            },
+        }
+        Self {
+            section,
+            ..Default::default()
         }
     }
 
@@ -475,7 +470,7 @@ impl EditorState {
                 .qmk_draft
                 .mod_tap_layer
                 .and_then(|l| QmkLayerOp::Momentary.encode(l.min(15) as u8))
-                .map(KeyAction::Qmk);
+                .map(crate::protocols::qmk_codec::qmk_to_keyspec);
             let group = super::qmk_catalog::layer_picker_group(keyboard.layer_infos().len());
             titled_candidate_group(
                 ui,
@@ -485,8 +480,10 @@ impl EditorState {
                 action.as_ref().map(|a| SelectedKey::new(a, is_valid)),
                 style,
                 |candidate| {
-                    if let KeyAction::Qmk(code) = &candidate.binding {
-                        if let QmkKeycode::LayerOp { layer, .. } = QmkKeycode::from_u16(*code) {
+                    if let Ok(code) =
+                        crate::protocols::qmk_codec::keyspec_to_qmk(&candidate.binding)
+                    {
+                        if let QmkKeycode::LayerOp { layer, .. } = QmkKeycode::from_u16(code) {
                             self.qmk_draft.mod_tap_layer = Some(layer as usize);
                             self.commit_qmk_draft(keyboard, target);
                         }
@@ -513,7 +510,7 @@ impl EditorState {
         if section.has_tap_key() {
             let action = (self.qmk_draft.base_code != 0)
                 .then_some(self.qmk_draft.base_code)
-                .map(KeyAction::Qmk);
+                .map(crate::protocols::qmk_codec::qmk_to_keyspec);
             let group = super::qmk_catalog::category(KeycodeCategory::Basic);
             titled_candidate_group(
                 ui,
@@ -523,8 +520,10 @@ impl EditorState {
                 action.as_ref().map(|a| SelectedKey::new(a, is_valid)),
                 style,
                 |candidate| {
-                    if let KeyAction::Qmk(code) = &candidate.binding {
-                        self.qmk_draft.base_code = *code;
+                    if let Ok(code) =
+                        crate::protocols::qmk_codec::keyspec_to_qmk(&candidate.binding)
+                    {
+                        self.qmk_draft.base_code = code;
                         self.commit_qmk_draft(keyboard, target);
                     }
                 },
@@ -534,7 +533,10 @@ impl EditorState {
 
     /// Applies the current draft keycode to the target key.
     fn commit_qmk_draft(&mut self, keyboard: &Keyboard, target: EditTarget) {
-        let staged = self.qmk_draft.staged().map(KeyAction::Qmk);
+        let staged = self
+            .qmk_draft
+            .staged()
+            .map(crate::protocols::qmk_codec::qmk_to_keyspec);
         self.commit_staged(keyboard, target, staged);
     }
 }

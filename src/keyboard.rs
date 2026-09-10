@@ -4,8 +4,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::key_action::KeyAction;
 use crate::key_matrix::{BoundKey, KeyMatrix};
+use crate::key_spec::{KeySpec, LayerInfo};
 use crate::layout_key::LayoutKey;
 use crate::protocols::{DeviceEvent, KeyboardLayout, KeyboardProtocol, WriteSupport};
 use crate::ui_wake::UiWake;
@@ -143,7 +143,7 @@ pub enum KeymapCommand {
         layer_index: usize,
         row: usize,
         col: usize,
-        action: KeyAction,
+        action: KeySpec,
         respond: mpsc::Sender<Result<(), String>>,
     },
     Save {
@@ -395,16 +395,11 @@ impl Keyboard {
             .cloned()
     }
 
-    pub fn layer_infos(&self) -> Vec<crate::key_action::LayerInfo> {
+    pub fn layer_infos(&self) -> Vec<LayerInfo> {
         self.matrix.lock().unwrap().layer_infos().to_vec()
     }
 
-    pub fn get_action(
-        &self,
-        layer: usize,
-        row: usize,
-        col: usize,
-    ) -> Option<crate::key_action::KeyAction> {
+    pub fn get_action(&self, layer: usize, row: usize, col: usize) -> Option<KeySpec> {
         self.matrix
             .lock()
             .unwrap()
@@ -425,7 +420,7 @@ impl Keyboard {
         layer_index: usize,
         row: usize,
         col: usize,
-        action: KeyAction,
+        action: KeySpec,
     ) -> mpsc::Receiver<Result<(), String>> {
         self.send_keymap_command(|respond| KeymapCommand::SetKey {
             layer_index,
@@ -508,7 +503,7 @@ impl Keyboard {
         self.held_mod_mask() & crate::layout_key::HELD_MOD_RALT != 0
     }
 
-    pub fn is_action_supported(&self, action: &KeyAction) -> bool {
+    pub fn is_action_supported(&self, action: &KeySpec) -> bool {
         self.action_filter
             .as_ref()
             .is_none_or(|filter| filter(action))

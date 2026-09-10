@@ -1,4 +1,5 @@
-use crate::key_action::{KeyAction, KeymapSnapshot};
+use crate::key_spec::{KeySpec, KeymapSnapshot, LayerInfo};
+use crate::protocols::qmk_codec;
 use crate::protocols::{
     pump_hid_reader, DeviceError, DeviceEvent, KeyboardDefinition, KeyboardProtocol, WriteSupport,
 };
@@ -140,13 +141,13 @@ impl KeyboardProtocol for QmkProtocol {
 
     fn set_key(
         &mut self,
-        _layer: &crate::key_action::LayerInfo,
+        _layer: &LayerInfo,
         layer_index: usize,
         row: usize,
         col: usize,
-        action: &KeyAction,
+        spec: &KeySpec,
     ) -> Result<(), DeviceError> {
-        qmk_set_key(&self.api.lock().unwrap(), layer_index, row, col, action)
+        qmk_set_key(&self.api.lock().unwrap(), layer_index, row, col, spec)
     }
 
     fn action_filter(&self) -> Option<crate::protocols::ActionFilter> {
@@ -156,9 +157,10 @@ impl KeyboardProtocol for QmkProtocol {
 
 /// Returns an action filter that disables keycodes not supported by the keyboard's features.
 pub fn qmk_action_filter(features: QmkFeatures) -> Option<super::ActionFilter> {
-    Some(Arc::new(move |action| match action {
-        KeyAction::Qmk(code) => features.is_keycode_supported(*code),
-        _ => true,
+    Some(Arc::new(move |spec| {
+        qmk_codec::keyspec_to_qmk(spec)
+            .map(|code| features.is_keycode_supported(code))
+            .unwrap_or(false)
     }))
 }
 
@@ -186,13 +188,13 @@ pub fn qmk_read_snapshot(
             let row = i / cols;
             let col = i % cols;
             if row < rows && col < cols {
-                layer_actions[row][col] = Some(KeyAction::Qmk(keycode));
+                layer_actions[row][col] = Some(qmk_codec::qmk_to_keyspec(keycode));
             }
         }
     }
 
     Ok(KeymapSnapshot {
-        layers: crate::key_action::LayerInfo::indexed(layer_count),
+        layers: LayerInfo::indexed(layer_count),
         actions,
     })
 }
@@ -203,14 +205,10 @@ pub fn qmk_set_key(
     layer_index: usize,
     row: usize,
     col: usize,
-    action: &KeyAction,
+    spec: &KeySpec,
 ) -> Result<(), DeviceError> {
-    match action {
-        KeyAction::Qmk(code) => qmk_set_key_with_retry(api, layer_index, row, col, *code),
-        KeyAction::Zmk(_) => Err(DeviceError::Unsupported(
-            "Cannot apply a ZMK behavior to a QMK keyboard".to_string(),
-        )),
-    }
+    let code = qmk_codec::keyspec_to_qmk(spec)?;
+    qmk_set_key_with_retry(api, layer_index, row, col, code)
 }
 
 /// Writes a keycode via the VIA protocol with readback verification on error.
@@ -219,25 +217,29 @@ pub(crate) fn qmk_set_key_with_retry(
     layer_index: usize,
     row: usize,
     col: usize,
-    code: u16,
+    keycode: u16,
 ) -> Result<(), DeviceError> {
-    match api.set_key(layer_index as u8, row as u8, col as u8, code) {
-        Ok(_) => Ok(()),
-        Err(qmk_via_api::Error::BadCommandResponse(_)) => {
-            for _ in 0..3 {
-                thread::sleep(Duration::from_millis(50));
-                if let Ok(readback) = api.get_key(layer_index as u8, row as u8, col as u8) {
-                    if readback == code {
-                        return Ok(());
+    let max_retries = 3;
+    for attempt in 0..max_retries {
+        match api.set_key(layer_index as u8, row as u8, col as u8, keycode) {
+            Ok(_) => return Ok(()),
+            Err(e) => {
+                if attempt == max_retries - 1 {
+                    // Check if write actually took effect despite the error
+                    if let Ok(actual) = api.get_key(layer_index as u8, row as u8, col as u8) {
+                        if actual == keycode {
+                            return Ok(());
+                        }
                     }
+                    return Err(DeviceError::Protocol(format!(
+                        "Failed to write key ({e}); write did not take effect"
+                    )));
                 }
+                std::thread::sleep(Duration::from_millis(50));
             }
-            Err(DeviceError::Protocol(
-                "Failed to set key: the device did not confirm the write".to_string(),
-            ))
         }
-        Err(e) => Err(DeviceError::Protocol(format!("Failed to set key: {e}"))),
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -255,14 +257,18 @@ mod tests {
         };
 
         let filter = qmk_action_filter(features).expect("filter should be Some");
-        assert!(filter(&KeyAction::Qmk(Keycode::KC_A as u16)));
-        assert!(filter(&KeyAction::Qmk(Keycode::QK_UNDERGLOW_TOGGLE as u16)));
-        assert!(!filter(&KeyAction::Qmk(
+        assert!(filter(&qmk_codec::qmk_to_keyspec(Keycode::KC_A as u16)));
+        assert!(filter(&qmk_codec::qmk_to_keyspec(
+            Keycode::QK_UNDERGLOW_TOGGLE as u16
+        )));
+        assert!(!filter(&qmk_codec::qmk_to_keyspec(
             Keycode::QK_BACKLIGHT_TOGGLE as u16
         )));
-        assert!(!filter(&KeyAction::Qmk(
+        assert!(!filter(&qmk_codec::qmk_to_keyspec(
             Keycode::QK_RGB_MATRIX_TOGGLE as u16
         )));
-        assert!(!filter(&KeyAction::Qmk(Keycode::QK_AUDIO_TOGGLE as u16)));
+        assert!(!filter(&qmk_codec::qmk_to_keyspec(
+            Keycode::QK_AUDIO_TOGGLE as u16
+        )));
     }
 }

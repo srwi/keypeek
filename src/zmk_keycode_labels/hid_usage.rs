@@ -3,7 +3,7 @@ use crate::layout_key::{Label, LayoutKey};
 use zmk_studio_api::HidUsage;
 
 pub fn hid_usage_to_layout_key(usage: HidUsage) -> LayoutKey {
-    let mods = Modifiers::from_zmk_mask(usage.modifiers());
+    let mods = crate::protocols::zmk_codec::from_zmk_mask(usage.modifiers());
     if mods.is_empty() {
         if let Some(key) = crate::hid_labels::hid_usage_to_layout_key(usage.page(), usage.id()) {
             return key;

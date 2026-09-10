@@ -1,7 +1,7 @@
 //! Shared key picker controls. Draws candidate keys and modifier selectors using [`crate::key_paint`].
 
-use crate::key_action::KeyAction;
 use crate::key_paint::{self, KeyDisplay, KeyPaintStyle};
+use crate::key_spec::KeySpec;
 use crate::layout_key::{modifier_symbols, KeycodeKind, Label, LayoutKey};
 
 /// Key unit size in picker grids in pixels.
@@ -12,8 +12,8 @@ const GAP: f32 = 6.0;
 /// Candidate key binding displayed in a picker grid.
 #[derive(Clone)]
 pub struct Candidate {
-    /// Firmware key binding.
-    pub binding: KeyAction,
+    /// Generic key binding.
+    pub binding: KeySpec,
     /// Visual key representation.
     pub key: LayoutKey,
     /// Indicates a transparent key slot.
@@ -23,7 +23,7 @@ pub struct Candidate {
 }
 
 impl Candidate {
-    pub fn new(binding: KeyAction, key: LayoutKey) -> Self {
+    pub fn new(binding: KeySpec, key: LayoutKey) -> Self {
         let search_haystack = build_search_haystack(&binding, &key);
         Self {
             binding,
@@ -36,6 +36,13 @@ impl Candidate {
     /// Sets whether this candidate represents a transparent key slot.
     pub fn with_transparent(mut self, transparent: bool) -> Self {
         self.transparent = transparent;
+        self
+    }
+
+    /// Appends an extra search token (e.g. firmware-specific keycode name or hex code)
+    /// to the precomputed search haystack.
+    pub fn with_search_token(mut self, token: impl AsRef<str>) -> Self {
+        push_token(&mut self.search_haystack, token.as_ref());
         self
     }
 
@@ -56,11 +63,8 @@ impl Candidate {
 
     /// Creates a candidate for any key action, providing consistent display
     /// labels for transparent and none slots across protocols.
-    pub fn from_action(binding: KeyAction, layer_names: &[String]) -> Self {
-        let is_none = match &binding {
-            KeyAction::Qmk(code) => *code == qmk_via_api::keycodes::Keycode::KC_NO as u16,
-            KeyAction::Zmk(b) => *b == zmk_studio_api::Behavior::None,
-        };
+    pub fn from_action(binding: KeySpec, layer_names: &[String]) -> Self {
+        let is_none = matches!(binding, KeySpec::None);
         if is_none {
             return Self::new(
                 binding,
@@ -105,7 +109,7 @@ fn push_lbl_token(haystack: &mut String, lbl: &Option<crate::layout_key::Label>)
     }
 }
 
-fn build_search_haystack(binding: &KeyAction, key: &LayoutKey) -> String {
+fn build_search_haystack(binding: &KeySpec, key: &LayoutKey) -> String {
     let mut haystack = String::with_capacity(64);
 
     push_token(&mut haystack, &key.tap.full);
@@ -113,31 +117,21 @@ fn build_search_haystack(binding: &KeyAction, key: &LayoutKey) -> String {
     push_opt_token(&mut haystack, &key.shifted);
     push_opt_token(&mut haystack, &key.ralt);
     push_opt_token(&mut haystack, &key.ralt_shifted);
+    push_opt_token(&mut haystack, &key.symbol);
     push_opt_token(&mut haystack, &key.tooltip_text());
     push_lbl_token(&mut haystack, &key.behavior);
     push_lbl_token(&mut haystack, &key.argument);
 
     match binding {
-        KeyAction::Qmk(code) => {
-            if let Ok(kc) = qmk_via_api::keycodes::Keycode::try_from(*code) {
-                push_token(&mut haystack, kc.as_ref());
-            }
+        KeySpec::KeyPress { key, .. }
+        | KeySpec::KeyToggle(key)
+        | KeySpec::LayerTap { tap: key, .. }
+        | KeySpec::ModTap { tap: key, .. }
+        | KeySpec::StickyKey { key: Some(key), .. } => {
             use std::fmt::Write;
-            let _ = write!(&mut haystack, "{:04x} ", code);
+            let _ = write!(&mut haystack, "{:04x} ", key.id);
         }
-        KeyAction::Zmk(behavior) => match behavior {
-            zmk_studio_api::Behavior::KeyPress(usage)
-            | zmk_studio_api::Behavior::KeyToggle(usage)
-            | zmk_studio_api::Behavior::StickyKey(usage) => {
-                if let Ok(kc) = zmk_studio_api::Keycode::try_from(usage.to_hid_usage()) {
-                    push_token(&mut haystack, kc.as_ref());
-                    push_token(&mut haystack, kc.to_name());
-                }
-                use std::fmt::Write;
-                let _ = write!(&mut haystack, "{:02x} ", usage.id());
-            }
-            _ => {}
-        },
+        _ => {}
     }
 
     haystack
@@ -146,25 +140,25 @@ fn build_search_haystack(binding: &KeyAction, key: &LayoutKey) -> String {
 /// Selected key state and validity indicator for picker grids.
 #[derive(Clone, Copy)]
 pub struct SelectedKey<'a> {
-    pub action: &'a KeyAction,
+    pub action: &'a KeySpec,
     pub valid: bool,
 }
 
 impl<'a> SelectedKey<'a> {
-    pub fn valid(action: &'a KeyAction) -> Self {
+    pub fn valid(action: &'a KeySpec) -> Self {
         Self {
             action,
             valid: true,
         }
     }
 
-    pub fn new(action: &'a KeyAction, valid: bool) -> Self {
+    pub fn new(action: &'a KeySpec, valid: bool) -> Self {
         Self { action, valid }
     }
 }
 
-impl<'a> From<&'a KeyAction> for SelectedKey<'a> {
-    fn from(action: &'a KeyAction) -> Self {
+impl<'a> From<&'a KeySpec> for SelectedKey<'a> {
+    fn from(action: &'a KeySpec) -> Self {
         Self::valid(action)
     }
 }
@@ -590,59 +584,83 @@ pub fn modifier_toggle_grid(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use qmk_via_api::keycodes::Keycode;
+    use crate::hid_labels::Modifiers;
+    use crate::key_spec::HidKey;
 
     #[test]
     fn candidate_matches_query_by_label_and_short() {
-        let candidate = Candidate::from_action(KeyAction::Qmk(Keycode::KC_ESCAPE as u16), &[]);
-        assert!(candidate.matches_query(""));
-        assert!(candidate.matches_query("esc"));
-        assert!(candidate.matches_query("ESC"));
-        assert!(candidate.matches_query("escape"));
-        assert!(!candidate.matches_query("enter"));
+        let space = Candidate::from_action(
+            KeySpec::KeyPress {
+                key: HidKey::keyboard(0x2c),
+                modifiers: Modifiers::default(),
+            },
+            &[],
+        );
+        assert!(space.matches_query(""));
+        assert!(space.matches_query("space"));
+        assert!(space.matches_query("SPACE"));
+        assert!(space.matches_query("spc"));
+        assert!(!space.matches_query("enter"));
 
-        let enter = Candidate::from_action(KeyAction::Qmk(Keycode::KC_ENTER as u16), &[]);
-        assert!(enter.matches_query("enter"));
-        assert!(enter.matches_query("ENT"));
-        assert!(!enter.matches_query("space"));
+        let del = Candidate::from_action(
+            KeySpec::KeyPress {
+                key: HidKey::keyboard(0x4c),
+                modifiers: Modifiers::default(),
+            },
+            &[],
+        );
+        assert!(del.matches_query("delete"));
+        assert!(del.matches_query("DEL"));
+        assert!(!del.matches_query("space"));
     }
 
     #[test]
     fn candidate_matches_query_by_shifted_and_symbol() {
-        let digit_1 = Candidate::from_action(KeyAction::Qmk(Keycode::KC_1 as u16), &[]);
+        let digit_1 = Candidate::from_action(
+            KeySpec::KeyPress {
+                key: HidKey::keyboard(0x1e),
+                modifiers: Modifiers::default(),
+            },
+            &[],
+        );
         assert!(digit_1.matches_query("1"));
         assert!(digit_1.matches_query("!"));
 
-        let mute = Candidate::from_action(KeyAction::Qmk(Keycode::KC_AUDIO_MUTE as u16), &[]);
-        assert!(mute.matches_query("mute"));
-        assert!(mute.matches_query("audio"));
+        let enter = Candidate::from_action(
+            KeySpec::KeyPress {
+                key: HidKey::keyboard(0x28),
+                modifiers: Modifiers::default(),
+            },
+            &[],
+        );
+        assert!(enter.matches_query("enter"));
+        assert!(enter.matches_query(egui_phosphor::regular::ARROW_ELBOW_DOWN_LEFT));
     }
 
     #[test]
-    fn candidate_matches_zmk_behavior() {
-        let space = Candidate::from_action(
-            KeyAction::Zmk(zmk_studio_api::Behavior::KeyPress(
-                zmk_studio_api::HidUsage::from_parts(zmk_studio_api::HID_USAGE_KEYBOARD, 0x2C, 0),
-            )),
+    fn candidate_matches_extra_search_tokens() {
+        let candidate = Candidate::from_action(
+            KeySpec::KeyPress {
+                key: HidKey::keyboard(0x2c),
+                modifiers: Modifiers::default(),
+            },
             &[],
-        );
-        assert!(space.matches_query("space"));
-        assert!(space.matches_query("spc"));
+        )
+        .with_search_token("custom_token");
 
-        let play = Candidate::from_action(
-            KeyAction::Zmk(zmk_studio_api::Behavior::KeyPress(
-                zmk_studio_api::HidUsage::from_encoded(
-                    zmk_studio_api::Keycode::C_PLAY.to_hid_usage(),
-                ),
-            )),
-            &[],
-        );
-        assert!(play.matches_query("play"));
+        assert!(candidate.matches_query("space"));
+        assert!(candidate.matches_query("custom_token"));
     }
 
     #[test]
     fn candidate_matches_hex_and_whitespace_query() {
-        let a_key = Candidate::from_action(KeyAction::Qmk(Keycode::KC_A as u16), &[]);
+        let a_key = Candidate::from_action(
+            KeySpec::KeyPress {
+                key: HidKey::keyboard(0x04),
+                modifiers: Modifiers::default(),
+            },
+            &[],
+        );
         assert!(a_key.matches_query("  "));
         assert!(a_key.matches_query("0004"));
         assert!(!a_key.matches_query("9999"));
@@ -651,9 +669,27 @@ mod tests {
     #[test]
     fn filter_candidates_filters_by_query() {
         let candidates = vec![
-            Candidate::from_action(KeyAction::Qmk(Keycode::KC_ESCAPE as u16), &[]),
-            Candidate::from_action(KeyAction::Qmk(Keycode::KC_ENTER as u16), &[]),
-            Candidate::from_action(KeyAction::Qmk(Keycode::KC_SPACE as u16), &[]),
+            Candidate::from_action(
+                KeySpec::KeyPress {
+                    key: HidKey::keyboard(0x29),
+                    modifiers: Modifiers::default(),
+                },
+                &[],
+            ),
+            Candidate::from_action(
+                KeySpec::KeyPress {
+                    key: HidKey::keyboard(0x28),
+                    modifiers: Modifiers::default(),
+                },
+                &[],
+            ),
+            Candidate::from_action(
+                KeySpec::KeyPress {
+                    key: HidKey::keyboard(0x2c),
+                    modifiers: Modifiers::default(),
+                },
+                &[],
+            ),
         ];
         let empty_filter = filter_candidates(&candidates, "", |_| true);
         assert_eq!(empty_filter.len(), 3);

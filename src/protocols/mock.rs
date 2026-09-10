@@ -5,7 +5,7 @@
 //! during discovery in debug builds (`cfg!(debug_assertions)` in `device_discovery`).
 
 use super::{DeviceError, DeviceEvent, KeyboardDefinition, KeyboardProtocol, WriteSupport};
-use crate::key_action::{KeyAction, KeymapSnapshot};
+use crate::key_spec::{KeySpec, KeymapSnapshot, LayerInfo};
 use qmk_via_api::keycodes::Keycode;
 use qmk_via_api::QmkLayerOp;
 use std::collections::HashMap;
@@ -106,13 +106,13 @@ impl KeyboardProtocol for MockProtocol {
             for (i, &keycode) in codes.iter().enumerate() {
                 let (row, col) = (i / cols, i % cols);
                 if row < rows {
-                    actions[layer][row][col] = Some(KeyAction::Qmk(keycode));
+                    actions[layer][row][col] = Some(super::qmk_codec::qmk_to_keyspec(keycode));
                 }
             }
         }
 
         Ok(KeymapSnapshot {
-            layers: crate::key_action::LayerInfo::indexed(self.layers.len()),
+            layers: LayerInfo::indexed(self.layers.len()),
             actions,
         })
     }
@@ -147,20 +147,13 @@ impl KeyboardProtocol for MockProtocol {
 
     fn set_key(
         &mut self,
-        _layer: &crate::key_action::LayerInfo,
+        _layer: &LayerInfo,
         layer_index: usize,
         row: usize,
         col: usize,
-        action: &KeyAction,
+        spec: &KeySpec,
     ) -> Result<(), DeviceError> {
-        let keycode = match action {
-            KeyAction::Qmk(code) => *code,
-            KeyAction::Zmk(_) => {
-                return Err(DeviceError::Unsupported(
-                    "Cannot apply a ZMK behavior to the mock".to_string(),
-                ))
-            }
-        };
+        let keycode = super::qmk_codec::keyspec_to_qmk(spec)?;
 
         let Some(layer) = self.layers.get_mut(layer_index) else {
             return Err(DeviceError::Protocol(format!(

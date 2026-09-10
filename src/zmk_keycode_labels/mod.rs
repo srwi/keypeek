@@ -1,3 +1,5 @@
+#![allow(dead_code, unused_imports)]
+
 mod behavior;
 mod hid_usage;
 mod keycode_label;

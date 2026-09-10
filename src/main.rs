@@ -2,9 +2,9 @@
 mod connection;
 mod device_discovery;
 mod hid_labels;
-mod key_action;
 mod key_matrix;
 mod key_paint;
+mod key_spec;
 mod keyboard;
 mod keymap_editor;
 mod layout_key;

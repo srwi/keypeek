@@ -1,7 +1,7 @@
 //! Candidate ZMK keycodes and behaviors for picker grids.
 
 use super::picker::{Candidate, CandidateGroup};
-use crate::key_action::{KeyAction, LayerInfo};
+use crate::key_spec::LayerInfo;
 use std::sync::OnceLock;
 use zmk_studio_api::{Behavior, HidUsage, Keycode};
 
@@ -63,7 +63,27 @@ pub fn command_candidates(kind: ZmkBehaviorKind, backlight_level: u8) -> Vec<Can
 
 /// Creates a candidate definition for a ZMK behavior.
 pub fn behavior_candidate(behavior: &Behavior, layer_names: &[String]) -> Candidate {
-    Candidate::from_action(KeyAction::Zmk(behavior.clone()), layer_names)
+    let mut candidate = Candidate::from_action(
+        crate::protocols::zmk_codec::zmk_to_keyspec(behavior),
+        layer_names,
+    );
+    match behavior {
+        Behavior::KeyPress(usage) | Behavior::KeyToggle(usage) | Behavior::StickyKey(usage) => {
+            use std::fmt::Write;
+            let mut hex8 = String::with_capacity(9);
+            let _ = write!(&mut hex8, "{:08x}", usage.to_hid_usage());
+            let mut hex4 = String::with_capacity(5);
+            let _ = write!(&mut hex4, "{:04x}", usage.id());
+            candidate = candidate.with_search_token(hex8).with_search_token(hex4);
+            if let Ok(kc) = Keycode::try_from(usage.to_hid_usage()) {
+                candidate = candidate
+                    .with_search_token(kc.as_ref())
+                    .with_search_token(kc.to_name());
+            }
+        }
+        _ => {}
+    }
+    candidate
 }
 
 pub fn categories() -> &'static [CandidateGroup] {
@@ -92,11 +112,22 @@ fn build_categories() -> Vec<CandidateGroup> {
 
 /// Creates a candidate definition for a ZMK HID usage code.
 pub fn keycode_candidate(encoded: u32) -> Candidate {
+    use std::fmt::Write;
     let usage = HidUsage::from_encoded(encoded);
-    let action = KeyAction::Zmk(Behavior::KeyPress(usage));
+    let action = crate::protocols::zmk_codec::zmk_to_keyspec(&Behavior::KeyPress(usage));
     let mut candidate = Candidate::from_action(action, &[]);
     if candidate.key.symbol.is_none() && candidate.key.tap.is_empty() {
         candidate.key.symbol = Some(format!("0x{:02X}", usage.id()));
+    }
+    let mut hex8 = String::with_capacity(9);
+    let _ = write!(&mut hex8, "{:08x}", encoded);
+    let mut hex4 = String::with_capacity(5);
+    let _ = write!(&mut hex4, "{:04x}", usage.id());
+    candidate = candidate.with_search_token(hex8).with_search_token(hex4);
+    if let Ok(kc) = Keycode::try_from(encoded) {
+        candidate = candidate
+            .with_search_token(kc.as_ref())
+            .with_search_token(kc.to_name());
     }
     candidate
 }

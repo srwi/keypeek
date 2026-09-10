@@ -9,7 +9,7 @@ pub use picker::KEY_UNIT;
 pub use qmk_editor::QmkDraft;
 pub use zmk_editor::ZmkDraft;
 
-use crate::key_action::KeyAction;
+use crate::key_spec::KeySpec;
 use crate::keyboard::Keyboard;
 use crate::protocols::WriteSupport;
 use egui::Window;
@@ -25,7 +25,7 @@ pub struct EditTarget {
 
 impl EditTarget {
     /// Returns the current key action at this target position.
-    pub fn action(self, keyboard: &Keyboard) -> Option<KeyAction> {
+    pub fn action(self, keyboard: &Keyboard) -> Option<KeySpec> {
         keyboard.get_action(self.layer_index, self.row, self.col)
     }
 
@@ -33,7 +33,7 @@ impl EditTarget {
     pub fn set_key(
         self,
         keyboard: &Keyboard,
-        action: KeyAction,
+        action: KeySpec,
     ) -> mpsc::Receiver<Result<(), String>> {
         keyboard.set_key(self.layer_index, self.row, self.col, action)
     }
@@ -81,7 +81,7 @@ pub struct EditorState {
     /// Active background operation.
     pub pending: Option<PendingTask>,
     /// Queued write operation to send when the current operation completes.
-    pub queued: Option<(EditTarget, KeyAction)>,
+    pub queued: Option<(EditTarget, KeySpec)>,
     /// Error message to display in the window.
     pub error: Option<String>,
     /// Draft state for QMK keycodes.
@@ -186,19 +186,20 @@ impl EditorState {
         if self.zmk_session == ZmkSessionState::Failed {
             self.zmk_session = ZmkSessionState::Idle;
         }
-        match target.action(keyboard) {
-            Some(KeyAction::Qmk(code)) => {
+        if let Some(action) = target.action(keyboard) {
+            if let Ok(code) = crate::protocols::qmk_codec::keyspec_to_qmk(&action) {
                 self.qmk_draft = QmkDraft::from_keycode(code);
-                self.zmk_draft = Default::default();
+            } else {
+                self.qmk_draft = Default::default();
             }
-            Some(KeyAction::Zmk(behavior)) => {
+            if let Ok(behavior) = crate::protocols::zmk_codec::keyspec_to_zmk(&action) {
                 self.zmk_draft = ZmkDraft::from_behavior(&behavior);
-                self.qmk_draft = Default::default();
-            }
-            _ => {
-                self.qmk_draft = Default::default();
+            } else {
                 self.zmk_draft = Default::default();
             }
+        } else {
+            self.qmk_draft = Default::default();
+            self.zmk_draft = Default::default();
         }
     }
 
@@ -206,7 +207,7 @@ impl EditorState {
     pub fn reset_qmk_section(
         &mut self,
         section: qmk_editor::Section,
-        current_action: Option<&KeyAction>,
+        current_action: Option<&KeySpec>,
     ) {
         self.qmk_draft = QmkDraft::for_section(section, current_action);
     }
@@ -215,7 +216,7 @@ impl EditorState {
     pub fn reset_zmk_kind(
         &mut self,
         kind: zmk_catalog::ZmkBehaviorKind,
-        current_action: Option<&KeyAction>,
+        current_action: Option<&KeySpec>,
     ) {
         self.zmk_draft = ZmkDraft::for_kind(kind, current_action);
     }
@@ -395,12 +396,7 @@ impl EditorState {
     }
 
     /// Applies a staged binding if it is complete and different from the current key.
-    fn commit_staged(
-        &mut self,
-        keyboard: &Keyboard,
-        target: EditTarget,
-        staged: Option<KeyAction>,
-    ) {
+    fn commit_staged(&mut self, keyboard: &Keyboard, target: EditTarget, staged: Option<KeySpec>) {
         if let Some(action) = staged {
             if target.action(keyboard).as_ref() != Some(&action) {
                 self.apply_write(keyboard, target, action);
@@ -503,7 +499,7 @@ impl EditorState {
     }
 
     /// Sends a write command to the device, or queues it if an operation is in progress.
-    fn apply_write(&mut self, keyboard: &Keyboard, target: EditTarget, action: KeyAction) {
+    fn apply_write(&mut self, keyboard: &Keyboard, target: EditTarget, action: KeySpec) {
         if self.pending.is_some() {
             self.queued = Some((target, action));
             return;

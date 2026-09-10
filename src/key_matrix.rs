@@ -1,8 +1,8 @@
-use crate::key_action::{KeyAction, KeymapSnapshot, LayerInfo};
+use crate::key_spec::{KeySpec, KeymapSnapshot, LayerInfo};
 use crate::layout_key::LayoutKey;
 
 pub struct BoundKey {
-    pub action: KeyAction,
+    pub action: KeySpec,
     /// `None` = transparent binding (renders as fall-through, still editable).
     pub label: Option<LayoutKey>,
 }
@@ -70,7 +70,7 @@ impl KeyMatrix {
             .and_then(|b| b.label.as_ref())
     }
 
-    pub fn get_action(&self, layer: usize, row: usize, col: usize) -> Option<&KeyAction> {
+    pub fn get_action(&self, layer: usize, row: usize, col: usize) -> Option<&KeySpec> {
         self.keys
             .get(layer)
             .and_then(|l| l.get(row))

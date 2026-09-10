@@ -1,6 +1,6 @@
 //! ZMK behavior editor and parameter encoder.
 
-use crate::key_action::KeyAction;
+use crate::key_spec::KeySpec;
 use crate::keyboard::Keyboard;
 use zmk_studio_api::{Behavior, HidUsage, HID_USAGE_KEYBOARD};
 
@@ -116,7 +116,9 @@ impl Section {
         keyboard: &'a Keyboard,
     ) -> impl Iterator<Item = ZmkBehaviorKind> + 'a {
         self.kinds().iter().copied().filter(|k| {
-            keyboard.is_action_supported(&KeyAction::Zmk(zmk_catalog::sample_behavior(*k)))
+            let spec =
+                crate::protocols::zmk_codec::zmk_to_keyspec(&zmk_catalog::sample_behavior(*k));
+            keyboard.is_action_supported(&spec)
         })
     }
 
@@ -204,26 +206,32 @@ impl Default for ZmkDraft {
 
 impl ZmkDraft {
     /// Initializes draft for a specific kind, preserving the active behavior if it matches.
-    pub(super) fn for_kind(kind: ZmkBehaviorKind, current_action: Option<&KeyAction>) -> Self {
-        match current_action {
-            Some(KeyAction::Zmk(b)) if b.role() == Some(kind) => Self::from_behavior(b),
-            _ => Self {
-                kind,
-                ..Default::default()
-            },
+    pub(super) fn for_kind(kind: ZmkBehaviorKind, current_action: Option<&KeySpec>) -> Self {
+        let current_behavior =
+            current_action.and_then(|spec| crate::protocols::zmk_codec::keyspec_to_zmk(spec).ok());
+        if let Some(b) = &current_behavior {
+            if b.role() == Some(kind) {
+                return Self::from_behavior(b);
+            }
+        }
+        Self {
+            kind,
+            ..Default::default()
         }
     }
 
     /// Initializes draft for a section, preserving the active behavior if it belongs to this section.
-    fn for_section(section: Section, current_action: Option<&KeyAction>) -> Self {
-        match current_action {
-            Some(KeyAction::Zmk(b)) if b.role().map(Section::from_kind) == Some(section) => {
-                Self::from_behavior(b)
+    fn for_section(section: Section, current_action: Option<&KeySpec>) -> Self {
+        let current_behavior =
+            current_action.and_then(|spec| crate::protocols::zmk_codec::keyspec_to_zmk(spec).ok());
+        if let Some(b) = &current_behavior {
+            if b.role().map(Section::from_kind) == Some(section) {
+                return Self::from_behavior(b);
             }
-            _ => Self {
-                kind: section.default_kind(),
-                ..Default::default()
-            },
+        }
+        Self {
+            kind: section.default_kind(),
+            ..Default::default()
         }
     }
 
@@ -301,7 +309,10 @@ impl ZmkDraft {
 impl EditorState {
     /// Applies the current draft behavior to the target key.
     fn commit_zmk_draft(&mut self, keyboard: &Keyboard, target: EditTarget) {
-        let staged = self.zmk_draft.staged().map(KeyAction::Zmk);
+        let staged = self
+            .zmk_draft
+            .staged()
+            .map(|b| crate::protocols::zmk_codec::zmk_to_keyspec(&b));
         self.commit_staged(keyboard, target, staged);
     }
 
@@ -313,9 +324,10 @@ impl EditorState {
         style: &crate::key_paint::KeyPaintStyle,
     ) {
         // If the current draft kind is not supported on this keyboard, switch to the first supported one.
-        if !keyboard.is_action_supported(&KeyAction::Zmk(zmk_catalog::sample_behavior(
+        let sample = crate::protocols::zmk_codec::zmk_to_keyspec(&zmk_catalog::sample_behavior(
             self.zmk_draft.kind,
-        ))) {
+        ));
+        if !keyboard.is_action_supported(&sample) {
             if let Some(first) = ZMK_SECTIONS
                 .iter()
                 .flat_map(|s| s.items.iter())
@@ -433,7 +445,7 @@ impl EditorState {
         let action = self
             .zmk_draft
             .usage
-            .map(|u| KeyAction::Zmk(Behavior::KeyPress(u.base())));
+            .map(|u| crate::protocols::zmk_codec::zmk_to_keyspec(&Behavior::KeyPress(u.base())));
         let selected = action.as_ref().map(|a| SelectedKey::new(a, valid));
 
         modifier_toggle_grid(
@@ -456,7 +468,9 @@ impl EditorState {
             selected,
             style,
             |_, candidate| {
-                if let KeyAction::Zmk(Behavior::KeyPress(usage)) = &candidate.binding {
+                if let Ok(Behavior::KeyPress(usage)) =
+                    crate::protocols::zmk_codec::keyspec_to_zmk(&candidate.binding)
+                {
                     self.zmk_draft.usage = Some(usage.base());
                     self.commit_zmk_draft(keyboard, target);
                 }
@@ -489,9 +503,12 @@ impl EditorState {
         let is_lt = self.zmk_draft.kind == ZmkBehaviorKind::LayerTap;
         let lt_action = is_lt
             .then(|| {
-                self.zmk_draft
-                    .layer_id
-                    .map(|id| KeyAction::Zmk(Behavior::LayerTap { layer_id: id, tap }))
+                self.zmk_draft.layer_id.map(|id| {
+                    crate::protocols::zmk_codec::zmk_to_keyspec(&Behavior::LayerTap {
+                        layer_id: id,
+                        tap,
+                    })
+                })
             })
             .flatten();
         let current_action = target.action(keyboard);
@@ -510,7 +527,9 @@ impl EditorState {
             style,
             |gi, candidate| {
                 let kind = kinds[gi];
-                if let KeyAction::Zmk(behavior) = &candidate.binding {
+                if let Ok(behavior) =
+                    crate::protocols::zmk_codec::keyspec_to_zmk(&candidate.binding)
+                {
                     if kind == ZmkBehaviorKind::LayerTap {
                         if let Some(layer_id) = behavior.layer_id() {
                             self.zmk_draft.kind = ZmkBehaviorKind::LayerTap;
@@ -595,7 +614,11 @@ impl EditorState {
                     let behavior = Behavior::Backlight(zmk_studio_api::BacklightCommand::Set(
                         self.zmk_draft.backlight.value,
                     ));
-                    self.apply_write(keyboard, target, KeyAction::Zmk(behavior));
+                    self.apply_write(
+                        keyboard,
+                        target,
+                        crate::protocols::zmk_codec::zmk_to_keyspec(&behavior),
+                    );
                 }
             });
         }
@@ -603,12 +626,12 @@ impl EditorState {
 }
 
 /// Returns true if the action is a Backlight Set command.
-fn is_backlight_set(binding: &KeyAction) -> bool {
+fn is_backlight_set(binding: &KeySpec) -> bool {
     matches!(
         binding,
-        KeyAction::Zmk(Behavior::Backlight(zmk_studio_api::BacklightCommand::Set(
-            _
-        )))
+        crate::key_spec::KeySpec::Lighting(crate::key_spec::LightingAction::Backlight(
+            crate::key_spec::BacklightAction::Set(_)
+        ))
     )
 }
 

@@ -1,7 +1,6 @@
 //! Candidate QMK keycodes and categories for picker grids.
 
 use super::picker::{Candidate, CandidateGroup};
-use crate::key_action::KeyAction;
 use crate::qmk_keycode_labels::try_resolve_qmk_key;
 use qmk_via_api::keycodes::{Keycode, KeycodeCategory};
 use qmk_via_api::ranges::{QK_KB, QK_MACRO, QK_TAP_DANCE, QK_USER};
@@ -105,5 +104,14 @@ pub fn layer_picker_group(layer_count: usize) -> CandidateGroup {
 
 /// Creates a candidate definition for a QMK keycode.
 pub fn qmk_candidate(code: u16) -> Candidate {
-    Candidate::from_action(KeyAction::Qmk(code), &[])
+    use std::fmt::Write;
+    let mut candidate =
+        Candidate::from_action(crate::protocols::qmk_codec::qmk_to_keyspec(code), &[]);
+    let mut hex = String::with_capacity(5);
+    let _ = write!(&mut hex, "{:04x}", code);
+    candidate = candidate.with_search_token(hex);
+    if let Ok(kc) = Keycode::try_from(code) {
+        candidate = candidate.with_search_token(kc.as_ref());
+    }
+    candidate
 }

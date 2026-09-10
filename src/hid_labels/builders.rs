@@ -67,7 +67,9 @@ pub fn one_shot_mod_key(
 }
 
 /// Normalized modifier flags across firmwares (QMK and ZMK).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub struct Modifiers {
     pub ctrl: bool,
     pub shift: bool,
@@ -85,26 +87,15 @@ impl Modifiers {
         crate::layout_key::modifier_symbols::glyphs(self.ctrl, self.shift, self.alt, self.gui)
     }
 
-    pub fn from_zmk_mask(mods: u8) -> Self {
-        Self {
-            ctrl: mods & (zmk_studio_api::MOD_LCTL | zmk_studio_api::MOD_RCTL) != 0,
-            shift: mods & (zmk_studio_api::MOD_LSFT | zmk_studio_api::MOD_RSFT) != 0,
-            alt: mods & (zmk_studio_api::MOD_LALT | zmk_studio_api::MOD_RALT) != 0,
-            gui: mods & (zmk_studio_api::MOD_LGUI | zmk_studio_api::MOD_RGUI) != 0,
-            right_alt: mods & zmk_studio_api::MOD_RALT != 0,
+    pub fn to_held_mod_mask(self) -> u16 {
+        let mut mask = 0;
+        if self.shift {
+            mask |= crate::layout_key::HELD_MOD_SHIFT;
         }
-    }
-}
-
-impl From<qmk_via_api::QmkModMask> for Modifiers {
-    fn from(mods: qmk_via_api::QmkModMask) -> Self {
-        Self {
-            ctrl: mods.has_ctrl(),
-            shift: mods.has_shift(),
-            alt: mods.has_alt(),
-            gui: mods.has_gui(),
-            right_alt: mods.has_alt() && mods.is_right(),
+        if self.alt && (cfg!(target_os = "macos") || self.right_alt) {
+            mask |= crate::layout_key::HELD_MOD_RALT;
         }
+        mask
     }
 }
 

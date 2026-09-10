@@ -1,11 +1,13 @@
 pub mod kle_parser;
 pub mod layout_geometry;
 pub mod mock;
+pub mod qmk_codec;
 pub mod qmk_common;
 pub mod qmk_json_parser;
 pub mod via;
 pub mod vial;
 pub mod zmk;
+pub mod zmk_codec;
 pub mod zmk_rpc;
 
 use std::error::Error;
@@ -158,7 +160,7 @@ where
     }
 }
 
-pub type ActionFilter = Arc<dyn Fn(&crate::key_action::KeyAction) -> bool + Send + Sync>;
+pub type ActionFilter = Arc<dyn Fn(&crate::key_spec::KeySpec) -> bool + Send + Sync>;
 
 pub type Row = usize;
 pub type Column = usize;
@@ -227,7 +229,7 @@ pub enum WriteSupport {
 pub trait KeyboardProtocol: Send {
     fn get_layout_definition(&self) -> &KeyboardDefinition;
 
-    fn read_keymap(&self) -> Result<crate::key_action::KeymapSnapshot, DeviceError>;
+    fn read_keymap(&self) -> Result<crate::key_spec::KeymapSnapshot, DeviceError>;
 
     /// Subscribes to live layer-state and key-press events emitted by the device.
     /// The adapter manages its own background reading and keepalive heartbeats.
@@ -241,11 +243,11 @@ pub trait KeyboardProtocol: Send {
     /// is the position in the layer list, which QMK keys off instead).
     fn set_key(
         &mut self,
-        _layer: &crate::key_action::LayerInfo,
+        _layer: &crate::key_spec::LayerInfo,
         _layer_index: usize,
         _row: usize,
         _col: usize,
-        _action: &crate::key_action::KeyAction,
+        _spec: &crate::key_spec::KeySpec,
     ) -> Result<(), DeviceError> {
         Err(DeviceError::Unsupported("write not supported".to_string()))
     }

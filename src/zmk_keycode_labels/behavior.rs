@@ -304,7 +304,7 @@ pub fn behavior_to_layout_key(behavior: &Behavior, layer_names: &[String]) -> Op
 }
 
 fn mod_mask_to_glyphs(m: u8) -> Label {
-    Modifiers::from_zmk_mask(m).label()
+    crate::protocols::zmk_codec::from_zmk_mask(m).label()
 }
 
 fn layer_tap_layout_key(layer_id: u32, tap: HidUsage, behavior: Option<Label>) -> LayoutKey {
