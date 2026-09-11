@@ -358,38 +358,6 @@ pub fn connect_protocol(spec: &ConnectionSpec) -> Result<Box<dyn KeyboardProtoco
     }
 }
 
-/// Returns all known protocol-specific search tokens for a standard HID usage.
-pub fn protocol_search_tokens_for_hid(page: u16, id: u16) -> Vec<String> {
-    let mut tokens = Vec::new();
-    tokens.extend(qmk_codec::qmk_search_tokens_for_hid(page, id));
-    tokens.extend(zmk_codec::zmk_search_tokens_for_hid(page, id));
-    tokens
-}
-
-/// Enumerates all USB HID keyboard usages (Page 0x07) supported across protocols.
-pub fn all_keyboard_usages() -> Vec<u16> {
-    let mut set = std::collections::BTreeSet::new();
-    for id in zmk_codec::zmk_all_keyboard_usages() {
-        set.insert(id);
-    }
-    for id in qmk_codec::qmk_all_basic_usages() {
-        set.insert(id);
-    }
-    set.into_iter().collect()
-}
-
-/// Enumerates all USB HID consumer usages (Page 0x0C) supported across protocols.
-pub fn all_consumer_usages() -> Vec<u16> {
-    let mut set = std::collections::BTreeSet::new();
-    for id in zmk_codec::zmk_all_consumer_usages() {
-        set.insert(id);
-    }
-    for id in qmk_codec::qmk_all_media_usages() {
-        set.insert(id);
-    }
-    set.into_iter().collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

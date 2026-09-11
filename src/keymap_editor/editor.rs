@@ -8,7 +8,7 @@ use super::picker::{
     framed_candidate_groups, modifier_toggle_grid, multi_candidate_groups, titled_candidate_group,
     CandidateGroup, SelectedKey,
 };
-use super::{catalog, EditTarget, EditorProfile, EditorState};
+use super::{EditTarget, EditorProfile, EditorState};
 use crate::hid_labels::Modifiers;
 use crate::key_paint::KeyPaintStyle;
 use crate::key_spec::{HidKey, KeySpec, LayerActivation};
@@ -71,133 +71,53 @@ impl EditorState {
         super::editor_central_panel(ui, (target.layer_index, current_section), |ui| {
             match current_section {
                 EditorSection::Keyboard => {
-                    self.draw_keyboard_page(ui, keyboard, target, &search_query, style);
+                    self.draw_keyboard_page(ui, keyboard, profile, target, &search_query, style);
                 }
                 EditorSection::KeyToggle => {
-                    self.draw_key_toggle_page(ui, keyboard, target, &search_query, is_valid, style);
+                    self.draw_key_toggle_page(ui, keyboard, profile, target, &search_query, is_valid, style);
                 }
                 EditorSection::Combo => {
-                    self.draw_combo_page(ui, keyboard, target, &search_query, is_valid, style);
+                    self.draw_combo_page(ui, keyboard, profile, target, &search_query, is_valid, style);
                 }
                 EditorSection::ModTap => {
-                    self.draw_mod_tap_page(ui, keyboard, target, &search_query, style);
+                    self.draw_mod_tap_page(ui, keyboard, profile, target, &search_query, style);
                 }
                 EditorSection::Layers => {
-                    self.draw_layers_page(ui, keyboard, target, &search_query, style);
+                    self.draw_layers_page(ui, keyboard, profile, target, &search_query, style);
                 }
                 EditorSection::LayerMod => {
                     self.draw_layer_mod_page(ui, keyboard, target, &search_query, is_valid, style);
                 }
                 EditorSection::OneShot => {
-                    self.draw_one_shot_page(ui, keyboard, target, &search_query, is_valid, style);
-                }
-                EditorSection::Bluetooth => {
-                    self.draw_single_group_page(
-                        ui,
-                        keyboard,
-                        target,
-                        catalog::bluetooth_group(),
-                        &search_query,
-                        style,
-                    );
-                }
-                EditorSection::Output => {
-                    self.draw_single_group_page(
-                        ui,
-                        keyboard,
-                        target,
-                        catalog::output_group(),
-                        &search_query,
-                        style,
-                    );
-                }
-                EditorSection::System => {
-                    self.draw_single_group_page(
-                        ui,
-                        keyboard,
-                        target,
-                        catalog::system_group(),
-                        &search_query,
-                        style,
-                    );
-                }
-                EditorSection::BootPower => {
-                    self.draw_single_group_page(
-                        ui,
-                        keyboard,
-                        target,
-                        catalog::boot_power_group(),
-                        &search_query,
-                        style,
-                    );
+                    self.draw_one_shot_page(ui, keyboard, profile, target, &search_query, is_valid, style);
                 }
                 EditorSection::Backlight => {
-                    self.draw_backlight_page(ui, keyboard, target, &search_query, style);
+                    self.draw_backlight_page(ui, keyboard, profile, target, &search_query, style);
                 }
-                EditorSection::Rgb => {
-                    if let Some(rgb_group) = catalog::lighting_groups().get(1) {
+                EditorSection::RawHex => {
+                    self.draw_raw_hex_page(ui, keyboard, target);
+                }
+                _ => {
+                    let groups = profile.section_groups(current_section);
+                    if groups.len() == 1 {
                         self.draw_single_group_page(
                             ui,
                             keyboard,
                             target,
-                            rgb_group,
+                            &groups[0],
+                            &search_query,
+                            style,
+                        );
+                    } else if !groups.is_empty() {
+                        self.draw_framed_groups_page(
+                            ui,
+                            keyboard,
+                            target,
+                            groups,
                             &search_query,
                             style,
                         );
                     }
-                }
-                EditorSection::RgbMatrix => {
-                    self.draw_single_group_page(
-                        ui,
-                        keyboard,
-                        target,
-                        catalog::rgb_matrix_group(),
-                        &search_query,
-                        style,
-                    );
-                }
-                EditorSection::Audio => {
-                    self.draw_single_group_page(
-                        ui,
-                        keyboard,
-                        target,
-                        catalog::audio_group(),
-                        &search_query,
-                        style,
-                    );
-                }
-                EditorSection::Mouse => {
-                    self.draw_framed_groups_page(
-                        ui,
-                        keyboard,
-                        target,
-                        catalog::mouse_groups(),
-                        &search_query,
-                        style,
-                    );
-                }
-                EditorSection::Special => {
-                    self.draw_single_group_page(
-                        ui,
-                        keyboard,
-                        target,
-                        catalog::special_group(),
-                        &search_query,
-                        style,
-                    );
-                }
-                EditorSection::Custom => {
-                    self.draw_framed_groups_page(
-                        ui,
-                        keyboard,
-                        target,
-                        catalog::custom_groups(),
-                        &search_query,
-                        style,
-                    );
-                }
-                EditorSection::RawHex => {
-                    self.draw_raw_hex_page(ui, keyboard, target);
                 }
             }
         });
@@ -212,6 +132,7 @@ impl EditorState {
         &mut self,
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
+        profile: &dyn EditorProfile,
         target: EditTarget,
         search_query: &str,
         style: &KeyPaintStyle,
@@ -237,7 +158,7 @@ impl EditorState {
 
         multi_candidate_groups(
             ui,
-            catalog::tap_categories(),
+            profile.tap_categories(),
             search_query,
             |c| keyboard.is_action_supported(&c.binding),
             selected,
@@ -302,6 +223,7 @@ impl EditorState {
         &mut self,
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
+        profile: &dyn EditorProfile,
         target: EditTarget,
         opts: TapPickerOpts<'_>,
         style: &KeyPaintStyle,
@@ -330,7 +252,7 @@ impl EditorState {
 
             multi_candidate_groups(
                 ui,
-                catalog::tap_categories(),
+                profile.tap_categories(),
                 opts.search_query,
                 |c| keyboard.is_action_supported(&c.binding),
                 selected,
@@ -349,6 +271,7 @@ impl EditorState {
         &mut self,
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
+        profile: &dyn EditorProfile,
         target: EditTarget,
         search_query: &str,
         is_valid: bool,
@@ -376,7 +299,7 @@ impl EditorState {
 
         titled_candidate_group(
             ui,
-            catalog::keyboard_group(),
+            profile.keyboard_group(),
             search_query,
             |c| keyboard.is_action_supported(&c.binding),
             selected,
@@ -398,6 +321,7 @@ impl EditorState {
         &mut self,
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
+        profile: &dyn EditorProfile,
         target: EditTarget,
         search_query: &str,
         style: &KeyPaintStyle,
@@ -431,6 +355,7 @@ impl EditorState {
         self.draw_tap_key_picker(
             ui,
             keyboard,
+            profile,
             target,
             TapPickerOpts {
                 id_salt: "mt_tap_mods",
@@ -449,6 +374,7 @@ impl EditorState {
         &mut self,
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
+        profile: &dyn EditorProfile,
         target: EditTarget,
         search_query: &str,
         style: &KeyPaintStyle,
@@ -458,7 +384,7 @@ impl EditorState {
             .iter()
             .map(|l| l.name.clone().unwrap_or_default())
             .collect();
-        let groups = catalog::layer_groups(
+        let groups = profile.layer_groups(
             layer_infos.len(),
             &layer_infos,
             &layer_names,
@@ -508,6 +434,7 @@ impl EditorState {
             self.draw_tap_key_picker(
                 ui,
                 keyboard,
+                profile,
                 target,
                 TapPickerOpts {
                     id_salt: "lt_tap_mods",
@@ -523,6 +450,7 @@ impl EditorState {
         &mut self,
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
+        profile: &dyn EditorProfile,
         target: EditTarget,
         search_query: &str,
         is_valid: bool,
@@ -562,7 +490,7 @@ impl EditorState {
 
         multi_candidate_groups(
             ui,
-            catalog::tap_categories(),
+            profile.tap_categories(),
             search_query,
             candidate_filter,
             selected,
@@ -584,11 +512,12 @@ impl EditorState {
         &mut self,
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
+        profile: &dyn EditorProfile,
         target: EditTarget,
         search_query: &str,
         style: &KeyPaintStyle,
     ) {
-        let groups = catalog::lighting_groups();
+        let groups = profile.section_groups(EditorSection::Backlight);
         if let Some(bl_group) = groups.first() {
             self.draw_single_group_page(ui, keyboard, target, bl_group, search_query, style);
         }
@@ -615,6 +544,7 @@ impl EditorState {
         &mut self,
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
+        profile: &dyn EditorProfile,
         target: EditTarget,
         search_query: &str,
         is_valid: bool,
@@ -658,7 +588,7 @@ impl EditorState {
 
         multi_candidate_groups(
             ui,
-            catalog::tap_categories(),
+            profile.tap_categories(),
             search_query,
             candidate_filter,
             selected,

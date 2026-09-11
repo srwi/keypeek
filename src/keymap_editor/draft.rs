@@ -5,7 +5,9 @@
 
 use crate::hid_labels::Modifiers;
 use crate::key_spec::{
-    BacklightAction, HidKey, KeySpec, LayerActivation, LightingAction,
+    AudioAction, BacklightAction, BluetoothAction, CustomBinding, CustomKind, HidKey, KeySpec,
+    LayerActivation, LightingAction, MouseAction, MouseButton, OutputTarget, PowerAction,
+    RgbMatrixAction,
 };
 use crate::keyboard::Keyboard;
 
@@ -115,44 +117,43 @@ impl EditorSection {
                 };
                 keyboard.is_action_supported(&sample)
             }
-            Self::Bluetooth => super::catalog::bluetooth_group()
-                .candidates
-                .iter()
-                .any(|c| keyboard.is_action_supported(&c.binding)),
-            Self::Output => super::catalog::output_group()
-                .candidates
-                .iter()
-                .any(|c| keyboard.is_action_supported(&c.binding)),
-            Self::System => super::catalog::system_group()
-                .candidates
-                .iter()
-                .any(|c| keyboard.is_action_supported(&c.binding)),
-            Self::BootPower => super::catalog::boot_power_group()
-                .candidates
-                .iter()
-                .any(|c| keyboard.is_action_supported(&c.binding)),
+            Self::Bluetooth => keyboard.is_action_supported(&KeySpec::Bluetooth(
+                BluetoothAction::Clear,
+            )),
+            Self::Output => keyboard.is_action_supported(&KeySpec::Output(
+                OutputTarget::Toggle,
+            )),
+            Self::System => keyboard.is_action_supported(&KeySpec::KeyPress {
+                key: HidKey::system(0x81),
+                modifiers: Modifiers::default(),
+            }),
+            Self::BootPower => keyboard.is_action_supported(&KeySpec::Power(
+                PowerAction::Reset,
+            )),
             Self::Backlight => keyboard.is_action_supported(&KeySpec::Lighting(
                 LightingAction::Backlight(BacklightAction::Toggle),
             )),
             Self::Rgb => keyboard.is_action_supported(&KeySpec::Lighting(LightingAction::Rgb(
                 crate::key_spec::RgbAction::Toggle,
             ))),
-            Self::RgbMatrix => super::catalog::rgb_matrix_group()
-                .candidates
-                .iter()
-                .any(|c| keyboard.is_action_supported(&c.binding)),
-            Self::Audio => super::catalog::audio_group()
-                .candidates
-                .iter()
-                .any(|c| keyboard.is_action_supported(&c.binding)),
-            Self::Mouse => super::catalog::mouse_groups()
-                .iter()
-                .flat_map(|g| &g.candidates)
-                .any(|c| keyboard.is_action_supported(&c.binding)),
-            Self::Custom => super::catalog::custom_groups()
-                .iter()
-                .flat_map(|g| &g.candidates)
-                .any(|c| keyboard.is_action_supported(&c.binding)),
+            Self::RgbMatrix => keyboard.is_action_supported(&KeySpec::Lighting(
+                LightingAction::RgbMatrix(RgbMatrixAction::Toggle),
+            )),
+            Self::Audio => keyboard.is_action_supported(&KeySpec::Audio(
+                AudioAction::Toggle,
+            )),
+            Self::Mouse => keyboard.is_action_supported(&KeySpec::Mouse(
+                MouseAction::Press(MouseButton::Left),
+            )),
+            Self::Custom => keyboard.is_action_supported(&KeySpec::Custom(
+                CustomBinding {
+                    kind: CustomKind::Macro,
+                    id: 0,
+                    name: None,
+                    param1: None,
+                    param2: None,
+                },
+            )),
             Self::RawHex => keyboard.supports_raw_keycode_entry(),
         }
     }
