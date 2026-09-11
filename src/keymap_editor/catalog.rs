@@ -15,174 +15,62 @@ use std::sync::OnceLock;
 pub fn keyboard_group() -> &'static CandidateGroup {
     static GROUP: OnceLock<CandidateGroup> = OnceLock::new();
     GROUP.get_or_init(|| {
-        let mut candidates = Vec::with_capacity(140);
+        let mut candidates = Vec::with_capacity(256);
+        let mut seen = std::collections::HashSet::new();
 
-        // Letters A-Z: 0x04..=0x1D
-        for id in 0x04..=0x1D {
-            let letter = (b'A' + (id - 0x04) as u8) as char;
-            let kc_name = format!("KC_{letter}");
-            let cand = hid_candidate(0x07, id).with_search_token(kc_name);
-            candidates.push(cand);
-        }
+        // 1. All ZMK keyboard keys (216 standard HID page 0x07 keys with labels & tokens)
+        for &k in zmk_studio_api::Keycode::all_keyboard() {
+            let encoded = k.to_hid_usage();
+            let usage = zmk_studio_api::HidUsage::from_encoded(encoded);
+            let id = usage.id();
+            seen.insert(id);
 
-        // Digits 1-9, 0: 0x1E..=0x27
-        for id in 0x1E..=0x27 {
-            let digit = if id == 0x27 {
-                '0'
-            } else {
-                (b'1' + (id - 0x1E) as u8) as char
+            let action = KeySpec::KeyPress {
+                key: HidKey::keyboard(id),
+                modifiers: Modifiers::default(),
             };
-            let kc_name = format!("KC_{digit}");
-            let cand = hid_candidate(0x07, id).with_search_token(kc_name);
-            candidates.push(cand);
-        }
-
-        // Return, Esc, Backspace, Tab, Space: 0x28..=0x2C
-        candidates.push(
-            hid_candidate(0x07, 0x28)
-                .with_search_token("enter")
-                .with_search_token("return")
-                .with_search_token("KC_ENT")
-                .with_search_token("KC_ENTER"),
-        );
-        candidates.push(
-            hid_candidate(0x07, 0x29)
-                .with_search_token("esc")
-                .with_search_token("escape")
-                .with_search_token("KC_ESC")
-                .with_search_token("KC_ESCAPE"),
-        );
-        candidates.push(
-            hid_candidate(0x07, 0x2A)
-                .with_search_token("backspace")
-                .with_search_token("bspc")
-                .with_search_token("KC_BSPC")
-                .with_search_token("KC_BACKSPACE"),
-        );
-        candidates.push(
-            hid_candidate(0x07, 0x2B)
-                .with_search_token("tab")
-                .with_search_token("KC_TAB"),
-        );
-        candidates.push(
-            hid_candidate(0x07, 0x2C)
-                .with_search_token("space")
-                .with_search_token("spc")
-                .with_search_token("KC_SPC")
-                .with_search_token("KC_SPACE"),
-        );
-
-        // Punctuation & symbols: 0x2D..=0x38
-        for (id, names) in [
-            (0x2D, &["minus", "KC_MINS", "KC_MINUS"][..]),
-            (0x2E, &["equal", "KC_EQL", "KC_EQUAL"][..]),
-            (0x2F, &["bracket", "KC_LBRC", "KC_LEFT_BRACKET"][..]),
-            (0x30, &["bracket", "KC_RBRC", "KC_RIGHT_BRACKET"][..]),
-            (0x31, &["backslash", "KC_BSLS", "KC_BACKSLASH"][..]),
-            (0x32, &["nonus_hash", "KC_NUHS", "KC_NONUS_HASH"][..]),
-            (0x33, &["semicolon", "KC_SCLN", "KC_SEMICOLON"][..]),
-            (0x34, &["quote", "KC_QUOT", "KC_QUOTE"][..]),
-            (0x35, &["grave", "tilde", "KC_GRV", "KC_GRAVE"][..]),
-            (0x36, &["comma", "KC_COMM", "KC_COMMA"][..]),
-            (0x37, &["dot", "period", "KC_DOT"][..]),
-            (0x38, &["slash", "KC_SLSH", "KC_SLASH"][..]),
-        ] {
-            let mut cand = hid_candidate(0x07, id);
-            for name in names {
-                cand = cand.with_search_token(name);
+            let mut cand = Candidate::from_action(action, &[]);
+            if cand.key.symbol.is_none() && cand.key.tap.is_empty() {
+                cand.key.symbol = Some(format!("0x{:02X}", id));
             }
-            candidates.push(cand);
-        }
+            cand = cand.with_search_token(format!("{:04x}", id));
+            cand = cand.with_search_token(format!("{:08x}", encoded));
+            cand = cand.with_search_token(k.as_ref());
+            cand = cand.with_search_token(k.to_name());
 
-        // CapsLock: 0x39
-        candidates.push(
-            hid_candidate(0x07, 0x39)
-                .with_search_token("caps")
-                .with_search_token("capslock")
-                .with_search_token("KC_CAPS")
-                .with_search_token("KC_CAPS_LOCK"),
-        );
-
-        // Function keys F1..=F12: 0x3A..=0x45
-        for id in 0x3A..=0x45 {
-            let num = id - 0x3A + 1;
-            let cand = hid_candidate(0x07, id)
-                .with_search_token(format!("f{num}"))
-                .with_search_token(format!("KC_F{num}"));
-            candidates.push(cand);
-        }
-
-        // Navigation & control: 0x46..=0x52
-        for (id, names) in [
-            (
-                0x46,
-                &[
-                    "print",
-                    "printscreen",
-                    "prtsc",
-                    "KC_PSCR",
-                    "KC_PRINT_SCREEN",
-                ][..],
-            ),
-            (
-                0x47,
-                &["scroll", "scrolllock", "KC_SCRL", "KC_SCROLL_LOCK"][..],
-            ),
-            (0x48, &["pause", "break", "KC_PAUS", "KC_PAUSE"][..]),
-            (0x49, &["insert", "ins", "KC_INS", "KC_INSERT"][..]),
-            (0x4A, &["home", "KC_HOME"][..]),
-            (0x4B, &["pageup", "pgup", "KC_PGUP", "KC_PAGE_UP"][..]),
-            (0x4C, &["delete", "del", "KC_DEL", "KC_DELETE"][..]),
-            (0x4D, &["end", "KC_END"][..]),
-            (0x4E, &["pagedown", "pgdn", "KC_PGDN", "KC_PAGE_DOWN"][..]),
-            (0x4F, &["right", "KC_RGHT", "KC_RIGHT"][..]),
-            (0x50, &["left", "KC_LEFT"][..]),
-            (0x51, &["down", "KC_DOWN"][..]),
-            (0x52, &["up", "KC_UP"][..]),
-        ] {
-            let mut cand = hid_candidate(0x07, id);
-            for name in names {
-                cand = cand.with_search_token(name);
+            if let Ok(qmk_kc) = qmk_via_api::keycodes::Keycode::try_from(id) {
+                cand = cand.with_search_token(qmk_kc.as_ref());
             }
+
+            cand = attach_friendly_keyboard_aliases(cand, id);
             candidates.push(cand);
         }
 
-        // Keypad: 0x53..=0x67
-        for id in 0x53..=0x67 {
-            candidates.push(hid_candidate(0x07, id).with_search_token("keypad"));
-        }
-
-        // F13..=F24: 0x68..=0x73
-        for id in 0x68..=0x73 {
-            let num = id - 0x68 + 13;
-            let cand = hid_candidate(0x07, id)
-                .with_search_token(format!("f{num}"))
-                .with_search_token(format!("KC_F{num}"));
-            candidates.push(cand);
-        }
-
-        // Modifiers: 0xE0..=0xE7
-        for (id, names) in [
-            (0xE0, &["ctrl", "lctrl", "KC_LCTL", "KC_LEFT_CTRL"][..]),
-            (0xE1, &["shift", "lshift", "KC_LSFT", "KC_LEFT_SHIFT"][..]),
-            (0xE2, &["alt", "lalt", "KC_LALT", "KC_LEFT_ALT"][..]),
-            (
-                0xE3,
-                &["gui", "win", "cmd", "lgui", "KC_LGUI", "KC_LEFT_GUI"][..],
-            ),
-            (0xE4, &["ctrl", "rctrl", "KC_RCTL", "KC_RIGHT_CTRL"][..]),
-            (0xE5, &["shift", "rshift", "KC_RSFT", "KC_RIGHT_SHIFT"][..]),
-            (0xE6, &["alt", "ralt", "KC_RALT", "KC_RIGHT_ALT"][..]),
-            (
-                0xE7,
-                &["gui", "win", "cmd", "rgui", "KC_RGUI", "KC_RIGHT_GUI"][..],
-            ),
-        ] {
-            let mut cand = hid_candidate(0x07, id);
-            for name in names {
-                cand = cand.with_search_token(name);
+        // 2. Any additional QMK basic keycodes
+        for &qmk_kc in qmk_via_api::keycodes::Keycode::all_in_category(
+            qmk_via_api::keycodes::KeycodeCategory::Basic,
+        ) {
+            let code = qmk_kc as u16;
+            if code == qmk_via_api::keycodes::Keycode::KC_TRANSPARENT as u16
+                || code == qmk_via_api::keycodes::Keycode::KC_NO as u16
+            {
+                continue;
             }
-            candidates.push(cand);
+            if let KeySpec::KeyPress { key, .. } = crate::protocols::qmk_codec::qmk_to_keyspec(code)
+            {
+                if key.page == 0x07 && seen.insert(key.id) {
+                    let mut cand = Candidate::from_action(
+                        KeySpec::KeyPress {
+                            key,
+                            modifiers: Modifiers::default(),
+                        },
+                        &[],
+                    );
+                    cand = cand.with_search_token(format!("{:04x}", key.id));
+                    cand = cand.with_search_token(qmk_kc.as_ref());
+                    candidates.push(cand);
+                }
+            }
         }
 
         CandidateGroup {
@@ -192,138 +80,142 @@ pub fn keyboard_group() -> &'static CandidateGroup {
     })
 }
 
+fn attach_friendly_keyboard_aliases(mut cand: Candidate, id: u16) -> Candidate {
+    let aliases: &[&str] = match id {
+        0x28 => &["enter", "return"],
+        0x29 => &["esc", "escape"],
+        0x2A => &["backspace", "bspc"],
+        0x2B => &["tab"],
+        0x2C => &["space", "spc"],
+        0x2D => &["minus"],
+        0x2E => &["equal"],
+        0x2F | 0x30 => &["bracket"],
+        0x31 => &["backslash"],
+        0x33 => &["semicolon"],
+        0x34 => &["quote"],
+        0x35 => &["grave", "tilde"],
+        0x36 => &["comma"],
+        0x37 => &["dot", "period"],
+        0x38 => &["slash"],
+        0x39 => &["caps", "capslock"],
+        0x46 => &["print", "printscreen", "prtsc"],
+        0x47 => &["scroll", "scrolllock"],
+        0x48 => &["pause", "break"],
+        0x49 => &["insert", "ins"],
+        0x4A => &["home"],
+        0x4B => &["pageup", "pgup"],
+        0x4C => &["delete", "del"],
+        0x4D => &["end"],
+        0x4E => &["pagedown", "pgdn"],
+        0x4F => &["right"],
+        0x50 => &["left"],
+        0x51 => &["down"],
+        0x52 => &["up"],
+        0x53..=0x67 => &["keypad"],
+        0xE0 | 0xE4 => &["ctrl", "control"],
+        0xE1 | 0xE5 => &["shift"],
+        0xE2 | 0xE6 => &["alt"],
+        0xE3 | 0xE7 => &["gui", "win", "cmd", "super"],
+        _ => &[],
+    };
+    for &alias in aliases {
+        cand = cand.with_search_token(alias);
+    }
+    cand
+}
+
 /// Media and consumer controls (USB HID Usage Page 0x0C).
 pub fn media_group() -> &'static CandidateGroup {
     static GROUP: OnceLock<CandidateGroup> = OnceLock::new();
     GROUP.get_or_init(|| {
-        let items: &[(u16, &[&str])] = &[
-            (
-                0xE2,
-                &["mute", "audio", "KC_MUTE", "KC_AUDIO_MUTE", "C_MUTE"],
-            ),
-            (
-                0xE9,
-                &[
-                    "volume",
-                    "volup",
-                    "KC_VOLU",
-                    "KC_AUDIO_VOL_UP",
-                    "C_VOL_UP",
-                    "C_VOLUME_UP",
-                ],
-            ),
-            (
-                0xEA,
-                &[
-                    "volume",
-                    "voldn",
-                    "KC_VOLD",
-                    "KC_AUDIO_VOL_DOWN",
-                    "C_VOL_DN",
-                    "C_VOLUME_DOWN",
-                ],
-            ),
-            (
-                0xCD,
-                &[
-                    "play",
-                    "pause",
-                    "KC_MPLY",
-                    "KC_MEDIA_PLAY_PAUSE",
-                    "C_PLAY_PAUSE",
-                    "C_PP",
-                ],
-            ),
-            (
-                0xB5,
-                &["next", "track", "KC_MNXT", "KC_MEDIA_NEXT_TRACK", "C_NEXT"],
-            ),
-            (
-                0xB6,
-                &[
-                    "prev",
-                    "previous",
-                    "track",
-                    "KC_MPRV",
-                    "KC_MEDIA_PREV_TRACK",
-                    "C_PREV",
-                ],
-            ),
-            (0xB7, &["stop", "KC_MSTP", "KC_MEDIA_STOP", "C_STOP"]),
-            (
-                0xB8,
-                &["eject", "KC_EJCT", "KC_MEDIA_EJECT", "C_MEDIA_EJECT"],
-            ),
-            (0x192, &["calc", "calculator", "KC_CALC", "C_CALCULATOR"]),
-            (0x18A, &["mail", "email", "KC_MAIL", "C_EMAIL"]),
-            (
-                0x221,
-                &[
-                    "search",
-                    "browser",
-                    "KC_WSCH",
-                    "KC_WWW_SEARCH",
-                    "C_AC_SEARCH",
-                ],
-            ),
-            (
-                0x223,
-                &["home", "browser", "KC_WHOM", "KC_WWW_HOME", "C_AC_HOME"],
-            ),
-            (
-                0x224,
-                &["back", "browser", "KC_WBAK", "KC_WWW_BACK", "C_AC_BACK"],
-            ),
-            (
-                0x225,
-                &[
-                    "forward",
-                    "browser",
-                    "KC_WFWD",
-                    "KC_WWW_FORWARD",
-                    "C_AC_FORWARD",
-                ],
-            ),
-            (
-                0x226,
-                &["stop", "browser", "KC_WSTP", "KC_WWW_STOP", "C_AC_STOP"],
-            ),
-            (
-                0x227,
-                &[
-                    "refresh",
-                    "browser",
-                    "KC_WREF",
-                    "KC_WWW_REFRESH",
-                    "C_AC_REFRESH",
-                ],
-            ),
-            (
-                0x6F,
-                &["brightness", "briup", "KC_BRIU", "KC_BRIGHTNESS_UP"],
-            ),
-            (
-                0x70,
-                &["brightness", "bridn", "KC_BRID", "KC_BRIGHTNESS_DOWN"],
-            ),
-        ];
+        let mut candidates = Vec::with_capacity(180);
+        let mut seen = std::collections::HashSet::new();
 
-        let candidates = items
-            .iter()
-            .map(|&(id, names)| {
-                let mut cand = hid_candidate(0x0C, id);
-                for name in names {
-                    cand = cand.with_search_token(name);
+        // 1. All ZMK consumer keys (152 standard Consumer Usage 0x0C keys)
+        for &k in zmk_studio_api::Keycode::all_consumer() {
+            let encoded = k.to_hid_usage();
+            let usage = zmk_studio_api::HidUsage::from_encoded(encoded);
+            let id = usage.id();
+            seen.insert(id);
+
+            let action = KeySpec::KeyPress {
+                key: HidKey::consumer(id),
+                modifiers: Modifiers::default(),
+            };
+            let mut cand = Candidate::from_action(action, &[]);
+            if cand.key.symbol.is_none() && cand.key.tap.is_empty() {
+                cand.key.symbol = Some(format!("0x{:04X}", id));
+            }
+            cand = cand.with_search_token(format!("{:04x}", id));
+            cand = cand.with_search_token(format!("{:08x}", encoded));
+            cand = cand.with_search_token(k.as_ref());
+            cand = cand.with_search_token(k.to_name());
+
+            if let Ok(qmk_code) = crate::protocols::qmk_codec::consumer_hid_to_qmk(id) {
+                if let Ok(qmk_kc) = qmk_via_api::keycodes::Keycode::try_from(qmk_code) {
+                    cand = cand.with_search_token(qmk_kc.as_ref());
                 }
-                cand
-            })
-            .collect();
+            }
+
+            cand = attach_friendly_media_aliases(cand, id);
+            candidates.push(cand);
+        }
+
+        // 2. Additional QMK media keys
+        for &qmk_kc in qmk_via_api::keycodes::Keycode::all_in_category(
+            qmk_via_api::keycodes::KeycodeCategory::Media,
+        ) {
+            let code = qmk_kc as u16;
+            if let KeySpec::KeyPress { key, .. } = crate::protocols::qmk_codec::qmk_to_keyspec(code)
+            {
+                if key.page == 0x0C && seen.insert(key.id) {
+                    let mut cand = Candidate::from_action(
+                        KeySpec::KeyPress {
+                            key,
+                            modifiers: Modifiers::default(),
+                        },
+                        &[],
+                    );
+                    cand = cand.with_search_token(format!("{:04x}", key.id));
+                    cand = cand.with_search_token(qmk_kc.as_ref());
+                    candidates.push(cand);
+                }
+            }
+        }
 
         CandidateGroup {
             name: "Media",
             candidates,
         }
     })
+}
+
+fn attach_friendly_media_aliases(mut cand: Candidate, id: u16) -> Candidate {
+    let aliases: &[&str] = match id {
+        0xE2 => &["mute", "audio"],
+        0xE9 => &["volume", "volup"],
+        0xEA => &["volume", "voldn"],
+        0xCD => &["play", "pause"],
+        0xB5 => &["next", "track"],
+        0xB6 => &["prev", "previous", "track"],
+        0xB7 => &["stop"],
+        0xB8 => &["eject"],
+        0x192 => &["calc", "calculator"],
+        0x18A => &["mail", "email"],
+        0x221 => &["search", "browser"],
+        0x223 => &["home", "browser"],
+        0x224 => &["back", "browser"],
+        0x225 => &["forward", "browser"],
+        0x226 => &["stop", "browser"],
+        0x227 => &["refresh", "browser"],
+        0x6F => &["brightness", "briup"],
+        0x70 => &["brightness", "bridn"],
+        _ => &[],
+    };
+    for &alias in aliases {
+        cand = cand.with_search_token(alias);
+    }
+    cand
 }
 
 /// Candidate groups suitable for tap targets (e.g. Mod-Tap and Layer-Tap).
@@ -336,7 +228,7 @@ pub fn tap_categories() -> &'static [CandidateGroup] {
 pub fn bluetooth_group() -> &'static CandidateGroup {
     static GROUP: OnceLock<CandidateGroup> = OnceLock::new();
     GROUP.get_or_init(|| {
-        let actions = [
+        let mut actions = vec![
             (
                 BluetoothAction::Clear,
                 &["bt clear", "bt clr", "disconnect", "bt_clr"][..],
@@ -347,43 +239,38 @@ pub fn bluetooth_group() -> &'static CandidateGroup {
                 BluetoothAction::ClearAll,
                 &["bt clear all", "bt clr all", "bt_clr_all"][..],
             ),
-            (
-                BluetoothAction::Select(0),
-                &["bt 0", "bt sel 0", "bt_sel_0"][..],
-            ),
-            (
-                BluetoothAction::Select(1),
-                &["bt 1", "bt sel 1", "bt_sel_1"][..],
-            ),
-            (
-                BluetoothAction::Select(2),
-                &["bt 2", "bt sel 2", "bt_sel_2"][..],
-            ),
-            (
-                BluetoothAction::Select(3),
-                &["bt 3", "bt sel 3", "bt_sel_3"][..],
-            ),
-            (
-                BluetoothAction::Select(4),
-                &["bt 4", "bt sel 4", "bt_sel_4"][..],
-            ),
-            (
-                BluetoothAction::Disconnect(0),
-                &["bt disc 0", "bt_disc_0"][..],
-            ),
-            (
-                BluetoothAction::Disconnect(1),
-                &["bt disc 1", "bt_disc_1"][..],
-            ),
-            (
-                BluetoothAction::Disconnect(2),
-                &["bt disc 2", "bt_disc_2"][..],
-            ),
         ];
+
+        for i in 0..=9 {
+            actions.push((BluetoothAction::Select(i), &["bt sel", "bt_sel"][..]));
+        }
+        for i in 0..=9 {
+            actions.push((BluetoothAction::Disconnect(i), &["bt disc", "bt_disc"][..]));
+        }
 
         let candidates = actions
             .into_iter()
-            .map(|(action, names)| action_candidate(KeySpec::Bluetooth(action), names))
+            .map(|(action, names)| {
+                let mut cand = Candidate::from_action(KeySpec::Bluetooth(action), &[]);
+                for name in names {
+                    cand = cand.with_search_token(*name);
+                }
+                match action {
+                    BluetoothAction::Select(n) => {
+                        cand = cand
+                            .with_search_token(format!("bt {n}"))
+                            .with_search_token(format!("bt sel {n}"))
+                            .with_search_token(format!("bt_sel_{n}"));
+                    }
+                    BluetoothAction::Disconnect(n) => {
+                        cand = cand
+                            .with_search_token(format!("bt disc {n}"))
+                            .with_search_token(format!("bt_disc_{n}"));
+                    }
+                    _ => {}
+                }
+                cand
+            })
             .collect();
 
         CandidateGroup {
@@ -404,6 +291,10 @@ pub fn output_group() -> &'static CandidateGroup {
             ),
             (OutputTarget::Usb, &["output usb", "out usb", "out_usb"][..]),
             (OutputTarget::Ble, &["output ble", "out ble", "out_ble"][..]),
+            (
+                OutputTarget::None,
+                &["output none", "out none", "out_none"][..],
+            ),
         ];
 
         let candidates = targets
@@ -444,10 +335,34 @@ pub fn system_group() -> &'static CandidateGroup {
             (PowerAction::Off, &["ext pwr off", "power off"][..]),
         ];
 
-        let candidates = actions
+        let mut candidates: Vec<Candidate> = actions
             .into_iter()
             .map(|(action, names)| action_candidate(KeySpec::Power(action), names))
             .collect();
+
+        let sys_keys = [
+            (
+                HidKey::system(0x81),
+                &["system power", "sys power", "power down", "KC_SYSTEM_POWER"][..],
+            ),
+            (
+                HidKey::system(0x82),
+                &["system sleep", "sys sleep", "sleep", "KC_SYSTEM_SLEEP"][..],
+            ),
+            (
+                HidKey::system(0x83),
+                &["system wake", "sys wake", "wake", "KC_SYSTEM_WAKE"][..],
+            ),
+        ];
+        for (key, names) in sys_keys {
+            candidates.push(action_candidate(
+                KeySpec::KeyPress {
+                    key,
+                    modifiers: Modifiers::default(),
+                },
+                names,
+            ));
+        }
 
         CandidateGroup {
             name: "System",
@@ -485,6 +400,15 @@ pub fn lighting_groups() -> &'static [CandidateGroup] {
                 BacklightAction::Cycle,
                 &["bl step", "backlight cycle", "BL_STEP", "QK_BACKLIGHT_STEP"][..],
             ),
+            (
+                BacklightAction::BreathingToggle,
+                &[
+                    "bl breath",
+                    "bl breathing",
+                    "BL_BRTG",
+                    "QK_BACKLIGHT_TOGGLE_BREATHING",
+                ][..],
+            ),
         ];
 
         let backlight_candidates = bl_actions
@@ -499,6 +423,8 @@ pub fn lighting_groups() -> &'static [CandidateGroup] {
                 RgbAction::Toggle,
                 &["rgb toggle", "rgb tog", "RGB_TOG", "QK_UNDERGLOW_TOGGLE"][..],
             ),
+            (RgbAction::On, &["rgb on", "underglow on", "RGB_ON"][..]),
+            (RgbAction::Off, &["rgb off", "underglow off", "RGB_OFF"][..]),
             (
                 RgbAction::EffectInc,
                 &["rgb mode", "rgb next", "RGB_MOD", "QK_UNDERGLOW_MODE_NEXT"][..],
@@ -554,14 +480,27 @@ pub fn lighting_groups() -> &'static [CandidateGroup] {
                     "QK_UNDERGLOW_SPEED_DOWN",
                 ][..],
             ),
+            (RgbAction::EffectSet, &["rgb effect set", "eff set"][..]),
+            (RgbAction::Color, &["rgb color", "color"][..]),
         ];
 
-        let rgb_candidates = rgb_actions
+        let mut rgb_candidates: Vec<Candidate> = rgb_actions
             .into_iter()
             .map(|(action, names)| {
                 action_candidate(KeySpec::Lighting(LightingAction::Rgb(action)), names)
             })
             .collect();
+
+        // Include QMK Rgblight keys
+        for &k in qmk_via_api::keycodes::Keycode::all_in_category(
+            qmk_via_api::keycodes::KeycodeCategory::Rgblight,
+        ) {
+            let code = k as u16;
+            let cand = qmk_candidate(code, k.as_ref());
+            if !rgb_candidates.iter().any(|c| c.binding == cand.binding) {
+                rgb_candidates.push(cand);
+            }
+        }
 
         vec![
             CandidateGroup {
@@ -569,10 +508,46 @@ pub fn lighting_groups() -> &'static [CandidateGroup] {
                 candidates: backlight_candidates,
             },
             CandidateGroup {
-                name: "RGB Lighting",
+                name: "RGB Underglow",
                 candidates: rgb_candidates,
             },
         ]
+    })
+}
+
+/// RGB Matrix per-key lighting controls.
+pub fn rgb_matrix_group() -> &'static CandidateGroup {
+    static GROUP: OnceLock<CandidateGroup> = OnceLock::new();
+    GROUP.get_or_init(|| {
+        let codes = qmk_via_api::keycodes::Keycode::all_in_category(
+            qmk_via_api::keycodes::KeycodeCategory::RgbMatrix,
+        );
+        let candidates = codes
+            .iter()
+            .map(|&k| qmk_candidate(k as u16, k.as_ref()))
+            .collect();
+        CandidateGroup {
+            name: "RGB Matrix",
+            candidates,
+        }
+    })
+}
+
+/// Audio and sound synthesizer controls.
+pub fn audio_group() -> &'static CandidateGroup {
+    static GROUP: OnceLock<CandidateGroup> = OnceLock::new();
+    GROUP.get_or_init(|| {
+        let codes = qmk_via_api::keycodes::Keycode::all_in_category(
+            qmk_via_api::keycodes::KeycodeCategory::Audio,
+        );
+        let candidates = codes
+            .iter()
+            .map(|&k| qmk_candidate(k as u16, k.as_ref()))
+            .collect();
+        CandidateGroup {
+            name: "Audio",
+            candidates,
+        }
     })
 }
 
@@ -595,6 +570,9 @@ pub fn mouse_groups() -> &'static [CandidateGroup] {
             ),
             (MouseButton::Button4, &["mouse btn4", "MS_BTN4"][..]),
             (MouseButton::Button5, &["mouse btn5", "MS_BTN5"][..]),
+            (MouseButton::Other(6), &["mouse btn6", "MS_BTN6"][..]),
+            (MouseButton::Other(7), &["mouse btn7", "MS_BTN7"][..]),
+            (MouseButton::Other(8), &["mouse btn8", "MS_BTN8"][..]),
         ];
 
         let button_candidates = buttons
@@ -650,6 +628,19 @@ pub fn mouse_groups() -> &'static [CandidateGroup] {
             .map(|(action, names)| action_candidate(KeySpec::Mouse(action), names))
             .collect();
 
+        let accels = [
+            (0u8, &["mouse accel 0", "accel 0", "MS_ACL0"][..]),
+            (1u8, &["mouse accel 1", "accel 1", "MS_ACL1"][..]),
+            (2u8, &["mouse accel 2", "accel 2", "MS_ACL2"][..]),
+        ];
+
+        let accel_candidates = accels
+            .into_iter()
+            .map(|(level, names)| {
+                action_candidate(KeySpec::Mouse(MouseAction::Acceleration(level)), names)
+            })
+            .collect();
+
         vec![
             CandidateGroup {
                 name: "Mouse Buttons",
@@ -663,6 +654,10 @@ pub fn mouse_groups() -> &'static [CandidateGroup] {
                 name: "Mouse Scroll",
                 candidates: scroll_candidates,
             },
+            CandidateGroup {
+                name: "Mouse Acceleration",
+                candidates: accel_candidates,
+            },
         ]
     })
 }
@@ -671,30 +666,43 @@ pub fn mouse_groups() -> &'static [CandidateGroup] {
 pub fn special_group() -> &'static CandidateGroup {
     static GROUP: OnceLock<CandidateGroup> = OnceLock::new();
     GROUP.get_or_init(|| {
-        let actions = [
-            (
-                KeySpec::Transparent,
-                &["transparent", "trans", "pass", "KC_TRNS"][..],
-            ),
-            (KeySpec::None, &["none", "noop", "unbound", "KC_NO"][..]),
-            (
-                KeySpec::CapsWord,
-                &["caps word", "caps_word", "cw", "QK_CAPS_WORD_TOGGLE"][..],
-            ),
-            (
-                KeySpec::KeyRepeat,
-                &["key repeat", "key_repeat", "repeat", "QK_KEY_REPEAT"][..],
-            ),
-            (
-                KeySpec::GraveEscape,
-                &["grave escape", "grave_esc", "QK_GRAVE_ESCAPE"][..],
-            ),
-        ];
+        let mut candidates = Vec::with_capacity(200);
 
-        let candidates = actions
-            .into_iter()
-            .map(|(spec, names)| action_candidate(spec, names))
-            .collect();
+        candidates.push(action_candidate(
+            KeySpec::Transparent,
+            &["transparent", "trans", "pass", "KC_TRNS"],
+        ));
+        candidates.push(action_candidate(
+            KeySpec::None,
+            &["none", "noop", "unbound", "KC_NO"],
+        ));
+        candidates.push(action_candidate(
+            KeySpec::CapsWord,
+            &["caps word", "caps_word", "cw", "QK_CAPS_WORD_TOGGLE"],
+        ));
+        candidates.push(action_candidate(
+            KeySpec::KeyRepeat,
+            &["key repeat", "key_repeat", "repeat", "QK_KEY_REPEAT"],
+        ));
+        candidates.push(action_candidate(
+            KeySpec::GraveEscape,
+            &["grave escape", "grave_esc", "QK_GRAVE_ESCAPE"],
+        ));
+
+        for &k in qmk_via_api::keycodes::Keycode::all_in_category(
+            qmk_via_api::keycodes::KeycodeCategory::Special,
+        ) {
+            let code = k as u16;
+            if code == qmk_via_api::keycodes::Keycode::KC_TRANSPARENT as u16
+                || code == qmk_via_api::keycodes::Keycode::KC_NO as u16
+                || code == qmk_via_api::keycodes::Keycode::QK_CAPS_WORD_TOGGLE as u16
+                || code == qmk_via_api::keycodes::Keycode::QK_REPEAT_KEY as u16
+                || code == qmk_via_api::keycodes::Keycode::QK_GRAVE_ESCAPE as u16
+            {
+                continue;
+            }
+            candidates.push(qmk_candidate(code, k.as_ref()));
+        }
 
         CandidateGroup {
             name: "Special",
@@ -771,6 +779,11 @@ pub fn layer_groups(
             LayerActivation::Default,
             &["df", "default"][..],
         ),
+        (
+            "Tap Toggle (TT)",
+            LayerActivation::TapToggle,
+            &["tt", "tap toggle"][..],
+        ),
     ];
 
     let mut groups: Vec<CandidateGroup> = ops
@@ -824,23 +837,23 @@ pub fn layer_groups(
     groups
 }
 
-fn hid_candidate(page: u16, id: u16) -> Candidate {
-    use std::fmt::Write;
-    let spec = KeySpec::KeyPress {
-        key: HidKey::new(page, id),
-        modifiers: Modifiers::default(),
-    };
-    let mut cand = Candidate::from_action(spec, &[]);
-    let mut hex = String::with_capacity(5);
-    let _ = write!(&mut hex, "{:04x}", id);
-    cand = cand.with_search_token(hex);
-    cand
-}
-
 fn action_candidate(spec: KeySpec, names: &[&str]) -> Candidate {
     let mut cand = Candidate::from_action(spec, &[]);
     for name in names {
         cand = cand.with_search_token(*name);
+    }
+    cand
+}
+
+pub fn qmk_candidate(code: u16, qmk_name: &str) -> Candidate {
+    use std::fmt::Write;
+    let spec = crate::protocols::qmk_codec::qmk_to_keyspec(code);
+    let mut cand = Candidate::from_action(spec, &[]);
+    let mut hex = String::with_capacity(5);
+    let _ = write!(&mut hex, "{:04x}", code);
+    cand = cand.with_search_token(hex);
+    if !qmk_name.is_empty() {
+        cand = cand.with_search_token(qmk_name);
     }
     cand
 }

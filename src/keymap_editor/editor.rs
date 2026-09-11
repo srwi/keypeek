@@ -15,25 +15,18 @@ use crate::key_spec::{HidKey, KeySpec, LayerActivation};
 use crate::keyboard::Keyboard;
 use crate::ui_widgets::titled_group;
 
-const SECTIONS: [super::SidebarSection<EditorSection>; 6] = [
+const ZMK_SECTIONS: [super::SidebarSection<EditorSection>; 6] = [
     super::SidebarSection {
         title: "Keys",
         items: &[
             EditorSection::Keyboard,
-            EditorSection::Media,
             EditorSection::KeyToggle,
-            EditorSection::Special,
+            EditorSection::OneShot,
         ],
     },
     super::SidebarSection {
         title: "Layers & Mods",
-        items: &[
-            EditorSection::Layers,
-            EditorSection::ModTap,
-            EditorSection::LayerMod,
-            EditorSection::Combo,
-            EditorSection::OneShot,
-        ],
+        items: &[EditorSection::Layers, EditorSection::ModTap],
     },
     super::SidebarSection {
         title: "Wireless",
@@ -42,6 +35,44 @@ const SECTIONS: [super::SidebarSection<EditorSection>; 6] = [
     super::SidebarSection {
         title: "Lighting",
         items: &[EditorSection::Backlight, EditorSection::Rgb],
+    },
+    super::SidebarSection {
+        title: "Mouse",
+        items: &[EditorSection::Mouse],
+    },
+    super::SidebarSection {
+        title: "Other",
+        items: &[EditorSection::System, EditorSection::Special],
+    },
+];
+
+const QMK_SECTIONS: [super::SidebarSection<EditorSection>; 5] = [
+    super::SidebarSection {
+        title: "Keys",
+        items: &[
+            EditorSection::Keyboard,
+            EditorSection::Media,
+            EditorSection::Special,
+        ],
+    },
+    super::SidebarSection {
+        title: "Layers & Mods",
+        items: &[
+            EditorSection::Layers,
+            EditorSection::Combo,
+            EditorSection::OneShot,
+            EditorSection::ModTap,
+            EditorSection::LayerMod,
+        ],
+    },
+    super::SidebarSection {
+        title: "Lighting & Audio",
+        items: &[
+            EditorSection::Backlight,
+            EditorSection::Rgb,
+            EditorSection::RgbMatrix,
+            EditorSection::Audio,
+        ],
     },
     super::SidebarSection {
         title: "Mouse",
@@ -58,8 +89,8 @@ const SECTIONS: [super::SidebarSection<EditorSection>; 6] = [
 ];
 
 impl super::SidebarItem for EditorSection {
-    fn label(self) -> &'static str {
-        EditorSection::label(self)
+    fn label(self, keyboard: &Keyboard) -> &'static str {
+        self.label_for(keyboard)
     }
 
     fn is_supported(self, keyboard: &Keyboard) -> bool {
@@ -82,9 +113,18 @@ impl EditorState {
         target: EditTarget,
         style: &KeyPaintStyle,
     ) {
-        // If current section is unsupported on this keyboard, switch to first supported
-        if !self.draft.section.is_supported(keyboard) {
-            if let Some(first) = SECTIONS
+        let sections = match keyboard.write_support() {
+            crate::protocols::WriteSupport::Session => &ZMK_SECTIONS[..],
+            _ => &QMK_SECTIONS[..],
+        };
+
+        // If current section is unsupported on this keyboard or not in protocol sections, switch to first supported
+        if !self.draft.section.is_supported(keyboard)
+            || !sections
+                .iter()
+                .any(|s| s.items.contains(&self.draft.section))
+        {
+            if let Some(first) = sections
                 .iter()
                 .flat_map(|s| s.items.iter())
                 .copied()
@@ -100,12 +140,16 @@ impl EditorState {
             "editor_sections",
             keyboard,
             current_section,
-            &SECTIONS,
+            sections,
             &mut self.search_query,
         ) {
             self.search_query.clear();
             let current_action = target.action(keyboard);
-            self.draft = KeyDraft::for_section(section, current_action.as_ref());
+            self.draft = KeyDraft::for_section_with_support(
+                section,
+                current_action.as_ref(),
+                keyboard.write_support(),
+            );
         }
 
         let current_section = self.draft.section;
@@ -115,14 +159,7 @@ impl EditorState {
         super::editor_central_panel(ui, (target.layer_index, current_section), |ui| {
             match current_section {
                 EditorSection::Keyboard => {
-                    self.draw_single_group_page(
-                        ui,
-                        keyboard,
-                        target,
-                        catalog::keyboard_group(),
-                        &search_query,
-                        style,
-                    );
+                    self.draw_keyboard_page(ui, keyboard, target, &search_query, style);
                 }
                 EditorSection::Media => {
                     self.draw_single_group_page(
@@ -135,7 +172,7 @@ impl EditorState {
                     );
                 }
                 EditorSection::KeyToggle => {
-                    self.draw_key_toggle_page(ui, keyboard, target, &search_query, style);
+                    self.draw_key_toggle_page(ui, keyboard, target, &search_query, is_valid, style);
                 }
                 EditorSection::Combo => {
                     self.draw_combo_page(ui, keyboard, target, &search_query, is_valid, style);
@@ -197,6 +234,26 @@ impl EditorState {
                         );
                     }
                 }
+                EditorSection::RgbMatrix => {
+                    self.draw_single_group_page(
+                        ui,
+                        keyboard,
+                        target,
+                        catalog::rgb_matrix_group(),
+                        &search_query,
+                        style,
+                    );
+                }
+                EditorSection::Audio => {
+                    self.draw_single_group_page(
+                        ui,
+                        keyboard,
+                        target,
+                        catalog::audio_group(),
+                        &search_query,
+                        style,
+                    );
+                }
                 EditorSection::Mouse => {
                     self.draw_framed_groups_page(
                         ui,
@@ -236,6 +293,69 @@ impl EditorState {
 
     fn commit_draft(&mut self, keyboard: &Keyboard, target: EditTarget) {
         self.commit_staged(keyboard, target, self.draft.staged());
+    }
+
+    fn draw_keyboard_page(
+        &mut self,
+        ui: &mut egui::Ui,
+        keyboard: &Keyboard,
+        target: EditTarget,
+        search_query: &str,
+        style: &KeyPaintStyle,
+    ) {
+        titled_group(ui, "Modifiers", |ui| {
+            modifier_toggle_grid(ui, "kb_mods", self.draft.modifiers, true, style, |mask| {
+                self.draft.modifiers ^= mask;
+                self.commit_draft(keyboard, target);
+            });
+        });
+
+        let tap_spec = self.draft.tap_key.map(|key| KeySpec::KeyPress {
+            key,
+            modifiers: Modifiers::default(),
+        });
+        let action = target.action(keyboard);
+        let selected = tap_spec
+            .as_ref()
+            .or(action
+                .as_ref()
+                .filter(|a| matches!(a, KeySpec::KeyPress { .. })))
+            .map(SelectedKey::valid);
+
+        if matches!(
+            keyboard.write_support(),
+            crate::protocols::WriteSupport::Session
+        ) {
+            multi_candidate_groups(
+                ui,
+                catalog::tap_categories(),
+                search_query,
+                |c| keyboard.is_action_supported(&c.binding),
+                selected,
+                style,
+                |_, candidate| {
+                    if let KeySpec::KeyPress { key, .. } = &candidate.binding {
+                        self.draft.tap_key = Some(*key);
+                        self.commit_draft(keyboard, target);
+                    }
+                },
+            );
+        } else {
+            titled_candidate_group(
+                ui,
+                catalog::keyboard_group(),
+                search_query,
+                |c| keyboard.is_action_supported(&c.binding),
+                selected,
+                style,
+                |candidate| {
+                    if let KeySpec::KeyPress { key, .. } = &candidate.binding {
+                        self.draft.tap_key = Some(*key);
+                        self.commit_draft(keyboard, target);
+                    }
+                },
+            );
+        }
     }
 
     fn draw_single_group_page(
@@ -398,11 +518,7 @@ impl EditorState {
                 is_valid,
                 style,
                 |mask| {
-                    self.draft.hold_mods = if self.draft.hold_mods == mask {
-                        0
-                    } else {
-                        mask
-                    };
+                    self.draft.hold_mods ^= mask;
                     self.commit_draft(keyboard, target);
                 },
             );
@@ -539,24 +655,60 @@ impl EditorState {
         });
         let selected = tap_spec.as_ref().map(|s| SelectedKey::new(s, is_valid));
 
-        titled_candidate_group(
-            ui,
-            catalog::keyboard_group(),
-            search_query,
-            |c| keyboard.is_action_supported(&c.binding),
-            selected,
-            style,
-            |candidate| {
-                if let KeySpec::KeyPress { key, .. } = &candidate.binding {
-                    if self.draft.tap_key == Some(*key) {
-                        self.draft.tap_key = None;
-                    } else {
-                        self.draft.tap_key = Some(*key);
+        let candidate_filter = |c: &super::picker::Candidate| {
+            if let KeySpec::KeyPress { key, .. } = &c.binding {
+                let sample = KeySpec::StickyKey {
+                    key: Some(*key),
+                    modifiers: Modifiers::default(),
+                };
+                keyboard.is_action_supported(&sample)
+            } else {
+                false
+            }
+        };
+
+        if matches!(
+            keyboard.write_support(),
+            crate::protocols::WriteSupport::Session
+        ) {
+            multi_candidate_groups(
+                ui,
+                catalog::tap_categories(),
+                search_query,
+                candidate_filter,
+                selected,
+                style,
+                |_, candidate| {
+                    if let KeySpec::KeyPress { key, .. } = &candidate.binding {
+                        if self.draft.tap_key == Some(*key) {
+                            self.draft.tap_key = None;
+                        } else {
+                            self.draft.tap_key = Some(*key);
+                        }
+                        self.commit_draft(keyboard, target);
                     }
-                    self.commit_draft(keyboard, target);
-                }
-            },
-        );
+                },
+            );
+        } else {
+            titled_candidate_group(
+                ui,
+                catalog::keyboard_group(),
+                search_query,
+                candidate_filter,
+                selected,
+                style,
+                |candidate| {
+                    if let KeySpec::KeyPress { key, .. } = &candidate.binding {
+                        if self.draft.tap_key == Some(*key) {
+                            self.draft.tap_key = None;
+                        } else {
+                            self.draft.tap_key = Some(*key);
+                        }
+                        self.commit_draft(keyboard, target);
+                    }
+                },
+            );
+        }
     }
 
     fn draw_backlight_page(
@@ -596,34 +748,79 @@ impl EditorState {
         keyboard: &Keyboard,
         target: EditTarget,
         search_query: &str,
+        is_valid: bool,
         style: &KeyPaintStyle,
     ) {
-        let group = catalog::keyboard_group();
+        titled_group(ui, "Modifiers", |ui| {
+            modifier_toggle_grid(
+                ui,
+                "toggle_mods",
+                self.draft.modifiers,
+                is_valid,
+                style,
+                |mask| {
+                    self.draft.modifiers ^= mask;
+                    self.commit_draft(keyboard, target);
+                },
+            );
+        });
+
+        let tap_spec = self.draft.tap_key.map(|key| KeySpec::KeyPress {
+            key,
+            modifiers: Modifiers::default(),
+        });
         let action = target.action(keyboard);
-        let selected = self
-            .draft
-            .tap_key
-            .map(KeySpec::KeyToggle)
-            .or(action.filter(|a| matches!(a, KeySpec::KeyToggle(_))));
-        titled_candidate_group(
-            ui,
-            group,
-            search_query,
-            |c| match &c.binding {
-                KeySpec::KeyPress { key, .. } => {
-                    keyboard.is_action_supported(&KeySpec::KeyToggle(*key))
-                }
-                _ => false,
-            },
-            selected.as_ref().map(SelectedKey::valid),
-            style,
-            |candidate| {
-                if let KeySpec::KeyPress { key, .. } = &candidate.binding {
-                    self.draft.tap_key = Some(*key);
-                    self.apply_write(keyboard, target, KeySpec::KeyToggle(*key));
-                }
-            },
-        );
+        let selected = tap_spec
+            .as_ref()
+            .or(action
+                .as_ref()
+                .filter(|a| matches!(a, KeySpec::KeyToggle { .. })))
+            .map(SelectedKey::valid);
+
+        let candidate_filter = |c: &super::picker::Candidate| match &c.binding {
+            KeySpec::KeyPress { key, modifiers } => {
+                keyboard.is_action_supported(&KeySpec::KeyToggle {
+                    key: *key,
+                    modifiers: *modifiers,
+                })
+            }
+            _ => false,
+        };
+
+        if matches!(
+            keyboard.write_support(),
+            crate::protocols::WriteSupport::Session
+        ) {
+            multi_candidate_groups(
+                ui,
+                catalog::tap_categories(),
+                search_query,
+                candidate_filter,
+                selected,
+                style,
+                |_, candidate| {
+                    if let KeySpec::KeyPress { key, .. } = &candidate.binding {
+                        self.draft.tap_key = Some(*key);
+                        self.commit_draft(keyboard, target);
+                    }
+                },
+            );
+        } else {
+            titled_candidate_group(
+                ui,
+                catalog::keyboard_group(),
+                search_query,
+                candidate_filter,
+                selected,
+                style,
+                |candidate| {
+                    if let KeySpec::KeyPress { key, .. } = &candidate.binding {
+                        self.draft.tap_key = Some(*key);
+                        self.commit_draft(keyboard, target);
+                    }
+                },
+            );
+        }
     }
 
     fn draw_layer_mod_page(

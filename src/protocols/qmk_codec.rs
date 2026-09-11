@@ -44,7 +44,8 @@ pub fn qmk_to_keyspec(code: u16) -> KeySpec {
         },
         QmkKeycode::LayerOp { op, layer } => {
             let activation = match op {
-                QmkLayerOp::Momentary | QmkLayerOp::TapToggle => LayerActivation::Momentary,
+                QmkLayerOp::Momentary => LayerActivation::Momentary,
+                QmkLayerOp::TapToggle => LayerActivation::TapToggle,
                 QmkLayerOp::Toggle => LayerActivation::Toggle,
                 QmkLayerOp::To => LayerActivation::To,
                 QmkLayerOp::OneShot => LayerActivation::Sticky,
@@ -180,6 +181,9 @@ pub fn keyspec_to_qmk(spec: &KeySpec) -> Result<u16, DeviceError> {
             LayerActivation::Momentary => QmkLayerOp::Momentary
                 .encode(*layer)
                 .ok_or_else(|| DeviceError::Unsupported(format!("Cannot encode MO({})", layer))),
+            LayerActivation::TapToggle => QmkLayerOp::TapToggle
+                .encode(*layer)
+                .ok_or_else(|| DeviceError::Unsupported(format!("Cannot encode TT({})", layer))),
             LayerActivation::Toggle => QmkLayerOp::Toggle
                 .encode(*layer)
                 .ok_or_else(|| DeviceError::Unsupported(format!("Cannot encode TG({})", layer))),
@@ -249,6 +253,9 @@ pub fn keyspec_to_qmk(spec: &KeySpec) -> Result<u16, DeviceError> {
             }
             LightingAction::Backlight(BacklightAction::Cycle) => {
                 Ok(Keycode::QK_BACKLIGHT_STEP as u16)
+            }
+            LightingAction::Backlight(BacklightAction::BreathingToggle) => {
+                Ok(Keycode::QK_BACKLIGHT_TOGGLE_BREATHING as u16)
             }
             LightingAction::Rgb(RgbAction::Toggle) => Ok(Keycode::QK_UNDERGLOW_TOGGLE as u16),
             LightingAction::Rgb(RgbAction::EffectInc) => Ok(Keycode::QK_UNDERGLOW_MODE_NEXT as u16),
@@ -435,6 +442,22 @@ fn qmk_special_keycode_to_spec(kc: Keycode) -> Option<KeySpec> {
             key: HidKey::consumer(0x19F),
             modifiers: Modifiers::default(),
         }),
+        Keycode::KC_MEDIA_SELECT => Some(KeySpec::KeyPress {
+            key: HidKey::consumer(0x0183),
+            modifiers: Modifiers::default(),
+        }),
+        Keycode::KC_ASSISTANT => Some(KeySpec::KeyPress {
+            key: HidKey::consumer(0x01CD),
+            modifiers: Modifiers::default(),
+        }),
+        Keycode::KC_MISSION_CONTROL => Some(KeySpec::KeyPress {
+            key: HidKey::consumer(0x029F),
+            modifiers: Modifiers::default(),
+        }),
+        Keycode::KC_LAUNCHPAD => Some(KeySpec::KeyPress {
+            key: HidKey::consumer(0x02A0),
+            modifiers: Modifiers::default(),
+        }),
 
         // Backlight
         Keycode::QK_BACKLIGHT_ON => Some(KeySpec::Lighting(LightingAction::Backlight(
@@ -446,6 +469,9 @@ fn qmk_special_keycode_to_spec(kc: Keycode) -> Option<KeySpec> {
         Keycode::QK_BACKLIGHT_TOGGLE => Some(KeySpec::Lighting(LightingAction::Backlight(
             BacklightAction::Toggle,
         ))),
+        Keycode::QK_BACKLIGHT_TOGGLE_BREATHING => Some(KeySpec::Lighting(
+            LightingAction::Backlight(BacklightAction::BreathingToggle),
+        )),
         Keycode::QK_BACKLIGHT_UP => Some(KeySpec::Lighting(LightingAction::Backlight(
             BacklightAction::Inc,
         ))),
@@ -495,7 +521,7 @@ fn qmk_special_keycode_to_spec(kc: Keycode) -> Option<KeySpec> {
     }
 }
 
-fn consumer_hid_to_qmk(id: u16) -> Result<u16, DeviceError> {
+pub fn consumer_hid_to_qmk(id: u16) -> Result<u16, DeviceError> {
     match id {
         0xE2 => Ok(Keycode::KC_AUDIO_MUTE as u16),
         0xE9 => Ok(Keycode::KC_AUDIO_VOL_UP as u16),
@@ -520,6 +546,10 @@ fn consumer_hid_to_qmk(id: u16) -> Result<u16, DeviceError> {
         0x6F => Ok(Keycode::KC_BRIGHTNESS_UP as u16),
         0x70 => Ok(Keycode::KC_BRIGHTNESS_DOWN as u16),
         0x19F => Ok(Keycode::KC_CONTROL_PANEL as u16),
+        0x0183 => Ok(Keycode::KC_MEDIA_SELECT as u16),
+        0x01CD => Ok(Keycode::KC_ASSISTANT as u16),
+        0x029F => Ok(Keycode::KC_MISSION_CONTROL as u16),
+        0x02A0 => Ok(Keycode::KC_LAUNCHPAD as u16),
         _ => Err(DeviceError::Unsupported(format!(
             "Consumer HID usage 0x{:04X} not supported in QMK",
             id
@@ -542,32 +572,45 @@ fn system_hid_to_qmk(id: u16) -> Result<u16, DeviceError> {
 /// Translates a [`Modifiers`] domain struct into a QMK [`qmk_via_api::QmkModMask`].
 pub fn to_qmk_mask(mods: Modifiers) -> qmk_via_api::QmkModMask {
     let mut bits = 0;
-    if mods.ctrl {
+    if mods.ctrl || mods.right_ctrl {
         bits |= qmk_via_api::QmkModMask::LCTL;
+        if mods.right_ctrl {
+            bits |= qmk_via_api::QmkModMask::RIGHT_HAND;
+        }
     }
-    if mods.shift {
+    if mods.shift || mods.right_shift {
         bits |= qmk_via_api::QmkModMask::LSFT;
+        if mods.right_shift {
+            bits |= qmk_via_api::QmkModMask::RIGHT_HAND;
+        }
     }
-    if mods.alt {
+    if mods.alt || mods.right_alt {
         bits |= qmk_via_api::QmkModMask::LALT;
         if mods.right_alt {
             bits |= qmk_via_api::QmkModMask::RIGHT_HAND;
         }
     }
-    if mods.gui {
+    if mods.gui || mods.right_gui {
         bits |= qmk_via_api::QmkModMask::LGUI;
+        if mods.right_gui {
+            bits |= qmk_via_api::QmkModMask::RIGHT_HAND;
+        }
     }
     qmk_via_api::QmkModMask::from_bits(bits)
 }
 
 /// Translates a QMK [`qmk_via_api::QmkModMask`] into a [`Modifiers`] domain struct.
 pub fn from_qmk_mask(mods: qmk_via_api::QmkModMask) -> Modifiers {
+    let is_right = mods.is_right();
     Modifiers {
-        ctrl: mods.has_ctrl(),
-        shift: mods.has_shift(),
-        alt: mods.has_alt(),
-        gui: mods.has_gui(),
-        right_alt: mods.has_alt() && mods.is_right(),
+        ctrl: mods.has_ctrl() && !is_right,
+        shift: mods.has_shift() && !is_right,
+        alt: mods.has_alt() && !is_right,
+        gui: mods.has_gui() && !is_right,
+        right_ctrl: mods.has_ctrl() && is_right,
+        right_shift: mods.has_shift() && is_right,
+        right_alt: mods.has_alt() && is_right,
+        right_gui: mods.has_gui() && is_right,
     }
 }
 
@@ -584,10 +627,25 @@ mod tests {
             Keycode::KC_TRANSPARENT as u16,
             Keycode::KC_NO as u16,
             Keycode::KC_AUDIO_MUTE as u16,
+            Keycode::KC_MEDIA_SELECT as u16,
+            Keycode::KC_ASSISTANT as u16,
+            Keycode::KC_MISSION_CONTROL as u16,
+            Keycode::KC_LAUNCHPAD as u16,
+            Keycode::KC_SYSTEM_POWER as u16,
+            Keycode::KC_SYSTEM_SLEEP as u16,
+            Keycode::KC_SYSTEM_WAKE as u16,
             Keycode::QK_GRAVE_ESCAPE as u16,
             Keycode::QK_BOOTLOADER as u16,
             Keycode::QK_UNDERGLOW_TOGGLE as u16,
+            Keycode::QK_BACKLIGHT_TOGGLE_BREATHING as u16,
             Keycode::QK_MOUSE_BUTTON_1 as u16,
+            Keycode::QK_MOUSE_BUTTON_6 as u16,
+            Keycode::QK_MOUSE_BUTTON_7 as u16,
+            Keycode::QK_MOUSE_BUTTON_8 as u16,
+            Keycode::QK_MOUSE_ACCELERATION_0 as u16,
+            Keycode::QK_MOUSE_ACCELERATION_1 as u16,
+            Keycode::QK_MOUSE_ACCELERATION_2 as u16,
+            QmkLayerOp::TapToggle.encode(2).unwrap(),
         ];
 
         for code in test_codes {

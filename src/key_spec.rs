@@ -41,6 +41,8 @@ pub enum LayerActivation {
     LayerMod(Modifiers),
     /// Default layer switch (e.g. QMK `DF`).
     Default,
+    /// Tap-toggle: tap N times to toggle, hold for momentary (e.g. QMK `TT(layer)`).
+    TapToggle,
 }
 
 /// Semantic category of vendor/firmware extension or custom user bindings.
@@ -98,6 +100,7 @@ pub enum BacklightAction {
     Dec,
     Cycle,
     Set(u8),
+    BreathingToggle,
     Other { command: u32, value: u32 },
 }
 
@@ -180,7 +183,10 @@ pub enum KeySpec {
         modifiers: Modifiers,
     },
     /// Key toggle (locks key in pressed state until toggled again).
-    KeyToggle(HidKey),
+    KeyToggle {
+        key: HidKey,
+        modifiers: Modifiers,
+    },
     /// Tap produces a key with optional modifiers, holding activates a layer (e.g. `LT(1, KC_SPC)`).
     LayerTap {
         layer: u8,
@@ -245,12 +251,16 @@ impl KeySpec {
                 }
             }
 
-            KeySpec::KeyToggle(key) => {
-                let mut layout = crate::hid_labels::hid_usage_to_layout_key(key.page, key.id)
-                    .unwrap_or_else(|| LayoutKey {
+            KeySpec::KeyToggle { key, modifiers } => {
+                let base = crate::hid_labels::hid_usage_to_layout_key(key.page, key.id);
+                let mut layout = if modifiers.is_empty() {
+                    base.unwrap_or_else(|| LayoutKey {
                         tap: Label::new(format!("0x{:04X}", key.id)),
                         ..Default::default()
-                    });
+                    })
+                } else {
+                    crate::hid_labels::mod_combo_key(key.page, key.id, *modifiers, base)
+                };
                 layout.behavior = Some(behavior_names::KEY_TOGGLE.label());
                 Some(layout)
             }
@@ -291,7 +301,9 @@ impl KeySpec {
 
             KeySpec::Layer { layer, activation } => {
                 let (border, argument) = match activation {
-                    LayerActivation::Momentary => (BorderStyle::None, None),
+                    LayerActivation::Momentary | LayerActivation::TapToggle => {
+                        (BorderStyle::None, None)
+                    }
                     LayerActivation::Toggle | LayerActivation::To => (BorderStyle::Solid, None),
                     LayerActivation::Sticky => (BorderStyle::Dashed, None),
                     LayerActivation::Default => (BorderStyle::Solid, None),
@@ -415,6 +427,9 @@ impl KeySpec {
                         BacklightAction::Inc => Label::with_short("BL Inc", "BL+"),
                         BacklightAction::Dec => Label::with_short("BL Dec", "BL-"),
                         BacklightAction::Cycle => Label::with_short("BL Cycle", "BLCyc"),
+                        BacklightAction::BreathingToggle => {
+                            Label::with_short("BL Breath", "BLBrt")
+                        }
                         BacklightAction::Set(n) => {
                             Label::with_short(format!("BL Set {n}"), format!("BL{n}"))
                         }
@@ -617,12 +632,12 @@ fn resolve_custom_named_key(
                 crate::hid_labels::hid_usage_to_layout_key(tap.page, tap.id).unwrap_or_default();
             let hold_label = if hold.page == 0x07 && (0xE0..=0xE7).contains(&hold.id) {
                 match hold.id {
-                    0xE0 | 0xE4 => Modifiers {
+                    0xE0 => Modifiers {
                         ctrl: true,
                         ..Default::default()
                     }
                     .label(),
-                    0xE1 | 0xE5 => Modifiers {
+                    0xE1 => Modifiers {
                         shift: true,
                         ..Default::default()
                     }
@@ -632,14 +647,28 @@ fn resolve_custom_named_key(
                         ..Default::default()
                     }
                     .label(),
+                    0xE3 => Modifiers {
+                        gui: true,
+                        ..Default::default()
+                    }
+                    .label(),
+                    0xE4 => Modifiers {
+                        right_ctrl: true,
+                        ..Default::default()
+                    }
+                    .label(),
+                    0xE5 => Modifiers {
+                        right_shift: true,
+                        ..Default::default()
+                    }
+                    .label(),
                     0xE6 => Modifiers {
-                        alt: true,
                         right_alt: true,
                         ..Default::default()
                     }
                     .label(),
-                    0xE3 | 0xE7 => Modifiers {
-                        gui: true,
+                    0xE7 => Modifiers {
+                        right_gui: true,
                         ..Default::default()
                     }
                     .label(),

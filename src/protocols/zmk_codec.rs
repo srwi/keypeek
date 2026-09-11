@@ -21,7 +21,10 @@ pub fn zmk_to_keyspec(behavior: &Behavior) -> KeySpec {
             key: HidKey::new(usage.page(), usage.id()),
             modifiers: from_zmk_mask(usage.modifiers()),
         },
-        Behavior::KeyToggle(usage) => KeySpec::KeyToggle(HidKey::new(usage.page(), usage.id())),
+        Behavior::KeyToggle(usage) => KeySpec::KeyToggle {
+            key: HidKey::new(usage.page(), usage.id()),
+            modifiers: from_zmk_mask(usage.modifiers()),
+        },
         Behavior::MomentaryLayer { layer_id } => KeySpec::Layer {
             layer: *layer_id as u8,
             activation: LayerActivation::Momentary,
@@ -43,14 +46,33 @@ pub fn zmk_to_keyspec(behavior: &Behavior) -> KeySpec {
             tap: HidKey::new(tap.page(), tap.id()),
             tap_modifiers: from_zmk_mask(tap.modifiers()),
         },
-        Behavior::ModTap { hold, tap } => KeySpec::ModTap {
-            hold: from_zmk_mask(hold.modifiers()),
-            tap: HidKey::new(tap.page(), tap.id()),
-            tap_modifiers: from_zmk_mask(tap.modifiers()),
-        },
+        Behavior::ModTap { hold, tap } => {
+            let mut hold_mods = from_zmk_mask(hold.modifiers());
+            if hold.modifier_mask() != 0 {
+                hold_mods = from_zmk_mask(hold.modifier_mask());
+            }
+            KeySpec::ModTap {
+                hold: hold_mods,
+                tap: HidKey::new(tap.page(), tap.id()),
+                tap_modifiers: from_zmk_mask(tap.modifiers()),
+            }
+        }
         Behavior::StickyKey(usage) => {
-            let mods = from_zmk_mask(usage.modifiers());
-            let key = if usage.id() == 0 || (usage.id() >= 0xE0 && usage.id() <= 0xE7) {
+            let mut mods = from_zmk_mask(usage.modifiers());
+            let key = if usage.id() == 0 {
+                None
+            } else if (0xE0..=0xE7).contains(&usage.id()) {
+                match usage.id() {
+                    0xE0 => mods.ctrl = true,
+                    0xE1 => mods.shift = true,
+                    0xE2 => mods.alt = true,
+                    0xE3 => mods.gui = true,
+                    0xE4 => mods.right_ctrl = true,
+                    0xE5 => mods.right_shift = true,
+                    0xE6 => mods.right_alt = true,
+                    0xE7 => mods.right_gui = true,
+                    _ => {}
+                }
                 None
             } else {
                 Some(HidKey::new(usage.page(), usage.id()))
@@ -115,8 +137,10 @@ pub fn keyspec_to_zmk(spec: &KeySpec) -> Result<Behavior, DeviceError> {
             key.id,
             to_zmk_mask(*modifiers),
         ))),
-        KeySpec::KeyToggle(key) => Ok(Behavior::KeyToggle(HidUsage::from_parts(
-            key.page, key.id, 0,
+        KeySpec::KeyToggle { key, modifiers } => Ok(Behavior::KeyToggle(HidUsage::from_parts(
+            key.page,
+            key.id,
+            to_zmk_mask(*modifiers),
         ))),
         KeySpec::LayerTap {
             layer,
@@ -130,10 +154,18 @@ pub fn keyspec_to_zmk(spec: &KeySpec) -> Result<Behavior, DeviceError> {
             hold,
             tap,
             tap_modifiers,
-        } => Ok(Behavior::ModTap {
-            hold: HidUsage::from_parts(0x07, 0, to_zmk_mask(*hold)),
-            tap: HidUsage::from_parts(tap.page, tap.id, to_zmk_mask(*tap_modifiers)),
-        }),
+        } => {
+            let mask = to_zmk_mask(*hold);
+            let hold_usage = if mask != 0 {
+                HidUsage::from_modifier_mask(mask)
+            } else {
+                HidUsage::from_parts(0x07, 0, 0)
+            };
+            Ok(Behavior::ModTap {
+                hold: hold_usage,
+                tap: HidUsage::from_parts(tap.page, tap.id, to_zmk_mask(*tap_modifiers)),
+            })
+        }
         KeySpec::Layer { layer, activation } => match activation {
             LayerActivation::Momentary => Ok(Behavior::MomentaryLayer {
                 layer_id: *layer as u32,
@@ -147,16 +179,23 @@ pub fn keyspec_to_zmk(spec: &KeySpec) -> Result<Behavior, DeviceError> {
             LayerActivation::Sticky => Ok(Behavior::StickyLayer {
                 layer_id: *layer as u32,
             }),
+            LayerActivation::TapToggle => Err(DeviceError::Unsupported(
+                "Tap-toggle layer mode not supported in ZMK".to_string(),
+            )),
             _ => Err(DeviceError::Unsupported(
                 "Layer activation mode not supported on ZMK".to_string(),
             )),
         },
         KeySpec::StickyKey { key, modifiers } => match key {
-            None => Ok(Behavior::StickyKey(HidUsage::from_parts(
-                0x07,
-                0,
-                to_zmk_mask(*modifiers),
-            ))),
+            None => {
+                let mask = to_zmk_mask(*modifiers);
+                let usage = if mask != 0 {
+                    HidUsage::from_modifier_mask(mask)
+                } else {
+                    HidUsage::from_parts(0x07, 0, 0)
+                };
+                Ok(Behavior::StickyKey(usage))
+            }
             Some(k) => Ok(Behavior::StickyKey(HidUsage::from_parts(
                 k.page,
                 k.id,
@@ -179,7 +218,7 @@ pub fn keyspec_to_zmk(spec: &KeySpec) -> Result<Behavior, DeviceError> {
         KeySpec::Bluetooth(bt) => Ok(Behavior::Bluetooth(domain_to_bluetooth(bt))),
         KeySpec::Output(out) => Ok(Behavior::OutputSelection(domain_to_output(out))),
         KeySpec::Lighting(lighting) => match lighting {
-            LightingAction::Backlight(bl) => Ok(Behavior::Backlight(domain_to_backlight(bl))),
+            LightingAction::Backlight(bl) => Ok(Behavior::Backlight(domain_to_backlight(bl)?)),
             LightingAction::Rgb(ug) => Ok(Behavior::Underglow(domain_to_underglow(ug))),
         },
         KeySpec::Mouse(action) => match action {
@@ -290,19 +329,22 @@ fn backlight_to_domain(bl: &BacklightCommand) -> BacklightAction {
     }
 }
 
-fn domain_to_backlight(action: &BacklightAction) -> BacklightCommand {
+fn domain_to_backlight(action: &BacklightAction) -> Result<BacklightCommand, DeviceError> {
     match action {
-        BacklightAction::On => BacklightCommand::On,
-        BacklightAction::Off => BacklightCommand::Off,
-        BacklightAction::Toggle => BacklightCommand::Toggle,
-        BacklightAction::Inc => BacklightCommand::Inc,
-        BacklightAction::Dec => BacklightCommand::Dec,
-        BacklightAction::Cycle => BacklightCommand::Cycle,
-        BacklightAction::Set(n) => BacklightCommand::Set(*n),
-        BacklightAction::Other { command, value } => BacklightCommand::Other {
+        BacklightAction::On => Ok(BacklightCommand::On),
+        BacklightAction::Off => Ok(BacklightCommand::Off),
+        BacklightAction::Toggle => Ok(BacklightCommand::Toggle),
+        BacklightAction::Inc => Ok(BacklightCommand::Inc),
+        BacklightAction::Dec => Ok(BacklightCommand::Dec),
+        BacklightAction::Cycle => Ok(BacklightCommand::Cycle),
+        BacklightAction::Set(n) => Ok(BacklightCommand::Set(*n)),
+        BacklightAction::Other { command, value } => Ok(BacklightCommand::Other {
             command: *command,
             value: *value,
-        },
+        }),
+        BacklightAction::BreathingToggle => Err(DeviceError::Unsupported(
+            "Backlight breathing toggle not supported in ZMK".to_string(),
+        )),
     }
 }
 
@@ -426,35 +468,12 @@ fn domain_to_param(param: Option<CustomParam>) -> BehaviorParam {
 
 /// Translates a ZMK modifier bitmask into a domain [`Modifiers`] struct.
 pub fn from_zmk_mask(mods: u8) -> Modifiers {
-    Modifiers {
-        ctrl: mods & (zmk_studio_api::MOD_LCTL | zmk_studio_api::MOD_RCTL) != 0,
-        shift: mods & (zmk_studio_api::MOD_LSFT | zmk_studio_api::MOD_RSFT) != 0,
-        alt: mods & (zmk_studio_api::MOD_LALT | zmk_studio_api::MOD_RALT) != 0,
-        gui: mods & (zmk_studio_api::MOD_LGUI | zmk_studio_api::MOD_RGUI) != 0,
-        right_alt: mods & zmk_studio_api::MOD_RALT != 0,
-    }
+    Modifiers::from_hid_mask(mods)
 }
 
 /// Translates a domain [`Modifiers`] struct into a ZMK modifier bitmask.
 pub fn to_zmk_mask(mods: Modifiers) -> u8 {
-    let mut mask = 0;
-    if mods.ctrl {
-        mask |= zmk_studio_api::MOD_LCTL;
-    }
-    if mods.shift {
-        mask |= zmk_studio_api::MOD_LSFT;
-    }
-    if mods.alt {
-        if mods.right_alt {
-            mask |= zmk_studio_api::MOD_RALT;
-        } else {
-            mask |= zmk_studio_api::MOD_LALT;
-        }
-    }
-    if mods.gui {
-        mask |= zmk_studio_api::MOD_LGUI;
-    }
-    mask
+    mods.to_hid_mask()
 }
 
 #[cfg(test)]
@@ -482,8 +501,13 @@ mod tests {
                 layer_id: 2,
                 tap: HidUsage::from_parts(0x07, 0x1C, zmk_studio_api::MOD_LSFT),
             },
+            Behavior::KeyToggle(HidUsage::from_parts(0x07, 0x05, 0)),
+            Behavior::KeyToggle(HidUsage::from_parts(0x07, 0x05, zmk_studio_api::MOD_LSFT)),
+            Behavior::StickyKey(HidUsage::from_parts(0x07, 0x04, 0)),
+            Behavior::StickyKey(HidUsage::from_parts(0x07, 0x04, zmk_studio_api::MOD_LCTL)),
+            Behavior::StickyKey(HidUsage::from_modifier_mask(zmk_studio_api::MOD_LSFT)),
             Behavior::ModTap {
-                hold: HidUsage::from_parts(0x07, 0, zmk_studio_api::MOD_LALT),
+                hold: HidUsage::from_modifier_mask(zmk_studio_api::MOD_LALT),
                 tap: HidUsage::from_parts(0x07, 0x06, zmk_studio_api::MOD_LCTL),
             },
         ];
@@ -567,6 +591,38 @@ mod tests {
                 "Parity mismatch for behavior {:?}",
                 b
             );
+        }
+    }
+
+    #[test]
+    fn test_zmk_unsupported_features_properly_rejected() {
+        let tt_spec = KeySpec::Layer {
+            layer: 1,
+            activation: LayerActivation::TapToggle,
+        };
+        assert!(matches!(
+            keyspec_to_zmk(&tt_spec),
+            Err(DeviceError::Unsupported(_))
+        ));
+
+        let bl_spec = KeySpec::Lighting(LightingAction::Backlight(BacklightAction::BreathingToggle));
+        assert!(matches!(
+            keyspec_to_zmk(&bl_spec),
+            Err(DeviceError::Unsupported(_))
+        ));
+
+        let accel_spec = KeySpec::Mouse(MouseAction::Acceleration(1));
+        assert!(matches!(
+            keyspec_to_zmk(&accel_spec),
+            Err(DeviceError::Unsupported(_))
+        ));
+    }
+
+    #[test]
+    fn test_zmk_modifiers_round_trip() {
+        for mask in 0..=255u8 {
+            let mods = from_zmk_mask(mask);
+            assert_eq!(to_zmk_mask(mods), mask);
         }
     }
 }

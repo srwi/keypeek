@@ -272,7 +272,7 @@ impl KeyboardProtocol for ZmkProtocol {
                             .get(&role)
                             .is_none_or(|sets| behavior.matches_metadata(sets))
                     }
-                    None => true,
+                    None => false,
                 },
                 Err(_) => false,
             }
@@ -372,4 +372,62 @@ fn snapshot_from_resolved(resolved: &[ResolvedLayer], num_keys: usize) -> Keymap
         .collect();
 
     KeymapSnapshot { layers, actions }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hid_labels::Modifiers;
+    use crate::key_spec::{CustomBinding, CustomKind, HidKey};
+    use std::collections::HashSet;
+    use zmk_studio_api::BehaviorRole;
+
+    #[test]
+    fn test_zmk_action_filter_rejects_unknown_custom_behaviors() {
+        let mut supported_behaviors = HashSet::new();
+        supported_behaviors.insert(BehaviorRole::KeyPress);
+        supported_behaviors.insert(BehaviorRole::KeyToggle);
+
+        let layout = Arc::new(ZmkLayout {
+            definition: KeyboardDefinition {
+                vid: 0x1234,
+                pid: 0x5678,
+                rows: 1,
+                cols: 1,
+                layouts: vec![],
+            },
+            snapshot: Mutex::new(KeymapSnapshot {
+                layers: vec![],
+                actions: vec![],
+            }),
+            supported_behaviors,
+            behavior_metadata: Default::default(),
+        });
+
+        let proto = ZmkProtocol {
+            hid_device: None,
+            layout,
+            transport: ZmkTransport::SerialPort("mock".to_string()),
+            session: None,
+        };
+
+        let filter = proto.action_filter().expect("filter should be present");
+
+        // KeyPress is supported
+        let key_press = KeySpec::KeyPress {
+            key: HidKey::keyboard(0x04),
+            modifiers: Modifiers::default(),
+        };
+        assert!(filter(&key_press));
+
+        // QMK Raw / Audio / RGB Matrix custom code should be rejected
+        let qmk_raw = KeySpec::Custom(CustomBinding {
+            kind: CustomKind::Raw,
+            id: 0x5C01, // e.g. QMK Audio / RGB matrix code
+            name: None,
+            param1: None,
+            param2: None,
+        });
+        assert!(!filter(&qmk_raw));
+    }
 }

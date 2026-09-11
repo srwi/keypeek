@@ -124,7 +124,7 @@ fn build_search_haystack(binding: &KeySpec, key: &LayoutKey) -> String {
 
     match binding {
         KeySpec::KeyPress { key, .. }
-        | KeySpec::KeyToggle(key)
+        | KeySpec::KeyToggle { key, .. }
         | KeySpec::LayerTap { tap: key, .. }
         | KeySpec::ModTap { tap: key, .. }
         | KeySpec::StickyKey { key: Some(key), .. } => {

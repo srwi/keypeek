@@ -367,7 +367,7 @@ pub fn hid_consumer_key(usage_id: u16) -> Option<LayoutKey> {
         }),
 
         0x183 => Some(LayoutKey {
-            tap: Label::new("CCC"),
+            tap: Label::with_short("Media Select", "Media"),
             ..Default::default()
         }),
 
@@ -551,6 +551,11 @@ pub fn hid_consumer_key(usage_id: u16) -> Option<LayoutKey> {
             ..Default::default()
         }),
 
+        0x1CD => Some(LayoutKey {
+            tap: Label::with_short("Assistant", "Ast"),
+            ..Default::default()
+        }),
+
         0x201 => Some(LayoutKey {
             tap: Label::new("New"),
             ..Default::default()
@@ -729,6 +734,11 @@ pub fn hid_consumer_key(usage_id: u16) -> Option<LayoutKey> {
 
         0x29F => Some(LayoutKey {
             tap: Label::with_short("Show All Windows", "AllWin"),
+            ..Default::default()
+        }),
+
+        0x2A0 => Some(LayoutKey {
+            tap: Label::with_short("Launchpad", "Launch"),
             ..Default::default()
         }),
 

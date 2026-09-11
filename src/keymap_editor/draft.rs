@@ -32,9 +32,11 @@ pub enum EditorSection {
     Output,
     System,
 
-    // Lighting
+    // Lighting & Audio
     Backlight,
     Rgb,
+    RgbMatrix,
+    Audio,
 
     // Pointing
     Mouse,
@@ -47,7 +49,7 @@ pub enum EditorSection {
 impl EditorSection {
     pub const fn label(self) -> &'static str {
         match self {
-            Self::Keyboard => "Keyboard",
+            Self::Keyboard => "Basic",
             Self::Media => "Media",
             Self::KeyToggle => "Key Toggle",
             Self::Special => "Special",
@@ -55,15 +57,36 @@ impl EditorSection {
             Self::ModTap => "Mod-Tap",
             Self::Layers => "Layers",
             Self::LayerMod => "Layer Mod",
-            Self::OneShot => "One-Shot",
+            Self::OneShot => "One-Shot Mod",
             Self::Bluetooth => "Bluetooth",
             Self::Output => "Output",
             Self::System => "System",
             Self::Backlight => "Backlight",
-            Self::Rgb => "RGB Lighting",
+            Self::Rgb => "RGB Underglow",
+            Self::RgbMatrix => "RGB Matrix",
+            Self::Audio => "Audio",
             Self::Mouse => "Mouse",
             Self::Custom => "Custom",
             Self::RawHex => "Any Keycode",
+        }
+    }
+
+    pub fn label_for(self, keyboard: &Keyboard) -> &'static str {
+        self.label_for_support(keyboard.write_support())
+    }
+
+    pub fn label_for_support(self, support: WriteSupport) -> &'static str {
+        if matches!(support, WriteSupport::Session) {
+            match self {
+                Self::Keyboard => "Key Press",
+                Self::KeyToggle => "Key Toggle",
+                Self::OneShot => "Sticky Key",
+                Self::Output => "Output Selection",
+                Self::Rgb => "Underglow",
+                _ => self.label(),
+            }
+        } else {
+            self.label()
         }
     }
 
@@ -75,11 +98,12 @@ impl EditorSection {
                 .candidates
                 .iter()
                 .any(|c| keyboard.is_action_supported(&c.binding)),
-            Self::KeyToggle => {
-                keyboard.is_action_supported(&KeySpec::KeyToggle(HidKey::keyboard(0x04)))
-            }
+            Self::KeyToggle => keyboard.is_action_supported(&KeySpec::KeyToggle {
+                key: HidKey::keyboard(0x04),
+                modifiers: Modifiers::default(),
+            }),
             Self::Special => true,
-            Self::Combo => true,
+            Self::Combo => matches!(keyboard.write_support(), WriteSupport::Immediate),
             Self::ModTap => {
                 let sample = KeySpec::ModTap {
                     hold: Modifiers {
@@ -127,6 +151,14 @@ impl EditorSection {
             Self::Rgb => keyboard.is_action_supported(&KeySpec::Lighting(LightingAction::Rgb(
                 crate::key_spec::RgbAction::Toggle,
             ))),
+            Self::RgbMatrix => super::catalog::rgb_matrix_group()
+                .candidates
+                .iter()
+                .any(|c| keyboard.is_action_supported(&c.binding)),
+            Self::Audio => super::catalog::audio_group()
+                .candidates
+                .iter()
+                .any(|c| keyboard.is_action_supported(&c.binding)),
             Self::Mouse => super::catalog::mouse_groups()
                 .iter()
                 .flat_map(|g| &g.candidates)
@@ -172,14 +204,17 @@ pub struct KeyDraft {
 }
 
 impl KeyDraft {
-    /// Decodes an existing [`KeySpec`] into draft state.
-    pub fn from_spec(spec: &KeySpec) -> Self {
+    /// Decodes an existing [`KeySpec`] into draft state for a specific write support mode.
+    pub fn from_spec_for_support(spec: &KeySpec, support: WriteSupport) -> Self {
         let mut draft = Self::default();
 
         match spec {
             KeySpec::KeyPress { key, modifiers } => {
                 let mask = u8_from_modifiers(*modifiers);
-                if mask == 0 {
+                if matches!(support, WriteSupport::Session) {
+                    draft.section = EditorSection::Keyboard;
+                    draft.modifiers = mask;
+                } else if mask == 0 {
                     if key.page == 0x0C {
                         draft.section = EditorSection::Media;
                     } else {
@@ -191,9 +226,10 @@ impl KeyDraft {
                 }
                 draft.tap_key = Some(*key);
             }
-            KeySpec::KeyToggle(key) => {
+            KeySpec::KeyToggle { key, modifiers } => {
                 draft.section = EditorSection::KeyToggle;
                 draft.tap_key = Some(*key);
+                draft.modifiers = u8_from_modifiers(*modifiers);
             }
             KeySpec::ModTap {
                 hold,
@@ -264,7 +300,21 @@ impl KeyDraft {
                 draft.section = EditorSection::Special;
             }
             KeySpec::Custom(CustomBinding { id, kind, .. }) => {
-                draft.section = EditorSection::Custom;
+                if let Ok(kc) = qmk_via_api::keycodes::Keycode::try_from(*id as u16) {
+                    match kc.category() {
+                        qmk_via_api::keycodes::KeycodeCategory::Audio => {
+                            draft.section = EditorSection::Audio;
+                        }
+                        qmk_via_api::keycodes::KeycodeCategory::RgbMatrix => {
+                            draft.section = EditorSection::RgbMatrix;
+                        }
+                        _ => {
+                            draft.section = EditorSection::Custom;
+                        }
+                    }
+                } else {
+                    draft.section = EditorSection::Custom;
+                }
                 let raw_base = match kind {
                     CustomKind::TapDance => 0x5700,
                     CustomKind::Macro => 0x7700,
@@ -279,10 +329,24 @@ impl KeyDraft {
         draft
     }
 
+    /// Decodes an existing [`KeySpec`] into draft state.
+    pub fn from_spec(spec: &KeySpec) -> Self {
+        Self::from_spec_for_support(spec, WriteSupport::Immediate)
+    }
+
     /// Initializes draft for a section, preserving active parameters if relevant.
     pub fn for_section(section: EditorSection, current_spec: Option<&KeySpec>) -> Self {
+        Self::for_section_with_support(section, current_spec, WriteSupport::Immediate)
+    }
+
+    /// Initializes draft for a section and write support, preserving active parameters if relevant.
+    pub fn for_section_with_support(
+        section: EditorSection,
+        current_spec: Option<&KeySpec>,
+        support: WriteSupport,
+    ) -> Self {
         if let Some(spec) = current_spec {
-            let draft = Self::from_spec(spec);
+            let draft = Self::from_spec_for_support(spec, support);
             if draft.section == section {
                 return draft;
             }
@@ -299,6 +363,7 @@ impl KeyDraft {
                 return Self {
                     section,
                     tap_key: Some(tap),
+                    modifiers: draft.modifiers,
                     ..Default::default()
                 };
             }
@@ -313,6 +378,13 @@ impl KeyDraft {
     /// Returns the staged [`KeySpec`] if all required parameters are valid.
     pub fn staged(&self) -> Option<KeySpec> {
         match self.section {
+            EditorSection::Keyboard => {
+                let tap = self.tap_key?;
+                Some(KeySpec::KeyPress {
+                    key: tap,
+                    modifiers: modifiers_from_u8(self.modifiers),
+                })
+            }
             EditorSection::Combo => {
                 let tap = self.tap_key?;
                 if self.modifiers == 0 {
@@ -323,7 +395,13 @@ impl KeyDraft {
                     modifiers: modifiers_from_u8(self.modifiers),
                 })
             }
-            EditorSection::KeyToggle => self.tap_key.map(KeySpec::KeyToggle),
+            EditorSection::KeyToggle => {
+                let tap = self.tap_key?;
+                Some(KeySpec::KeyToggle {
+                    key: tap,
+                    modifiers: modifiers_from_u8(self.modifiers),
+                })
+            }
             EditorSection::ModTap => {
                 let tap = self.tap_key?;
                 if self.hold_mods == 0 {
@@ -404,34 +482,12 @@ impl KeyDraft {
 
 /// Converts a `Modifiers` struct to an 8-bit mask (bits 0..3 Left, 4..7 Right).
 pub fn u8_from_modifiers(mods: Modifiers) -> u8 {
-    let mut mask = 0;
-    if mods.ctrl {
-        mask |= 0x01;
-    }
-    if mods.shift {
-        mask |= 0x02;
-    }
-    if mods.alt && !mods.right_alt {
-        mask |= 0x04;
-    }
-    if mods.gui {
-        mask |= 0x08;
-    }
-    if mods.right_alt {
-        mask |= 0x40;
-    }
-    mask
+    mods.to_hid_mask()
 }
 
 /// Converts an 8-bit modifier mask to a `Modifiers` struct.
 pub fn modifiers_from_u8(mask: u8) -> Modifiers {
-    Modifiers {
-        ctrl: (mask & 0x11) != 0,
-        shift: (mask & 0x22) != 0,
-        alt: (mask & 0x44) != 0,
-        gui: (mask & 0x88) != 0,
-        right_alt: (mask & 0x40) != 0,
-    }
+    Modifiers::from_hid_mask(mask)
 }
 
 #[cfg(test)]
@@ -632,10 +688,14 @@ mod tests {
 
     #[test]
     fn round_trip_key_toggle() {
-        let spec = KeySpec::KeyToggle(HidKey::keyboard(0x39)); // CapsLock
+        let spec = KeySpec::KeyToggle {
+            key: HidKey::keyboard(0x39),
+            modifiers: Modifiers::default(),
+        }; // CapsLock
         let draft = KeyDraft::from_spec(&spec);
         assert_eq!(draft.section, EditorSection::KeyToggle);
         assert_eq!(draft.tap_key, Some(HidKey::keyboard(0x39)));
+        assert_eq!(draft.modifiers, 0);
         assert_eq!(draft.staged(), Some(spec));
     }
 
@@ -698,5 +758,229 @@ mod tests {
         let draft = KeyDraft::for_section(EditorSection::ModTap, Some(&current));
         assert_eq!(draft.section, EditorSection::ModTap);
         assert_eq!(draft.tap_key, Some(HidKey::keyboard(0x04)));
+    }
+
+    #[test]
+    fn keyboard_draft_stages_with_and_without_modifiers() {
+        let mut draft = KeyDraft {
+            section: EditorSection::Keyboard,
+            tap_key: Some(HidKey::keyboard(0x04)),
+            modifiers: 0,
+            ..Default::default()
+        };
+        assert_eq!(
+            draft.staged(),
+            Some(KeySpec::KeyPress {
+                key: HidKey::keyboard(0x04),
+                modifiers: Modifiers::default(),
+            })
+        );
+
+        draft.modifiers = 0x02; // Shift
+        assert_eq!(
+            draft.staged(),
+            Some(KeySpec::KeyPress {
+                key: HidKey::keyboard(0x04),
+                modifiers: Modifiers {
+                    shift: true,
+                    ..Default::default()
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn for_section_preserves_modifiers_between_keyboard_and_combo() {
+        let current = KeySpec::KeyPress {
+            key: HidKey::keyboard(0x04),
+            modifiers: Modifiers {
+                ctrl: true,
+                shift: true,
+                ..Default::default()
+            },
+        };
+        let draft = KeyDraft::for_section(EditorSection::Keyboard, Some(&current));
+        assert_eq!(draft.section, EditorSection::Keyboard);
+        assert_eq!(draft.tap_key, Some(HidKey::keyboard(0x04)));
+        assert_eq!(draft.modifiers, 0x01 | 0x02);
+    }
+
+    #[test]
+    fn from_spec_routes_audio_and_rgb_matrix() {
+        let audio_code = qmk_via_api::keycodes::Keycode::all_in_category(
+            qmk_via_api::keycodes::KeycodeCategory::Audio,
+        )[0] as u32;
+        let audio_spec = KeySpec::Custom(CustomBinding {
+            kind: CustomKind::Raw,
+            id: audio_code,
+            name: None,
+            param1: None,
+            param2: None,
+        });
+        let draft = KeyDraft::from_spec(&audio_spec);
+        assert_eq!(draft.section, EditorSection::Audio);
+
+        let rgb_matrix_code = qmk_via_api::keycodes::Keycode::all_in_category(
+            qmk_via_api::keycodes::KeycodeCategory::RgbMatrix,
+        )[0] as u32;
+        let rgb_matrix_spec = KeySpec::Custom(CustomBinding {
+            kind: CustomKind::Raw,
+            id: rgb_matrix_code,
+            name: None,
+            param1: None,
+            param2: None,
+        });
+        let draft = KeyDraft::from_spec(&rgb_matrix_spec);
+        assert_eq!(draft.section, EditorSection::RgbMatrix);
+    }
+
+    #[test]
+    fn round_trip_key_toggle_with_modifiers() {
+        let spec = KeySpec::KeyToggle {
+            key: HidKey::keyboard(0x04),
+            modifiers: Modifiers {
+                ctrl: true,
+                shift: true,
+                ..Default::default()
+            },
+        };
+        let draft = KeyDraft::from_spec(&spec);
+        assert_eq!(draft.section, EditorSection::KeyToggle);
+        assert_eq!(draft.tap_key, Some(HidKey::keyboard(0x04)));
+        assert_eq!(draft.modifiers, 0x01 | 0x02);
+        assert_eq!(draft.staged(), Some(spec));
+    }
+
+    #[test]
+    fn round_trip_sticky_key_with_key_and_modifiers() {
+        let spec = KeySpec::StickyKey {
+            key: Some(HidKey::keyboard(0x04)),
+            modifiers: Modifiers {
+                shift: true,
+                ..Default::default()
+            },
+        };
+        let draft = KeyDraft::from_spec(&spec);
+        assert_eq!(draft.section, EditorSection::OneShot);
+        assert_eq!(draft.tap_key, Some(HidKey::keyboard(0x04)));
+        assert_eq!(draft.modifiers, 0x02);
+        assert_eq!(draft.staged(), Some(spec));
+    }
+
+    #[test]
+    fn editor_section_labels_respect_protocol() {
+        assert_eq!(
+            EditorSection::Keyboard.label_for_support(WriteSupport::Session),
+            "Key Press"
+        );
+        assert_eq!(
+            EditorSection::Keyboard.label_for_support(WriteSupport::Immediate),
+            "Basic"
+        );
+        assert_eq!(
+            EditorSection::OneShot.label_for_support(WriteSupport::Session),
+            "Sticky Key"
+        );
+        assert_eq!(
+            EditorSection::OneShot.label_for_support(WriteSupport::Immediate),
+            "One-Shot Mod"
+        );
+        assert_eq!(
+            EditorSection::Output.label_for_support(WriteSupport::Session),
+            "Output Selection"
+        );
+        assert_eq!(
+            EditorSection::Output.label_for_support(WriteSupport::Immediate),
+            "Output"
+        );
+        assert_eq!(
+            EditorSection::Rgb.label_for_support(WriteSupport::Session),
+            "Underglow"
+        );
+        assert_eq!(
+            EditorSection::Rgb.label_for_support(WriteSupport::Immediate),
+            "RGB Underglow"
+        );
+    }
+
+    #[test]
+    fn draft_mod_tap_compound_hold_modifiers() {
+        let mut draft = KeyDraft {
+            section: EditorSection::ModTap,
+            tap_key: Some(HidKey::keyboard(0x04)), // A
+            hold_mods: 0,
+            ..Default::default()
+        };
+        // Toggle LCtrl (0x01) and LShift (0x02)
+        draft.hold_mods ^= 0x01;
+        draft.hold_mods ^= 0x02;
+        assert_eq!(draft.hold_mods, 0x03);
+
+        let staged = draft.staged().expect("should be valid");
+        assert_eq!(
+            staged,
+            KeySpec::ModTap {
+                hold: Modifiers {
+                    ctrl: true,
+                    shift: true,
+                    ..Default::default()
+                },
+                tap: HidKey::keyboard(0x04),
+                tap_modifiers: Modifiers::default(),
+            }
+        );
+    }
+
+    #[test]
+    fn draft_section_routing_respects_write_support() {
+        let modified_key = KeySpec::KeyPress {
+            key: HidKey::keyboard(0x04),
+            modifiers: Modifiers {
+                ctrl: true,
+                ..Default::default()
+            },
+        };
+        // On Session (ZMK), modified keys stay in Keyboard (Key Press)
+        let zmk_draft = KeyDraft::from_spec_for_support(&modified_key, WriteSupport::Session);
+        assert_eq!(zmk_draft.section, EditorSection::Keyboard);
+        assert_eq!(zmk_draft.modifiers, 0x01);
+        assert_eq!(zmk_draft.tap_key, Some(HidKey::keyboard(0x04)));
+
+        // On Immediate (QMK), modified keys route to Combo
+        let qmk_draft = KeyDraft::from_spec_for_support(&modified_key, WriteSupport::Immediate);
+        assert_eq!(qmk_draft.section, EditorSection::Combo);
+        assert_eq!(qmk_draft.modifiers, 0x01);
+
+        let media_key = KeySpec::KeyPress {
+            key: HidKey::consumer(0xE2), // Mute
+            modifiers: Modifiers::default(),
+        };
+        // On Session (ZMK), media keys route to Keyboard (Key Press)
+        let zmk_media = KeyDraft::from_spec_for_support(&media_key, WriteSupport::Session);
+        assert_eq!(zmk_media.section, EditorSection::Keyboard);
+        assert_eq!(zmk_media.tap_key, Some(HidKey::consumer(0xE2)));
+
+        // On Immediate (QMK), media keys route to Media
+        let qmk_media = KeyDraft::from_spec_for_support(&media_key, WriteSupport::Immediate);
+        assert_eq!(qmk_media.section, EditorSection::Media);
+        assert_eq!(qmk_media.tap_key, Some(HidKey::consumer(0xE2)));
+    }
+
+    #[test]
+    fn draft_round_trips_all_8_modifier_bits() {
+        let mods = Modifiers {
+            ctrl: true,
+            shift: true,
+            alt: true,
+            gui: true,
+            right_ctrl: true,
+            right_shift: true,
+            right_alt: true,
+            right_gui: true,
+        };
+        let mask = u8_from_modifiers(mods);
+        assert_eq!(mask, 0xFF);
+        let round_trip = modifiers_from_u8(mask);
+        assert_eq!(mods, round_trip);
     }
 }

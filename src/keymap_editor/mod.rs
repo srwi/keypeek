@@ -183,7 +183,7 @@ impl EditorState {
             self.zmk_session = ZmkSessionState::Idle;
         }
         if let Some(action) = target.action(keyboard) {
-            self.draft = KeyDraft::from_spec(&action);
+            self.draft = KeyDraft::from_spec_for_support(&action, keyboard.write_support());
         } else {
             self.draft = Default::default();
         }
@@ -203,7 +203,7 @@ pub(super) struct SidebarSection<T: 'static> {
 
 /// Item in the editor's left sidebar.
 pub(super) trait SidebarItem: Copy + PartialEq {
-    fn label(self) -> &'static str;
+    fn label(self, keyboard: &Keyboard) -> &'static str;
     fn is_supported(self, keyboard: &Keyboard) -> bool;
 }
 
@@ -248,7 +248,9 @@ pub(super) fn editor_left_panel<T: SidebarItem>(
                                 }
                                 ui.weak(section.title);
                                 for item in supported {
-                                    if ui.selectable_label(current == item, item.label()).clicked()
+                                    if ui
+                                        .selectable_label(current == item, item.label(keyboard))
+                                        .clicked()
                                     {
                                         selected = Some(item);
                                     }
