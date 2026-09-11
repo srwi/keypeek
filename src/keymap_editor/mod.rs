@@ -183,7 +183,7 @@ impl EditorState {
             self.session = SessionWriteState::Idle;
         }
         if let Some(action) = target.action(keyboard) {
-            self.draft = KeyDraft::from_spec_for_support(&action, keyboard.write_support());
+            self.draft = KeyDraft::from_spec(&action);
         } else {
             self.draft = Default::default();
         }

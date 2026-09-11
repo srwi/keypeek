@@ -63,8 +63,8 @@ const EDITOR_SECTIONS: [super::SidebarSection<EditorSection>; 6] = [
 ];
 
 impl super::SidebarItem for EditorSection {
-    fn label(self, keyboard: &Keyboard) -> &'static str {
-        self.label_for(keyboard)
+    fn label(self, _keyboard: &Keyboard) -> &'static str {
+        self.label()
     }
 
     fn is_supported(self, keyboard: &Keyboard) -> bool {
@@ -116,11 +116,7 @@ impl EditorState {
         ) {
             self.search_query.clear();
             let current_action = target.action(keyboard);
-            self.draft = KeyDraft::for_section_with_support(
-                section,
-                current_action.as_ref(),
-                keyboard.write_support(),
-            );
+            self.draft = KeyDraft::for_section(section, current_action.as_ref());
         }
 
         let current_section = self.draft.section;
@@ -294,40 +290,20 @@ impl EditorState {
                 .filter(|a| matches!(a, KeySpec::KeyPress { .. })))
             .map(SelectedKey::valid);
 
-        if matches!(
-            keyboard.write_support(),
-            crate::protocols::WriteSupport::Session
-        ) {
-            multi_candidate_groups(
-                ui,
-                catalog::tap_categories(),
-                search_query,
-                |c| keyboard.is_action_supported(&c.binding),
-                selected,
-                style,
-                |_, candidate| {
-                    if let KeySpec::KeyPress { key, .. } = &candidate.binding {
-                        self.draft.tap_key = Some(*key);
-                        self.commit_draft(keyboard, target);
-                    }
-                },
-            );
-        } else {
-            titled_candidate_group(
-                ui,
-                catalog::keyboard_group(),
-                search_query,
-                |c| keyboard.is_action_supported(&c.binding),
-                selected,
-                style,
-                |candidate| {
-                    if let KeySpec::KeyPress { key, .. } = &candidate.binding {
-                        self.draft.tap_key = Some(*key);
-                        self.commit_draft(keyboard, target);
-                    }
-                },
-            );
-        }
+        multi_candidate_groups(
+            ui,
+            catalog::tap_categories(),
+            search_query,
+            |c| keyboard.is_action_supported(&c.binding),
+            selected,
+            style,
+            |_, candidate| {
+                if let KeySpec::KeyPress { key, .. } = &candidate.binding {
+                    self.draft.tap_key = Some(*key);
+                    self.commit_draft(keyboard, target);
+                }
+            },
+        );
     }
 
     fn draw_single_group_page(
@@ -639,48 +615,24 @@ impl EditorState {
             }
         };
 
-        if matches!(
-            keyboard.write_support(),
-            crate::protocols::WriteSupport::Session
-        ) {
-            multi_candidate_groups(
-                ui,
-                catalog::tap_categories(),
-                search_query,
-                candidate_filter,
-                selected,
-                style,
-                |_, candidate| {
-                    if let KeySpec::KeyPress { key, .. } = &candidate.binding {
-                        if self.draft.tap_key == Some(*key) {
-                            self.draft.tap_key = None;
-                        } else {
-                            self.draft.tap_key = Some(*key);
-                        }
-                        self.commit_draft(keyboard, target);
+        multi_candidate_groups(
+            ui,
+            catalog::tap_categories(),
+            search_query,
+            candidate_filter,
+            selected,
+            style,
+            |_, candidate| {
+                if let KeySpec::KeyPress { key, .. } = &candidate.binding {
+                    if self.draft.tap_key == Some(*key) {
+                        self.draft.tap_key = None;
+                    } else {
+                        self.draft.tap_key = Some(*key);
                     }
-                },
-            );
-        } else {
-            titled_candidate_group(
-                ui,
-                catalog::keyboard_group(),
-                search_query,
-                candidate_filter,
-                selected,
-                style,
-                |candidate| {
-                    if let KeySpec::KeyPress { key, .. } = &candidate.binding {
-                        if self.draft.tap_key == Some(*key) {
-                            self.draft.tap_key = None;
-                        } else {
-                            self.draft.tap_key = Some(*key);
-                        }
-                        self.commit_draft(keyboard, target);
-                    }
-                },
-            );
-        }
+                    self.commit_draft(keyboard, target);
+                }
+            },
+        );
     }
 
     fn draw_backlight_page(
@@ -759,40 +711,20 @@ impl EditorState {
             _ => false,
         };
 
-        if matches!(
-            keyboard.write_support(),
-            crate::protocols::WriteSupport::Session
-        ) {
-            multi_candidate_groups(
-                ui,
-                catalog::tap_categories(),
-                search_query,
-                candidate_filter,
-                selected,
-                style,
-                |_, candidate| {
-                    if let KeySpec::KeyPress { key, .. } = &candidate.binding {
-                        self.draft.tap_key = Some(*key);
-                        self.commit_draft(keyboard, target);
-                    }
-                },
-            );
-        } else {
-            titled_candidate_group(
-                ui,
-                catalog::keyboard_group(),
-                search_query,
-                candidate_filter,
-                selected,
-                style,
-                |candidate| {
-                    if let KeySpec::KeyPress { key, .. } = &candidate.binding {
-                        self.draft.tap_key = Some(*key);
-                        self.commit_draft(keyboard, target);
-                    }
-                },
-            );
-        }
+        multi_candidate_groups(
+            ui,
+            catalog::tap_categories(),
+            search_query,
+            candidate_filter,
+            selected,
+            style,
+            |_, candidate| {
+                if let KeySpec::KeyPress { key, .. } = &candidate.binding {
+                    self.draft.tap_key = Some(*key);
+                    self.commit_draft(keyboard, target);
+                }
+            },
+        );
     }
 
     fn draw_layer_mod_page(
