@@ -431,6 +431,11 @@ impl Keyboard {
         self.protocol.lock().unwrap().supports_live_layout_switching()
     }
 
+    /// The firmware vocabulary users of this device are familiar with.
+    pub fn terminology(&self) -> crate::protocols::Terminology {
+        self.protocol.lock().unwrap().terminology()
+    }
+
     pub fn set_key(
         &self,
         layer_index: usize,

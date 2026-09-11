@@ -63,8 +63,8 @@ const EDITOR_SECTIONS: [super::SidebarSection<EditorSection>; 7] = [
 ];
 
 impl super::SidebarItem for EditorSection {
-    fn label(self, _keyboard: &Keyboard) -> &'static str {
-        self.label()
+    fn label(self, keyboard: &Keyboard) -> &'static str {
+        self.label_for(keyboard)
     }
 
     fn is_supported(self, keyboard: &Keyboard) -> bool {
