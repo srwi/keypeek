@@ -4,11 +4,7 @@
 //! to and from [`KeySpec`].
 
 use crate::hid_labels::Modifiers;
-use crate::key_spec::{
-    AudioAction, BacklightAction, BluetoothAction, CustomBinding, CustomKind, HidKey, KeySpec,
-    LayerActivation, LightingAction, MouseAction, MouseButton, OutputTarget, PowerAction,
-    RgbMatrixAction,
-};
+use crate::key_spec::{BacklightAction, HidKey, KeySpec, LayerActivation, LightingAction};
 use crate::keyboard::Keyboard;
 
 /// Unified sidebar sections for key categories.
@@ -69,92 +65,6 @@ impl EditorSection {
             Self::Mouse => "Mouse",
             Self::Custom => "Custom",
             Self::RawHex => "Any Keycode",
-        }
-    }
-
-    /// Checks if this section is supported by the connected keyboard.
-    pub fn is_supported(self, keyboard: &Keyboard) -> bool {
-        match self {
-            Self::Keyboard => true,
-            Self::KeyToggle => keyboard.is_action_supported(&KeySpec::KeyToggle {
-                key: HidKey::keyboard(0x04),
-                modifiers: Modifiers::default(),
-            }),
-            Self::Special => true,
-            Self::Combo => keyboard.is_action_supported(&KeySpec::KeyPress {
-                key: HidKey::keyboard(0x04),
-                modifiers: Modifiers {
-                    ctrl: true,
-                    ..Default::default()
-                },
-            }),
-            Self::ModTap => {
-                let sample = KeySpec::ModTap {
-                    hold: Modifiers {
-                        shift: true,
-                        ..Default::default()
-                    },
-                    tap: HidKey::keyboard(0x04),
-                    tap_modifiers: Modifiers::default(),
-                };
-                keyboard.is_action_supported(&sample)
-            }
-            Self::Layers => true,
-            Self::LayerMod => keyboard.is_action_supported(&KeySpec::Layer {
-                layer: 0,
-                activation: LayerActivation::LayerMod(Modifiers {
-                    shift: true,
-                    ..Default::default()
-                }),
-            }),
-            Self::OneShot => {
-                let sample = KeySpec::StickyKey {
-                    key: None,
-                    modifiers: Modifiers {
-                        shift: true,
-                        ..Default::default()
-                    },
-                };
-                keyboard.is_action_supported(&sample)
-            }
-            Self::Bluetooth => keyboard.is_action_supported(&KeySpec::Bluetooth(
-                BluetoothAction::Clear,
-            )),
-            Self::Output => keyboard.is_action_supported(&KeySpec::Output(
-                OutputTarget::Toggle,
-            )),
-            Self::System => keyboard.is_action_supported(&KeySpec::KeyPress {
-                key: HidKey::system(0x81),
-                modifiers: Modifiers::default(),
-            }),
-            Self::BootPower => keyboard.is_action_supported(&KeySpec::Power(
-                PowerAction::Reset,
-            )),
-            Self::Backlight => keyboard.is_action_supported(&KeySpec::Lighting(
-                LightingAction::Backlight(BacklightAction::Toggle),
-            )),
-            Self::Rgb => keyboard.is_action_supported(&KeySpec::Lighting(LightingAction::Rgb(
-                crate::key_spec::RgbAction::Toggle,
-            ))),
-            Self::RgbMatrix => keyboard.is_action_supported(&KeySpec::Lighting(
-                LightingAction::RgbMatrix(RgbMatrixAction::Toggle),
-            )),
-            Self::Audio => keyboard.is_action_supported(&KeySpec::Audio(
-                AudioAction::Toggle,
-            )),
-            Self::Mouse => keyboard.is_action_supported(&KeySpec::Mouse(
-                MouseAction::Press(MouseButton::Left),
-            )),
-            Self::Custom => keyboard.is_action_supported(&KeySpec::Custom(
-                CustomBinding {
-                    kind: CustomKind::Macro,
-                    id: 0,
-                    name: None,
-                    param1: None,
-                    param2: None,
-                },
-            )),
-            Self::RawHex => keyboard.supports_raw_keycode_entry(),
         }
     }
 }
@@ -440,6 +350,14 @@ impl KeyDraft {
             }
             _ => true,
         }
+    }
+
+    /// Unmodified keypress representation of the staged base/tap key, useful for picker selection matching.
+    pub fn tap_key_spec(&self) -> Option<KeySpec> {
+        self.tap_key.map(|key| KeySpec::KeyPress {
+            key,
+            modifiers: Modifiers::default(),
+        })
     }
 }
 

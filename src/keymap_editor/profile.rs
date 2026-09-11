@@ -40,15 +40,8 @@ pub trait EditorProfile: KeyPresenter + Send + Sync {
         if !self.sidebar_sections().iter().any(|s| s.items.contains(&section)) {
             return false;
         }
-        section.is_supported(keyboard)
+        is_device_section_supported(section, keyboard)
     }
-
-    /// Candidate group for standard keyboard keys.
-    fn keyboard_group(&self) -> &'static CandidateGroup;
-
-    /// Candidate group for media/consumer keys.
-    #[allow(dead_code)]
-    fn media_group(&self) -> &'static CandidateGroup;
 
     /// Candidate groups suitable for tap targets (e.g. Mod-Tap, Layer-Tap).
     fn tap_categories(&self) -> &'static [CandidateGroup];
@@ -66,14 +59,94 @@ pub trait EditorProfile: KeyPresenter + Send + Sync {
     ) -> Vec<CandidateGroup>;
 }
 
+/// Checks if a device capability filter allows the given editor section on the connected keyboard.
+fn is_device_section_supported(section: EditorSection, keyboard: &Keyboard) -> bool {
+    match section {
+        EditorSection::Keyboard
+        | EditorSection::Special
+        | EditorSection::Layers
+        | EditorSection::Combo => true,
+        EditorSection::KeyToggle => keyboard.is_action_supported(&KeySpec::KeyToggle {
+            key: HidKey::keyboard(0x04),
+            modifiers: crate::hid_labels::Modifiers::default(),
+        }),
+        EditorSection::ModTap => {
+            let sample = KeySpec::ModTap {
+                hold: crate::hid_labels::Modifiers {
+                    shift: true,
+                    ..Default::default()
+                },
+                tap: HidKey::keyboard(0x04),
+                tap_modifiers: crate::hid_labels::Modifiers::default(),
+            };
+            keyboard.is_action_supported(&sample)
+        }
+        EditorSection::LayerMod => keyboard.is_action_supported(&KeySpec::Layer {
+            layer: 0,
+            activation: crate::key_spec::LayerActivation::LayerMod(crate::hid_labels::Modifiers {
+                shift: true,
+                ..Default::default()
+            }),
+        }),
+        EditorSection::OneShot => {
+            let sample = KeySpec::StickyKey {
+                key: None,
+                modifiers: crate::hid_labels::Modifiers {
+                    shift: true,
+                    ..Default::default()
+                },
+            };
+            keyboard.is_action_supported(&sample)
+        }
+        EditorSection::Bluetooth => {
+            keyboard.is_action_supported(&KeySpec::Bluetooth(crate::key_spec::BluetoothAction::Clear))
+        }
+        EditorSection::Output => {
+            keyboard.is_action_supported(&KeySpec::Output(crate::key_spec::OutputTarget::Toggle))
+        }
+        EditorSection::System => keyboard.is_action_supported(&KeySpec::KeyPress {
+            key: HidKey::system(0x81),
+            modifiers: crate::hid_labels::Modifiers::default(),
+        }),
+        EditorSection::BootPower => {
+            keyboard.is_action_supported(&KeySpec::Power(crate::key_spec::PowerAction::Reset))
+        }
+        EditorSection::Backlight => keyboard.is_action_supported(&KeySpec::Lighting(
+            crate::key_spec::LightingAction::Backlight(crate::key_spec::BacklightAction::Toggle),
+        )),
+        EditorSection::Rgb => keyboard.is_action_supported(&KeySpec::Lighting(
+            crate::key_spec::LightingAction::Rgb(crate::key_spec::RgbAction::Toggle),
+        )),
+        EditorSection::RgbMatrix => keyboard.is_action_supported(&KeySpec::Lighting(
+            crate::key_spec::LightingAction::RgbMatrix(crate::key_spec::RgbMatrixAction::Toggle),
+        )),
+        EditorSection::Audio => {
+            keyboard.is_action_supported(&KeySpec::Audio(crate::key_spec::AudioAction::Toggle))
+        }
+        EditorSection::Mouse => keyboard.is_action_supported(&KeySpec::Mouse(
+            crate::key_spec::MouseAction::Press(crate::key_spec::MouseButton::Left),
+        )),
+        EditorSection::Custom => keyboard.is_action_supported(&KeySpec::Custom(
+            crate::key_spec::CustomBinding {
+                kind: crate::key_spec::CustomKind::Macro,
+                id: 0,
+                name: None,
+                param1: None,
+                param2: None,
+            },
+        )),
+        EditorSection::RawHex => keyboard.supports_raw_keycode_entry(),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // QMK Profile
 // ---------------------------------------------------------------------------
 
-const QMK_SIDEBAR_SECTIONS: [SidebarSection<EditorSection>; 7] = [
+const QMK_SIDEBAR_SECTIONS: [SidebarSection<EditorSection>; 6] = [
     SidebarSection {
         title: "Keys",
-        items: &[EditorSection::Keyboard, EditorSection::KeyToggle],
+        items: &[EditorSection::Keyboard],
     },
     SidebarSection {
         title: "Layers & Mods",
@@ -84,10 +157,6 @@ const QMK_SIDEBAR_SECTIONS: [SidebarSection<EditorSection>; 7] = [
             EditorSection::ModTap,
             EditorSection::LayerMod,
         ],
-    },
-    SidebarSection {
-        title: "Wireless",
-        items: &[EditorSection::Bluetooth, EditorSection::Output],
     },
     SidebarSection {
         title: "Power",
@@ -152,16 +221,6 @@ fn qmk_tap_categories() -> &'static [CandidateGroup] {
     CATEGORIES.get_or_init(|| vec![qmk_keyboard_group().clone(), qmk_media_group().clone()])
 }
 
-fn qmk_bluetooth_groups() -> &'static [CandidateGroup] {
-    static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
-    GROUPS.get_or_init(|| vec![common::build_bluetooth_group(&QmkKeyPresenter, |_| &[])])
-}
-
-fn qmk_output_groups() -> &'static [CandidateGroup] {
-    static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
-    GROUPS.get_or_init(|| vec![common::build_output_group(&QmkKeyPresenter, |_| &[])])
-}
-
 fn qmk_system_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
@@ -174,14 +233,26 @@ fn qmk_system_groups() -> &'static [CandidateGroup] {
     })
 }
 
+const QMK_BOOT_POWER_ACTIONS: [(crate::key_spec::PowerAction, &[&str]); 3] = [
+    (crate::key_spec::PowerAction::Reset, &["reset", "reboot"]),
+    (crate::key_spec::PowerAction::Bootloader, &["bootloader", "dfu", "flash", "boot"]),
+    (crate::key_spec::PowerAction::Other(0xEE), &["clear eeprom", "eeprom reset"]),
+];
+
 fn qmk_boot_power_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
         use crate::key_spec::PowerAction;
-        vec![common::build_boot_power_group(&QmkKeyPresenter, |act| match act {
-            PowerAction::Reset => &["QK_BOOT"],
-            _ => &[],
-        })]
+        vec![common::build_boot_power_group(
+            &QmkKeyPresenter,
+            &QMK_BOOT_POWER_ACTIONS,
+            |act| match act {
+                PowerAction::Reset => &["QK_BOOT", "QK_REBOOT"],
+                PowerAction::Bootloader => &["QK_BOOTLOADER"],
+                PowerAction::Other(0xEE) => &["QK_CLEAR_EEPROM"],
+                _ => &[],
+            },
+        )]
     })
 }
 
@@ -277,7 +348,7 @@ fn qmk_mouse_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
         use crate::key_spec::{MouseAction, MouseButton};
-        common::build_mouse_groups(&QmkKeyPresenter, |spec| match spec {
+        common::build_mouse_groups(&QmkKeyPresenter, true, |spec| match spec {
             KeySpec::Mouse(MouseAction::Press(MouseButton::Left)) => &["MS_BTN1"],
             KeySpec::Mouse(MouseAction::Press(MouseButton::Right)) => &["MS_BTN2"],
             KeySpec::Mouse(MouseAction::Press(MouseButton::Middle)) => &["MS_BTN3"],
@@ -314,10 +385,19 @@ fn qmk_special_groups() -> &'static [CandidateGroup] {
     })
 }
 
-fn common_custom_groups() -> &'static [CandidateGroup] {
+fn qmk_custom_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| common::build_custom_groups(&QmkKeyPresenter))
 }
+
+const QMK_LAYER_OPS: [(&str, crate::key_spec::LayerActivation, &[&str]); 6] = [
+    ("Momentary", crate::key_spec::LayerActivation::Momentary, &["mo", "momentary"]),
+    ("Toggle", crate::key_spec::LayerActivation::Toggle, &["tg", "toggle"]),
+    ("Switch To Layer", crate::key_spec::LayerActivation::To, &["to", "switch"]),
+    ("Sticky Layer", crate::key_spec::LayerActivation::Sticky, &["sl", "sticky", "oneshot"]),
+    ("Set Default Layer", crate::key_spec::LayerActivation::Default, &["df", "default"]),
+    ("Tap Toggle", crate::key_spec::LayerActivation::TapToggle, &["tt", "tap toggle"]),
+];
 
 impl KeyPresenter for QmkEditorProfile {
     fn present_key(&self, spec: &KeySpec, layer_names: &[String]) -> Option<LayoutKey> {
@@ -345,25 +425,16 @@ impl EditorProfile for QmkEditorProfile {
         }
     }
 
-    fn keyboard_group(&self) -> &'static CandidateGroup {
-        qmk_keyboard_group()
-    }
-
-    fn media_group(&self) -> &'static CandidateGroup {
-        qmk_media_group()
-    }
-
     fn tap_categories(&self) -> &'static [CandidateGroup] {
         qmk_tap_categories()
     }
 
     fn section_groups(&self, section: EditorSection) -> &'static [CandidateGroup] {
         match section {
-            EditorSection::Keyboard | EditorSection::KeyToggle | EditorSection::Combo | EditorSection::ModTap | EditorSection::OneShot => {
-                qmk_tap_categories()
-            }
-            EditorSection::Bluetooth => qmk_bluetooth_groups(),
-            EditorSection::Output => qmk_output_groups(),
+            EditorSection::Keyboard
+            | EditorSection::Combo
+            | EditorSection::ModTap
+            | EditorSection::OneShot => qmk_tap_categories(),
             EditorSection::System => qmk_system_groups(),
             EditorSection::BootPower => qmk_boot_power_groups(),
             EditorSection::Backlight => qmk_backlight_groups(),
@@ -372,8 +443,13 @@ impl EditorProfile for QmkEditorProfile {
             EditorSection::Audio => qmk_audio_groups(),
             EditorSection::Mouse => qmk_mouse_groups(),
             EditorSection::Special => qmk_special_groups(),
-            EditorSection::Custom => common_custom_groups(),
-            EditorSection::Layers | EditorSection::LayerMod | EditorSection::RawHex => &[],
+            EditorSection::Custom => qmk_custom_groups(),
+            EditorSection::KeyToggle
+            | EditorSection::Bluetooth
+            | EditorSection::Output
+            | EditorSection::Layers
+            | EditorSection::LayerMod
+            | EditorSection::RawHex => &[],
         }
     }
 
@@ -384,7 +460,15 @@ impl EditorProfile for QmkEditorProfile {
         layer_names: &[String],
         tap_key: Option<HidKey>,
     ) -> Vec<CandidateGroup> {
-        common::build_layer_groups(&QmkKeyPresenter, layer_count, layer_infos, layer_names, tap_key, |_| &[])
+        common::build_layer_groups(
+            &QmkKeyPresenter,
+            layer_count,
+            layer_infos,
+            layer_names,
+            tap_key,
+            &QMK_LAYER_OPS,
+            |_| &[],
+        )
     }
 }
 
@@ -404,7 +488,6 @@ const ZMK_SIDEBAR_SECTIONS: [SidebarSection<EditorSection>; 7] = [
             EditorSection::Combo,
             EditorSection::OneShot,
             EditorSection::ModTap,
-            EditorSection::LayerMod,
         ],
     },
     SidebarSection {
@@ -503,20 +586,34 @@ fn zmk_system_groups() -> &'static [CandidateGroup] {
     GROUPS.get_or_init(|| vec![common::build_system_group(&ZmkKeyPresenter, |_| &[])])
 }
 
+const ZMK_BOOT_POWER_ACTIONS: [(crate::key_spec::PowerAction, &[&str]); 7] = [
+    (crate::key_spec::PowerAction::Reset, &["reset", "reboot", "sys_reset"]),
+    (crate::key_spec::PowerAction::Bootloader, &["bootloader", "dfu", "flash", "boot"]),
+    (crate::key_spec::PowerAction::SoftOff, &["soft off", "power off", "shutdown"]),
+    (crate::key_spec::PowerAction::UnlockKeymap, &["unlock", "keymap unlock", "studio unlock"]),
+    (crate::key_spec::PowerAction::Toggle, &["ext pwr tog", "power toggle"]),
+    (crate::key_spec::PowerAction::On, &["ext pwr on", "power on"]),
+    (crate::key_spec::PowerAction::Off, &["ext pwr off", "power off"]),
+];
+
 fn zmk_boot_power_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
         use crate::key_spec::PowerAction;
-        vec![common::build_boot_power_group(&QmkKeyPresenter, |act| match act {
-            PowerAction::Reset => &["&sys_reset"],
-            PowerAction::Bootloader => &["&bootloader"],
-            PowerAction::SoftOff => &["&soft_off"],
-            PowerAction::UnlockKeymap => &["&studio_unlock"],
-            PowerAction::Toggle => &["&ext_power EP_TOG"],
-            PowerAction::On => &["&ext_power EP_ON"],
-            PowerAction::Off => &["&ext_power EP_OFF"],
-            _ => &[],
-        })]
+        vec![common::build_boot_power_group(
+            &ZmkKeyPresenter,
+            &ZMK_BOOT_POWER_ACTIONS,
+            |act| match act {
+                PowerAction::Reset => &["&sys_reset"],
+                PowerAction::Bootloader => &["&bootloader"],
+                PowerAction::SoftOff => &["&soft_off"],
+                PowerAction::UnlockKeymap => &["&studio_unlock"],
+                PowerAction::Toggle => &["&ext_power EP_TOG"],
+                PowerAction::On => &["&ext_power EP_ON"],
+                PowerAction::Off => &["&ext_power EP_OFF"],
+                _ => &[],
+            },
+        )]
     })
 }
 
@@ -524,7 +621,7 @@ fn zmk_backlight_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
         use crate::key_spec::BacklightAction;
-        vec![common::build_backlight_group(&QmkKeyPresenter, |act| match act {
+        vec![common::build_backlight_group(&ZmkKeyPresenter, |act| match act {
             BacklightAction::Toggle => &["&bl BL_TOG"],
             BacklightAction::On => &["&bl BL_ON"],
             BacklightAction::Off => &["&bl BL_OFF"],
@@ -540,7 +637,7 @@ fn zmk_rgb_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
         use crate::key_spec::RgbAction;
-        vec![common::build_rgb_underglow_group(&QmkKeyPresenter, |act| match act {
+        vec![common::build_rgb_underglow_group(&ZmkKeyPresenter, |act| match act {
             RgbAction::Toggle => &["&rgb_ug RGB_TOG"],
             RgbAction::On => &["&rgb_ug RGB_ON"],
             RgbAction::Off => &["&rgb_ug RGB_OFF"],
@@ -563,7 +660,7 @@ fn zmk_mouse_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
         use crate::key_spec::{MouseAction, MouseButton};
-        common::build_mouse_groups(&QmkKeyPresenter, |spec| match spec {
+        common::build_mouse_groups(&ZmkKeyPresenter, false, |spec| match spec {
             KeySpec::Mouse(MouseAction::Press(MouseButton::Left)) => &["&mkp LCLK"],
             KeySpec::Mouse(MouseAction::Press(MouseButton::Right)) => &["&mkp RCLK"],
             KeySpec::Mouse(MouseAction::Press(MouseButton::Middle)) => &["&mkp MCLK"],
@@ -583,15 +680,28 @@ fn zmk_mouse_groups() -> &'static [CandidateGroup] {
 fn zmk_special_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
-        vec![common::build_special_group(&QmkKeyPresenter, |spec| match spec {
+        vec![common::build_special_group(&ZmkKeyPresenter, |spec| match spec {
             KeySpec::Transparent => &["&trans"],
             KeySpec::None => &["&none"],
             KeySpec::CapsWord => &["&caps_word"],
             KeySpec::KeyRepeat => &["&key_repeat"],
+            KeySpec::GraveEscape => &["&gresc", "gresc"],
             _ => &[],
         })]
     })
 }
+
+fn zmk_custom_groups() -> &'static [CandidateGroup] {
+    static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
+    GROUPS.get_or_init(|| common::build_custom_groups(&ZmkKeyPresenter))
+}
+
+const ZMK_LAYER_OPS: [(&str, crate::key_spec::LayerActivation, &[&str]); 4] = [
+    ("Momentary", crate::key_spec::LayerActivation::Momentary, &["mo", "momentary"]),
+    ("Toggle", crate::key_spec::LayerActivation::Toggle, &["tg", "toggle"]),
+    ("Switch To Layer", crate::key_spec::LayerActivation::To, &["to", "switch"]),
+    ("Sticky Layer", crate::key_spec::LayerActivation::Sticky, &["sl", "sticky", "oneshot"]),
+];
 
 impl KeyPresenter for ZmkEditorProfile {
     fn present_key(&self, spec: &KeySpec, layer_names: &[String]) -> Option<LayoutKey> {
@@ -619,35 +729,31 @@ impl EditorProfile for ZmkEditorProfile {
         }
     }
 
-    fn keyboard_group(&self) -> &'static CandidateGroup {
-        zmk_keyboard_group()
-    }
-
-    fn media_group(&self) -> &'static CandidateGroup {
-        zmk_media_group()
-    }
-
     fn tap_categories(&self) -> &'static [CandidateGroup] {
         zmk_tap_categories()
     }
 
     fn section_groups(&self, section: EditorSection) -> &'static [CandidateGroup] {
         match section {
-            EditorSection::Keyboard | EditorSection::KeyToggle | EditorSection::Combo | EditorSection::ModTap | EditorSection::OneShot => {
-                zmk_tap_categories()
-            }
+            EditorSection::Keyboard
+            | EditorSection::KeyToggle
+            | EditorSection::Combo
+            | EditorSection::ModTap
+            | EditorSection::OneShot => zmk_tap_categories(),
             EditorSection::Bluetooth => zmk_bluetooth_groups(),
             EditorSection::Output => zmk_output_groups(),
             EditorSection::System => zmk_system_groups(),
             EditorSection::BootPower => zmk_boot_power_groups(),
             EditorSection::Backlight => zmk_backlight_groups(),
             EditorSection::Rgb => zmk_rgb_groups(),
-            EditorSection::RgbMatrix => &[],
-            EditorSection::Audio => &[],
             EditorSection::Mouse => zmk_mouse_groups(),
             EditorSection::Special => zmk_special_groups(),
-            EditorSection::Custom => common_custom_groups(),
-            EditorSection::Layers | EditorSection::LayerMod | EditorSection::RawHex => &[],
+            EditorSection::Custom => zmk_custom_groups(),
+            EditorSection::LayerMod
+            | EditorSection::RgbMatrix
+            | EditorSection::Audio
+            | EditorSection::Layers
+            | EditorSection::RawHex => &[],
         }
     }
 
@@ -664,6 +770,7 @@ impl EditorProfile for ZmkEditorProfile {
             layer_infos,
             layer_names,
             tap_key,
+            &ZMK_LAYER_OPS,
             |act| {
                 use crate::key_spec::LayerActivation;
                 match act {
@@ -698,6 +805,11 @@ mod tests {
         assert!(all_items.contains(&EditorSection::RawHex));
         assert!(all_items.contains(&EditorSection::RgbMatrix));
         assert!(all_items.contains(&EditorSection::Audio));
+        assert!(all_items.contains(&EditorSection::LayerMod));
+        // QMK does not offer KeyToggle or Wireless sections
+        assert!(!all_items.contains(&EditorSection::KeyToggle));
+        assert!(!all_items.contains(&EditorSection::Bluetooth));
+        assert!(!all_items.contains(&EditorSection::Output));
     }
 
     #[test]
@@ -712,8 +824,12 @@ mod tests {
             .iter()
             .flat_map(|s| s.items.iter().copied())
             .collect();
-        // ZMK does not generate RawHex or QMK-specific lighting/audio sections
+        assert!(all_items.contains(&EditorSection::KeyToggle));
+        assert!(all_items.contains(&EditorSection::Bluetooth));
+        assert!(all_items.contains(&EditorSection::Output));
+        // ZMK does not generate RawHex, LayerMod, or QMK-specific lighting/audio sections
         assert!(!all_items.contains(&EditorSection::RawHex));
+        assert!(!all_items.contains(&EditorSection::LayerMod));
         assert!(!all_items.contains(&EditorSection::RgbMatrix));
         assert!(!all_items.contains(&EditorSection::Audio));
     }
@@ -736,6 +852,35 @@ mod tests {
             .find(|s| s.title == "Lighting")
             .expect("ZMK has Lighting");
         assert_eq!(zmk_lighting.items.len(), 2);
+
+        let qmk_keys = qmk
+            .sidebar_sections()
+            .iter()
+            .find(|s| s.title == "Keys")
+            .expect("QMK has Keys");
+        assert_eq!(qmk_keys.items, &[EditorSection::Keyboard]);
+
+        let zmk_keys = zmk
+            .sidebar_sections()
+            .iter()
+            .find(|s| s.title == "Keys")
+            .expect("ZMK has Keys");
+        assert_eq!(
+            zmk_keys.items,
+            &[EditorSection::Keyboard, EditorSection::KeyToggle]
+        );
+
+        let qmk_has_wireless = qmk
+            .sidebar_sections()
+            .iter()
+            .any(|s| s.title == "Wireless");
+        assert!(!qmk_has_wireless, "QMK should not have Wireless section");
+
+        let zmk_has_wireless = zmk
+            .sidebar_sections()
+            .iter()
+            .any(|s| s.title == "Wireless");
+        assert!(zmk_has_wireless, "ZMK should have Wireless section");
 
         let qmk_other = qmk
             .sidebar_sections()
@@ -774,10 +919,15 @@ mod tests {
         assert!(qmk.is_section_supported(EditorSection::Keyboard, &keyboard));
         assert!(qmk.is_section_supported(EditorSection::Layers, &keyboard));
         assert!(qmk.is_section_supported(EditorSection::RawHex, &keyboard));
+        // QMK rejects KeyToggle and Wireless sections regardless of device
+        assert!(!qmk.is_section_supported(EditorSection::KeyToggle, &keyboard));
+        assert!(!qmk.is_section_supported(EditorSection::Bluetooth, &keyboard));
+        assert!(!qmk.is_section_supported(EditorSection::Output, &keyboard));
 
         let zmk = ZmkEditorProfile;
-        // ZMK does not support RawHex section even if protocol supports it
+        // ZMK does not support RawHex or LayerMod section even if protocol supports it
         assert!(!zmk.is_section_supported(EditorSection::RawHex, &keyboard));
+        assert!(!zmk.is_section_supported(EditorSection::LayerMod, &keyboard));
     }
 
     #[test]
@@ -801,9 +951,108 @@ mod tests {
         let zmk = ZmkEditorProfile;
         assert!(zmk.section_groups(EditorSection::RgbMatrix).is_empty());
         assert!(zmk.section_groups(EditorSection::Audio).is_empty());
+        assert!(zmk.section_groups(EditorSection::LayerMod).is_empty());
 
         let qmk = QmkEditorProfile;
         assert!(!qmk.section_groups(EditorSection::RgbMatrix).is_empty());
         assert!(!qmk.section_groups(EditorSection::Audio).is_empty());
+        assert!(qmk.section_groups(EditorSection::Bluetooth).is_empty());
+        assert!(qmk.section_groups(EditorSection::Output).is_empty());
+        assert!(qmk.section_groups(EditorSection::KeyToggle).is_empty());
+    }
+
+    #[test]
+    fn capability_handling_separates_family_from_device() {
+        // 1. Family constraints: ZMK profile does not offer RawHex section or candidates,
+        //    even if the connected protocol were to accept raw hex.
+        let protocol: Box<dyn crate::protocols::KeyboardProtocol> =
+            Box::new(crate::protocols::mock::MockProtocol::connect().unwrap());
+        let layout_name = protocol.get_layout_definition().layouts[0].name.clone();
+        let keyboard = Keyboard::new(
+            protocol,
+            layout_name,
+            crate::keyboard::OverlayConfig {
+                timeout_ms: 2000,
+                activation_delay_ms: 300,
+                visible_layers: u32::MAX,
+            },
+            crate::ui_wake::UiWake::new(std::sync::Arc::new(|| ())),
+            std::sync::Arc::new(QmkEditorProfile),
+        )
+        .unwrap();
+
+        let zmk = ZmkEditorProfile;
+        assert!(!zmk.is_section_supported(EditorSection::RawHex, &keyboard));
+        assert!(!zmk.is_section_supported(EditorSection::Audio, &keyboard));
+        assert!(!zmk.is_section_supported(EditorSection::RgbMatrix, &keyboard));
+        assert!(!zmk.is_section_supported(EditorSection::LayerMod, &keyboard));
+
+        let qmk = QmkEditorProfile;
+        assert!(!qmk.is_section_supported(EditorSection::KeyToggle, &keyboard));
+        assert!(!qmk.is_section_supported(EditorSection::Bluetooth, &keyboard));
+        assert!(!qmk.is_section_supported(EditorSection::Output, &keyboard));
+
+        // Candidate group family separation:
+        // ZMK does not generate Mouse Acceleration
+        let zmk_mouse = zmk.section_groups(EditorSection::Mouse);
+        assert_eq!(zmk_mouse.len(), 3);
+        assert!(!zmk_mouse.iter().any(|g| g.name == "Mouse Acceleration"));
+
+        // QMK generates Mouse Acceleration
+        let qmk_mouse = qmk.section_groups(EditorSection::Mouse);
+        assert_eq!(qmk_mouse.len(), 4);
+        assert!(qmk_mouse.iter().any(|g| g.name == "Mouse Acceleration"));
+
+        // ZMK layer operations omit Default and TapToggle
+        let zmk_layers = zmk.layer_groups(4, &[], &[], None);
+        assert!(!zmk_layers.iter().any(|g| g.name == "Set Default Layer"));
+        assert!(!zmk_layers.iter().any(|g| g.name == "Tap Toggle"));
+
+        // QMK layer operations include Default and TapToggle
+        let qmk_layers = qmk.layer_groups(4, &[], &[], None);
+        assert!(qmk_layers.iter().any(|g| g.name == "Set Default Layer"));
+        assert!(qmk_layers.iter().any(|g| g.name == "Tap Toggle"));
+
+        // Boot & Power family separation:
+        // QMK boot & power includes Clear EEPROM, omits Soft Off
+        let qmk_boot = qmk.section_groups(EditorSection::BootPower);
+        assert!(qmk_boot[0].candidates.iter().any(|c| matches!(
+            c.binding,
+            KeySpec::Power(crate::key_spec::PowerAction::Other(0xEE))
+        )));
+        assert!(!qmk_boot[0].candidates.iter().any(|c| matches!(
+            c.binding,
+            KeySpec::Power(crate::key_spec::PowerAction::SoftOff)
+        )));
+
+        // ZMK boot & power includes Soft Off, omits Clear EEPROM
+        let zmk_boot = zmk.section_groups(EditorSection::BootPower);
+        assert!(zmk_boot[0].candidates.iter().any(|c| matches!(
+            c.binding,
+            KeySpec::Power(crate::key_spec::PowerAction::SoftOff)
+        )));
+        assert!(!zmk_boot[0].candidates.iter().any(|c| matches!(
+            c.binding,
+            KeySpec::Power(crate::key_spec::PowerAction::Other(0xEE))
+        )));
+
+        // 2. Device capability variation: QMK feature flags filter lighting/audio actions on protocol level
+        let qmk_features = crate::protocols::qmk_common::QmkFeatures {
+            has_backlight: true,
+            has_rgblight: false,
+            has_rgb_matrix: false,
+            has_audio: false,
+        };
+        let filter = crate::protocols::qmk_common::qmk_action_filter(qmk_features).unwrap();
+        // Backlight is enabled
+        assert!(filter(&KeySpec::Lighting(crate::key_spec::LightingAction::Backlight(
+            crate::key_spec::BacklightAction::Toggle
+        ))));
+        // RGBLight is disabled on this device
+        assert!(!filter(&KeySpec::Lighting(crate::key_spec::LightingAction::Rgb(
+            crate::key_spec::RgbAction::Toggle
+        ))));
+        // Audio is disabled on this device
+        assert!(!filter(&KeySpec::Audio(crate::key_spec::AudioAction::Toggle)));
     }
 }

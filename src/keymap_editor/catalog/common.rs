@@ -265,23 +265,14 @@ pub fn build_system_group(
 /// Builds the Boot & Power candidate group with optional extra firmware-specific tokens.
 pub fn build_boot_power_group(
     presenter: &dyn KeyPresenter,
+    actions: &[(PowerAction, &[&str])],
     extra_tokens_fn: impl Fn(PowerAction) -> &'static [&'static str],
 ) -> CandidateGroup {
-    let actions = [
-        (PowerAction::Reset, &["reset", "reboot", "sys_reset"][..]),
-        (PowerAction::Bootloader, &["bootloader", "dfu", "flash", "boot"][..]),
-        (PowerAction::SoftOff, &["soft off", "power off", "shutdown"][..]),
-        (PowerAction::UnlockKeymap, &["unlock", "keymap unlock", "studio unlock"][..]),
-        (PowerAction::Toggle, &["ext pwr tog", "power toggle"][..]),
-        (PowerAction::On, &["ext pwr on", "power on"][..]),
-        (PowerAction::Off, &["ext pwr off", "power off"][..]),
-    ];
-
     let candidates = actions
-        .into_iter()
+        .iter()
         .map(|(action, names)| {
-            let mut cand = action_candidate(KeySpec::Power(action), names, presenter);
-            for extra in extra_tokens_fn(action) {
+            let mut cand = action_candidate(KeySpec::Power(*action), names, presenter);
+            for extra in extra_tokens_fn(*action) {
                 cand = cand.with_search_token(*extra);
             }
             cand
@@ -438,9 +429,10 @@ pub fn build_audio_group(
     }
 }
 
-/// Builds the Mouse candidate groups (Buttons, Movement, Scroll, Acceleration).
+/// Builds the Mouse candidate groups (Buttons, Movement, Scroll, and optionally Acceleration).
 pub fn build_mouse_groups(
     presenter: &dyn KeyPresenter,
+    include_acceleration: bool,
     extra_tokens_fn: impl Fn(&KeySpec) -> &'static [&'static str],
 ) -> Vec<CandidateGroup> {
     let buttons = [
@@ -504,25 +496,7 @@ pub fn build_mouse_groups(
         })
         .collect();
 
-    let accels = [
-        (0u8, &["mouse accel 0", "accel 0"][..]),
-        (1u8, &["mouse accel 1", "accel 1"][..]),
-        (2u8, &["mouse accel 2", "accel 2"][..]),
-    ];
-
-    let accel_candidates = accels
-        .into_iter()
-        .map(|(level, names)| {
-            let spec = KeySpec::Mouse(MouseAction::Acceleration(level));
-            let mut cand = action_candidate(spec.clone(), names, presenter);
-            for extra in extra_tokens_fn(&spec) {
-                cand = cand.with_search_token(*extra);
-            }
-            cand
-        })
-        .collect();
-
-    vec![
+    let mut groups = vec![
         CandidateGroup {
             name: "Mouse Buttons",
             candidates: button_candidates,
@@ -535,11 +509,34 @@ pub fn build_mouse_groups(
             name: "Mouse Scroll",
             candidates: scroll_candidates,
         },
-        CandidateGroup {
+    ];
+
+    if include_acceleration {
+        let accels = [
+            (0u8, &["mouse accel 0", "accel 0"][..]),
+            (1u8, &["mouse accel 1", "accel 1"][..]),
+            (2u8, &["mouse accel 2", "accel 2"][..]),
+        ];
+
+        let accel_candidates = accels
+            .into_iter()
+            .map(|(level, names)| {
+                let spec = KeySpec::Mouse(MouseAction::Acceleration(level));
+                let mut cand = action_candidate(spec.clone(), names, presenter);
+                for extra in extra_tokens_fn(&spec) {
+                    cand = cand.with_search_token(*extra);
+                }
+                cand
+            })
+            .collect();
+
+        groups.push(CandidateGroup {
             name: "Mouse Acceleration",
             candidates: accel_candidates,
-        },
-    ]
+        });
+    }
+
+    groups
 }
 
 /// Builds the Special candidate group with optional extra firmware-specific tokens.
@@ -607,42 +604,35 @@ pub fn build_custom_groups(presenter: &dyn KeyPresenter) -> Vec<CandidateGroup> 
         .collect()
 }
 
-/// Candidate groups for all supported layer operation types across real layers.
+/// Candidate groups for supported layer operation types across real layers.
 pub fn build_layer_groups(
     presenter: &dyn KeyPresenter,
     layer_count: usize,
     layer_infos: &[LayerInfo],
     layer_names: &[String],
     tap_key: Option<HidKey>,
+    ops: &[(&'static str, LayerActivation, &'static [&'static str])],
     extra_tokens_fn: impl Fn(LayerActivation) -> &'static [&'static str],
 ) -> Vec<CandidateGroup> {
     let count = layer_count.min(layer_infos.len().max(layer_count)).min(32);
-    let ops = [
-        ("Momentary", LayerActivation::Momentary, &["mo", "momentary"][..]),
-        ("Toggle", LayerActivation::Toggle, &["tg", "toggle"][..]),
-        ("Switch To Layer", LayerActivation::To, &["to", "switch"][..]),
-        ("Sticky Layer", LayerActivation::Sticky, &["sl", "sticky", "oneshot"][..]),
-        ("Set Default Layer", LayerActivation::Default, &["df", "default"][..]),
-        ("Tap Toggle", LayerActivation::TapToggle, &["tt", "tap toggle"][..]),
-    ];
 
     let mut groups: Vec<CandidateGroup> = ops
-        .into_iter()
+        .iter()
         .map(|(name, activation, search_tokens)| {
             let candidates = (0..count)
                 .map(|layer| {
                     let mut cand = Candidate::from_action(
                         KeySpec::Layer {
                             layer: layer as u8,
-                            activation,
+                            activation: *activation,
                         },
                         presenter,
                         layer_names,
                     );
-                    for token in search_tokens {
+                    for token in *search_tokens {
                         cand = cand.with_search_token(token);
                     }
-                    for extra in extra_tokens_fn(activation) {
+                    for extra in extra_tokens_fn(*activation) {
                         cand = cand.with_search_token(*extra);
                     }
                     cand = cand.with_search_token(format!("l{layer}"));

@@ -144,10 +144,7 @@ impl EditorState {
             });
         });
 
-        let tap_spec = self.draft.tap_key.map(|key| KeySpec::KeyPress {
-            key,
-            modifiers: Modifiers::default(),
-        });
+        let tap_spec = self.draft.tap_key_spec();
         let action = target.action(keyboard);
         let selected = tap_spec
             .as_ref()
@@ -244,11 +241,10 @@ impl EditorState {
                 );
             }
 
-            let tap_spec = self.draft.tap_key.map(|key| KeySpec::KeyPress {
-                key,
-                modifiers: Modifiers::default(),
-            });
-            let selected = tap_spec.as_ref().map(|s| SelectedKey::new(s, is_valid));
+            let tap_spec = self.draft.tap_key_spec();
+            let selected = tap_spec
+                .as_ref()
+                .map(|s| SelectedKey::new(s, is_valid));
 
             multi_candidate_groups(
                 ui,
@@ -291,20 +287,19 @@ impl EditorState {
             );
         });
 
-        let tap_spec = self.draft.tap_key.map(|key| KeySpec::KeyPress {
-            key,
-            modifiers: crate::hid_labels::Modifiers::default(),
-        });
-        let selected = tap_spec.as_ref().map(|s| SelectedKey::new(s, is_valid));
+        let tap_spec = self.draft.tap_key_spec();
+        let selected = tap_spec
+            .as_ref()
+            .map(|s| SelectedKey::new(s, is_valid));
 
-        titled_candidate_group(
+        multi_candidate_groups(
             ui,
-            profile.keyboard_group(),
+            profile.tap_categories(),
             search_query,
             |c| keyboard.is_action_supported(&c.binding),
             selected,
             style,
-            |candidate| {
+            |_, candidate| {
                 if let KeySpec::KeyPress { key, .. } = &candidate.binding {
                     self.draft.tap_key = Some(*key);
                     self.commit_draft(keyboard, target);
@@ -470,11 +465,10 @@ impl EditorState {
             );
         });
 
-        let tap_spec = self.draft.tap_key.map(|key| KeySpec::KeyPress {
-            key,
-            modifiers: crate::hid_labels::Modifiers::default(),
-        });
-        let selected = tap_spec.as_ref().map(|s| SelectedKey::new(s, is_valid));
+        let tap_spec = self.draft.tap_key_spec();
+        let selected = tap_spec
+            .as_ref()
+            .map(|s| SelectedKey::new(s, is_valid));
 
         let candidate_filter = |c: &super::picker::Candidate| {
             if let KeySpec::KeyPress { key, .. } = &c.binding {
@@ -564,10 +558,7 @@ impl EditorState {
             );
         });
 
-        let tap_spec = self.draft.tap_key.map(|key| KeySpec::KeyPress {
-            key,
-            modifiers: Modifiers::default(),
-        });
+        let tap_spec = self.draft.tap_key_spec();
         let action = target.action(keyboard);
         let selected = tap_spec
             .as_ref()
