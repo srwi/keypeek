@@ -41,10 +41,12 @@ pub fn zmk_to_keyspec(behavior: &Behavior) -> KeySpec {
         Behavior::LayerTap { layer_id, tap } => KeySpec::LayerTap {
             layer: *layer_id as u8,
             tap: HidKey::new(tap.page(), tap.id()),
+            tap_modifiers: from_zmk_mask(tap.modifiers()),
         },
         Behavior::ModTap { hold, tap } => KeySpec::ModTap {
             hold: from_zmk_mask(hold.modifiers()),
             tap: HidKey::new(tap.page(), tap.id()),
+            tap_modifiers: from_zmk_mask(tap.modifiers()),
         },
         Behavior::StickyKey(usage) => {
             let mods = from_zmk_mask(usage.modifiers());
@@ -116,13 +118,21 @@ pub fn keyspec_to_zmk(spec: &KeySpec) -> Result<Behavior, DeviceError> {
         KeySpec::KeyToggle(key) => Ok(Behavior::KeyToggle(HidUsage::from_parts(
             key.page, key.id, 0,
         ))),
-        KeySpec::LayerTap { layer, tap } => Ok(Behavior::LayerTap {
+        KeySpec::LayerTap {
+            layer,
+            tap,
+            tap_modifiers,
+        } => Ok(Behavior::LayerTap {
             layer_id: *layer as u32,
-            tap: HidUsage::from_parts(tap.page, tap.id, 0),
+            tap: HidUsage::from_parts(tap.page, tap.id, to_zmk_mask(*tap_modifiers)),
         }),
-        KeySpec::ModTap { hold, tap } => Ok(Behavior::ModTap {
+        KeySpec::ModTap {
+            hold,
+            tap,
+            tap_modifiers,
+        } => Ok(Behavior::ModTap {
             hold: HidUsage::from_parts(0x07, 0, to_zmk_mask(*hold)),
-            tap: HidUsage::from_parts(tap.page, tap.id, 0),
+            tap: HidUsage::from_parts(tap.page, tap.id, to_zmk_mask(*tap_modifiers)),
         }),
         KeySpec::Layer { layer, activation } => match activation {
             LayerActivation::Momentary => Ok(Behavior::MomentaryLayer {
@@ -468,6 +478,14 @@ mod tests {
             Behavior::OutputSelection(OutputSelection::Usb),
             Behavior::MouseKeyPress(ZmkMouseButton::Left),
             Behavior::MouseMove { x: 0, y: -1 },
+            Behavior::LayerTap {
+                layer_id: 2,
+                tap: HidUsage::from_parts(0x07, 0x1C, zmk_studio_api::MOD_LSFT),
+            },
+            Behavior::ModTap {
+                hold: HidUsage::from_parts(0x07, 0, zmk_studio_api::MOD_LALT),
+                tap: HidUsage::from_parts(0x07, 0x06, zmk_studio_api::MOD_LCTL),
+            },
         ];
 
         for b in behaviors {

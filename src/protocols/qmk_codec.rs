@@ -27,10 +27,12 @@ pub fn qmk_to_keyspec(code: u16) -> KeySpec {
         QmkKeycode::ModTap { mods, keycode } => KeySpec::ModTap {
             hold: from_qmk_mask(mods),
             tap: HidKey::keyboard(keycode as u16),
+            tap_modifiers: Modifiers::default(),
         },
         QmkKeycode::LayerTap { layer, keycode } => KeySpec::LayerTap {
             layer,
             tap: HidKey::keyboard(keycode as u16),
+            tap_modifiers: Modifiers::default(),
         },
         QmkKeycode::LayerMod { layer, mods } => KeySpec::Layer {
             layer,
@@ -141,7 +143,16 @@ pub fn keyspec_to_qmk(spec: &KeySpec) -> Result<u16, DeviceError> {
             }
         }
 
-        KeySpec::ModTap { hold, tap } => {
+        KeySpec::ModTap {
+            hold,
+            tap,
+            tap_modifiers,
+        } => {
+            if !tap_modifiers.is_empty() {
+                return Err(DeviceError::Unsupported(
+                    "QMK does not support modifiers on mod tap key".to_string(),
+                ));
+            }
             QmkKeycode::encode_mod_tap(to_qmk_mask(*hold), tap.id as u8).ok_or_else(|| {
                 DeviceError::Unsupported(format!(
                     "Cannot encode QMK mod tap for key 0x{:02X}",
@@ -150,10 +161,20 @@ pub fn keyspec_to_qmk(spec: &KeySpec) -> Result<u16, DeviceError> {
             })
         }
 
-        KeySpec::LayerTap { layer, tap } => QmkKeycode::encode_layer_tap(*layer, tap.id as u8)
-            .ok_or_else(|| {
+        KeySpec::LayerTap {
+            layer,
+            tap,
+            tap_modifiers,
+        } => {
+            if !tap_modifiers.is_empty() {
+                return Err(DeviceError::Unsupported(
+                    "QMK does not support modifiers on layer tap key".to_string(),
+                ));
+            }
+            QmkKeycode::encode_layer_tap(*layer, tap.id as u8).ok_or_else(|| {
                 DeviceError::Unsupported(format!("Cannot encode QMK layer tap for layer {}", layer))
-            }),
+            })
+        }
 
         KeySpec::Layer { layer, activation } => match activation {
             LayerActivation::Momentary => QmkLayerOp::Momentary

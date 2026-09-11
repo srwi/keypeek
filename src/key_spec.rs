@@ -181,15 +181,17 @@ pub enum KeySpec {
     },
     /// Key toggle (locks key in pressed state until toggled again).
     KeyToggle(HidKey),
-    /// Tap produces a key, holding activates a layer (e.g. `LT(1, KC_SPC)`).
+    /// Tap produces a key with optional modifiers, holding activates a layer (e.g. `LT(1, KC_SPC)`).
     LayerTap {
         layer: u8,
         tap: HidKey,
+        tap_modifiers: Modifiers,
     },
-    /// Tap produces a key, holding acts as a modifier (e.g. `MT(MOD_LCTL, KC_ENT)`).
+    /// Tap produces a key with optional modifiers, holding acts as a modifier (e.g. `MT(MOD_LCTL, KC_ENT)`).
     ModTap {
         hold: Modifiers,
         tap: HidKey,
+        tap_modifiers: Modifiers,
     },
     /// Layer activation (Momentary, Toggle, To, Sticky, LayerMod, Default).
     Layer {
@@ -253,15 +255,31 @@ impl KeySpec {
                 Some(layout)
             }
 
-            KeySpec::LayerTap { layer, tap } => {
-                let tap_key = crate::hid_labels::hid_usage_to_layout_key(tap.page, tap.id)
-                    .unwrap_or_default();
+            KeySpec::LayerTap {
+                layer,
+                tap,
+                tap_modifiers,
+            } => {
+                let base = crate::hid_labels::hid_usage_to_layout_key(tap.page, tap.id);
+                let tap_key = if tap_modifiers.is_empty() {
+                    base.unwrap_or_default()
+                } else {
+                    crate::hid_labels::mod_combo_key(tap.page, tap.id, *tap_modifiers, base)
+                };
                 Some(crate::hid_labels::layer_tap_key(*layer, tap_key, None))
             }
 
-            KeySpec::ModTap { hold, tap } => {
-                let tap_key = crate::hid_labels::hid_usage_to_layout_key(tap.page, tap.id)
-                    .unwrap_or_default();
+            KeySpec::ModTap {
+                hold,
+                tap,
+                tap_modifiers,
+            } => {
+                let base = crate::hid_labels::hid_usage_to_layout_key(tap.page, tap.id);
+                let tap_key = if tap_modifiers.is_empty() {
+                    base.unwrap_or_default()
+                } else {
+                    crate::hid_labels::mod_combo_key(tap.page, tap.id, *tap_modifiers, base)
+                };
                 let mask = hold.to_held_mod_mask();
                 Some(crate::hid_labels::mod_tap_key(
                     tap_key,
@@ -781,6 +799,7 @@ mod tests {
         let key = KeySpec::LayerTap {
             layer: 2,
             tap: HidKey::keyboard(0x2C), // Space
+            tap_modifiers: Modifiers::default(),
         };
         let label = key.resolve_label(&[]).expect("should resolve");
         assert_eq!(label.layer_ref, Some(2));

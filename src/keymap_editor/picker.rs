@@ -276,6 +276,7 @@ pub fn picker_grid_refs(
 }
 
 /// Named group of candidate keys.
+#[derive(Clone)]
 pub struct CandidateGroup {
     pub name: &'static str,
     pub candidates: Vec<Candidate>,
@@ -443,99 +444,6 @@ fn modifier_chip_key(name: &modifier_symbols::ModName, hand: Option<Hand>) -> La
     let mut key = modifier_symbols::modifier_key(name, 0);
     key.argument = hand.map(Hand::tag);
     key
-}
-
-/// Draws a compact hand (L/R) selector chip fitting within a single key unit.
-fn hand_selector(ui: &mut egui::Ui, rect: egui::Rect, id_salt: &str, right: &mut bool) -> bool {
-    let mut changed = false;
-    ui.scope_builder(
-        egui::UiBuilder::new()
-            .max_rect(rect)
-            .id_salt((id_salt, "hand")),
-        |ui| {
-            ui.spacing_mut().item_spacing = egui::vec2(3.0, 2.0);
-            ui.vertical_centered(|ui| {
-                ui.weak("Hand");
-                ui.horizontal(|ui| {
-                    let btn_size = egui::vec2((rect.width() - 3.0) / 2.0, ui.available_height());
-                    for (is_r, label, tip) in [
-                        (false, "L", "Left-hand modifiers (LCTL, LSFT, LALT, LGUI)"),
-                        (true, "R", "Right-hand modifiers (RCTL, RSFT, RALT, RGUI)"),
-                    ] {
-                        if ui
-                            .add_sized(btn_size, egui::Button::new(label).selected(*right == is_r))
-                            .on_hover_text(tip)
-                            .clicked()
-                            && *right != is_r
-                        {
-                            *right = is_r;
-                            changed = true;
-                        }
-                    }
-                });
-            });
-        },
-    );
-    changed
-}
-
-/// Draws a 4-modifier toggle row alongside a Hand (L/R) selector.
-pub fn modifier_toggle_row(
-    ui: &mut egui::Ui,
-    id_salt: &str,
-    mods: &mut u16,
-    right: &mut bool,
-    valid: bool,
-    style: &KeyPaintStyle,
-) -> bool {
-    use modifier_symbols::{MOD_ALT, MOD_CTRL, MOD_GUI, MOD_SHIFT};
-
-    let hand = if *right { Hand::Right } else { Hand::Left };
-    let defs = [
-        (0x01, &MOD_CTRL),
-        (0x02, &MOD_SHIFT),
-        (0x04, &MOD_ALT),
-        (0x08, &MOD_GUI),
-    ];
-
-    let mut changed = false;
-
-    let total_cells = 5.0;
-    let row_width = total_cells * KEY_UNIT + (total_cells - 1.0) * GAP;
-    let (_, space_rect) = ui.allocate_space(egui::vec2(row_width, KEY_UNIT));
-    let origin = space_rect.min;
-
-    for (i, (mask, name)) in defs.iter().enumerate() {
-        let cell = egui::Rect::from_min_size(
-            origin + egui::vec2(i as f32 * (KEY_UNIT + GAP), 0.0),
-            egui::vec2(KEY_UNIT, KEY_UNIT),
-        );
-        let key = modifier_chip_key(name, Some(hand));
-        let response = key_chip(
-            ui,
-            cell,
-            ui.id().with((id_salt, "mod", i)),
-            &key,
-            *mods & mask != 0,
-            valid,
-            style,
-        );
-
-        if response.clicked() {
-            *mods ^= *mask;
-            changed = true;
-        }
-    }
-
-    let hand_rect = egui::Rect::from_min_size(
-        origin + egui::vec2(defs.len() as f32 * (KEY_UNIT + GAP), 0.0),
-        egui::vec2(KEY_UNIT, KEY_UNIT),
-    );
-    if hand_selector(ui, hand_rect, id_salt, right) {
-        changed = true;
-    }
-
-    changed
 }
 
 /// Draws an 8-key modifier toggle grid (4 Left, 4 Right).
@@ -712,73 +620,23 @@ mod tests {
     }
 
     #[test]
-    fn modifier_toggle_row_fits_five_keys_width() {
-        let ctx = egui::Context::default();
-        let output = ctx.run_ui(Default::default(), |ui| {
-            let mut mods = 0u16;
-            let mut right = false;
-            let style = KeyPaintStyle::from_settings(&crate::settings::Settings::default());
-            let inner_response = ui.allocate_ui(egui::vec2(0.0, 0.0), |ui| {
-                modifier_toggle_row(ui, "test", &mut mods, &mut right, true, &style);
-            });
-            let expected_width = 5.0 * KEY_UNIT + 4.0 * GAP;
-            assert_eq!(expected_width, 279.0);
-            assert_eq!(inner_response.response.rect.width(), expected_width);
-            assert_eq!(inner_response.response.rect.height(), KEY_UNIT);
-        });
-        output.drop_without_applying_deltas();
-    }
-
-    #[test]
-    fn modifier_toggle_row_toggle_hand() {
+    fn modifier_toggle_grid_dimensions_and_toggle() {
         let ctx = egui::Context::default();
         let style = KeyPaintStyle::from_settings(&crate::settings::Settings::default());
 
-        let mut mods = 0u16;
-        let mut right = false;
+        let expected_width = 4.0 * KEY_UNIT + 3.0 * GAP;
+        let expected_height = 2.0 * KEY_UNIT + GAP;
 
-        let mut r_pos = egui::Pos2::ZERO;
+        let mut toggled = None;
         let output = ctx.run_ui(Default::default(), |ui| {
             let inner_response = ui.allocate_ui(egui::vec2(0.0, 0.0), |ui| {
-                modifier_toggle_row(ui, "test", &mut mods, &mut right, true, &style);
+                modifier_toggle_grid(ui, "test", 0, true, &style, |mask| {
+                    toggled = Some(mask);
+                });
             });
-            let origin = inner_response.response.rect.min;
-            let btn_gap = 3.0;
-            let btn_width = (KEY_UNIT - btn_gap) / 2.0;
-            let label_height = 14.0;
-            let gap_y = 2.0;
-            r_pos = origin
-                + egui::vec2(
-                    4.0 * (KEY_UNIT + GAP) + btn_width + btn_gap + btn_width / 2.0,
-                    label_height + gap_y + (KEY_UNIT - label_height - gap_y) / 2.0,
-                );
+            assert_eq!(inner_response.response.rect.width(), expected_width);
+            assert_eq!(inner_response.response.rect.height(), expected_height);
         });
         output.drop_without_applying_deltas();
-
-        let mut raw_input = egui::RawInput::default();
-        raw_input.events.push(egui::Event::PointerMoved(r_pos));
-        raw_input.events.push(egui::Event::PointerButton {
-            pos: r_pos,
-            button: egui::PointerButton::Primary,
-            pressed: true,
-            modifiers: Default::default(),
-        });
-        raw_input.events.push(egui::Event::PointerButton {
-            pos: r_pos,
-            button: egui::PointerButton::Primary,
-            pressed: false,
-            modifiers: Default::default(),
-        });
-
-        let mut changed = false;
-        let output = ctx.run_ui(raw_input, |ui| {
-            ui.allocate_ui(egui::vec2(0.0, 0.0), |ui| {
-                changed = modifier_toggle_row(ui, "test", &mut mods, &mut right, true, &style);
-            });
-        });
-        output.drop_without_applying_deltas();
-
-        assert!(right);
-        assert!(changed);
     }
 }

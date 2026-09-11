@@ -1,13 +1,12 @@
 //! "Edit key" window. Displays and updates the key selected on the overlay.
 
+mod catalog;
+mod draft;
+mod editor;
 mod picker;
-mod qmk_catalog;
-mod qmk_editor;
-mod zmk_catalog;
-mod zmk_editor;
+
+pub use draft::KeyDraft;
 pub use picker::KEY_UNIT;
-pub use qmk_editor::QmkDraft;
-pub use zmk_editor::ZmkDraft;
 
 use crate::key_spec::KeySpec;
 use crate::keyboard::Keyboard;
@@ -84,10 +83,8 @@ pub struct EditorState {
     pub queued: Option<(EditTarget, KeySpec)>,
     /// Error message to display in the window.
     pub error: Option<String>,
-    /// Draft state for QMK keycodes.
-    pub qmk_draft: QmkDraft,
-    /// Draft state for ZMK behaviors.
-    pub zmk_draft: ZmkDraft,
+    /// Draft state for the active key editor.
+    pub draft: KeyDraft,
     /// Indicates unsaved ZMK changes on the device.
     pub zmk_dirty: bool,
     /// State of the ZMK Studio session.
@@ -105,8 +102,7 @@ impl Default for EditorState {
             pending: None,
             queued: None,
             error: None,
-            qmk_draft: QmkDraft::default(),
-            zmk_draft: ZmkDraft::default(),
+            draft: KeyDraft::default(),
             zmk_dirty: false,
             zmk_session: ZmkSessionState::Idle,
             closing: false,
@@ -187,38 +183,10 @@ impl EditorState {
             self.zmk_session = ZmkSessionState::Idle;
         }
         if let Some(action) = target.action(keyboard) {
-            if let Ok(code) = crate::protocols::qmk_codec::keyspec_to_qmk(&action) {
-                self.qmk_draft = QmkDraft::from_keycode(code);
-            } else {
-                self.qmk_draft = Default::default();
-            }
-            if let Ok(behavior) = crate::protocols::zmk_codec::keyspec_to_zmk(&action) {
-                self.zmk_draft = ZmkDraft::from_behavior(&behavior);
-            } else {
-                self.zmk_draft = Default::default();
-            }
+            self.draft = KeyDraft::from_spec(&action);
         } else {
-            self.qmk_draft = Default::default();
-            self.zmk_draft = Default::default();
+            self.draft = Default::default();
         }
-    }
-
-    /// Resets the QMK draft for the given section.
-    pub fn reset_qmk_section(
-        &mut self,
-        section: qmk_editor::Section,
-        current_action: Option<&KeySpec>,
-    ) {
-        self.qmk_draft = QmkDraft::for_section(section, current_action);
-    }
-
-    /// Resets the ZMK draft for the given behavior kind.
-    pub fn reset_zmk_kind(
-        &mut self,
-        kind: zmk_catalog::ZmkBehaviorKind,
-        current_action: Option<&KeySpec>,
-    ) {
-        self.zmk_draft = ZmkDraft::for_kind(kind, current_action);
     }
 }
 
@@ -370,19 +338,14 @@ impl EditorState {
             ui.add_enabled_ui(is_enabled, |ui| {
                 let target = self.draw_editor_header(ui, keyboard, target, style);
 
-                let write_support = keyboard.write_support();
-                match write_support {
-                    WriteSupport::Immediate => {
-                        ui.add_space(8.0);
-                        self.draw_qmk_editor_body(ui, keyboard, target, style);
-                    }
-                    WriteSupport::Session => {
-                        ui.add_space(8.0);
-                        self.draw_zmk_editor_body(ui, keyboard, target, style);
-                    }
+                match keyboard.write_support() {
                     WriteSupport::None => {
                         ui.add_space(8.0);
                         ui.weak("This key cannot be edited in this version.");
+                    }
+                    WriteSupport::Immediate | WriteSupport::Session => {
+                        ui.add_space(8.0);
+                        self.draw_editor_body(ui, keyboard, target, style);
                     }
                 }
             });
@@ -396,7 +359,12 @@ impl EditorState {
     }
 
     /// Applies a staged binding if it is complete and different from the current key.
-    fn commit_staged(&mut self, keyboard: &Keyboard, target: EditTarget, staged: Option<KeySpec>) {
+    pub(super) fn commit_staged(
+        &mut self,
+        keyboard: &Keyboard,
+        target: EditTarget,
+        staged: Option<KeySpec>,
+    ) {
         if let Some(action) = staged {
             if target.action(keyboard).as_ref() != Some(&action) {
                 self.apply_write(keyboard, target, action);
@@ -499,7 +467,7 @@ impl EditorState {
     }
 
     /// Sends a write command to the device, or queues it if an operation is in progress.
-    fn apply_write(&mut self, keyboard: &Keyboard, target: EditTarget, action: KeySpec) {
+    pub(super) fn apply_write(&mut self, keyboard: &Keyboard, target: EditTarget, action: KeySpec) {
         if self.pending.is_some() {
             self.queued = Some((target, action));
             return;
