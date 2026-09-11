@@ -15,7 +15,6 @@ pub enum EditorSection {
     // Keys
     #[default]
     Keyboard,
-    Media,
     KeyToggle,
     Special,
 
@@ -30,6 +29,7 @@ pub enum EditorSection {
     Bluetooth,
     Output,
     System,
+    BootPower,
 
     // Lighting & Audio
     Backlight,
@@ -49,7 +49,6 @@ impl EditorSection {
     pub const fn label(self) -> &'static str {
         match self {
             Self::Keyboard => "Key Press",
-            Self::Media => "Media",
             Self::KeyToggle => "Key Toggle",
             Self::Special => "Special",
             Self::Combo => "Mod Combo",
@@ -60,6 +59,7 @@ impl EditorSection {
             Self::Bluetooth => "Bluetooth",
             Self::Output => "Output Selection",
             Self::System => "System",
+            Self::BootPower => "Boot & Power",
             Self::Backlight => "Backlight",
             Self::Rgb => "Underglow",
             Self::RgbMatrix => "RGB Matrix",
@@ -74,10 +74,6 @@ impl EditorSection {
     pub fn is_supported(self, keyboard: &Keyboard) -> bool {
         match self {
             Self::Keyboard => true,
-            Self::Media => super::catalog::media_group()
-                .candidates
-                .iter()
-                .any(|c| keyboard.is_action_supported(&c.binding)),
             Self::KeyToggle => keyboard.is_action_supported(&KeySpec::KeyToggle {
                 key: HidKey::keyboard(0x04),
                 modifiers: Modifiers::default(),
@@ -128,6 +124,10 @@ impl EditorSection {
                 .iter()
                 .any(|c| keyboard.is_action_supported(&c.binding)),
             Self::System => super::catalog::system_group()
+                .candidates
+                .iter()
+                .any(|c| keyboard.is_action_supported(&c.binding)),
+            Self::BootPower => super::catalog::boot_power_group()
                 .candidates
                 .iter()
                 .any(|c| keyboard.is_action_supported(&c.binding)),
@@ -196,13 +196,8 @@ impl KeyDraft {
 
         match spec {
             KeySpec::KeyPress { key, modifiers } => {
-                let mask = u8_from_modifiers(*modifiers);
-                if mask == 0 && key.page == 0x0C {
-                    draft.section = EditorSection::Media;
-                } else {
-                    draft.section = EditorSection::Keyboard;
-                    draft.modifiers = mask;
-                }
+                draft.section = EditorSection::Keyboard;
+                draft.modifiers = u8_from_modifiers(*modifiers);
                 draft.tap_key = Some(*key);
             }
             KeySpec::KeyToggle { key, modifiers } => {
@@ -256,7 +251,7 @@ impl KeyDraft {
                 draft.section = EditorSection::Output;
             }
             KeySpec::Power(_) => {
-                draft.section = EditorSection::System;
+                draft.section = EditorSection::BootPower;
             }
             KeySpec::Lighting(LightingAction::Backlight(bl)) => {
                 draft.section = EditorSection::Backlight;
@@ -869,9 +864,10 @@ mod tests {
             key: HidKey::consumer(0xE2), // Mute
             modifiers: Modifiers::default(),
         };
-        // Media keys route to Media.
+        // Media keys are ordinary key presses: they route to Key Press, where
+        // the Media group is available alongside the keyboard keys.
         let draft = KeyDraft::from_spec(&media_key);
-        assert_eq!(draft.section, EditorSection::Media);
+        assert_eq!(draft.section, EditorSection::Keyboard);
         assert_eq!(draft.tap_key, Some(HidKey::consumer(0xE2)));
     }
 

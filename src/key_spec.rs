@@ -86,7 +86,7 @@ pub enum PowerAction {
     SoftOff,
     Reset,
     Bootloader,
-    StudioUnlock,
+    UnlockKeymap,
     Other(u32),
 }
 
@@ -449,7 +449,7 @@ impl KeySpec {
                     PowerAction::SoftOff => Label::with_short("Soft Off", "Off"),
                     PowerAction::Reset => Label::with_short("Reset", "Rst"),
                     PowerAction::Bootloader => Label::with_short("Bootloader", "Boot"),
-                    PowerAction::StudioUnlock => Label::with_short("Studio Unlock", "Unlock"),
+                    PowerAction::UnlockKeymap => Label::with_short("Studio Unlock", "Unlock"),
                     PowerAction::Other(n) => {
                         Label::with_short(format!("ExtPwr {n}"), format!("EP{n}"))
                     }

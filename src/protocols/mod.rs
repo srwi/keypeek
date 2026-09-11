@@ -26,7 +26,7 @@ use self::zmk::ZmkProtocol;
 /// Unified domain error for keyboard communication, configuration, and driver operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeviceError {
-    /// Device is locked (e.g. ZMK Studio unlock combination required).
+    /// Device is locked (e.g. an unlock key combination is required).
     DeviceLocked,
     /// Physical or transport connection error (e.g. serial port, BLE, HID I/O).
     Transport(String),
@@ -41,7 +41,8 @@ impl fmt::Display for DeviceError {
         match self {
             Self::DeviceLocked => write!(
                 f,
-                "Device is locked. Press the ZMK Studio unlock key combination on your keyboard, then try again."
+                "Device is locked. Unlock it on the keyboard (e.g. with its unlock key \
+                 combination), then try again."
             ),
             Self::Transport(msg) => write!(f, "Transport error: {msg}"),
             Self::Protocol(msg) => write!(f, "Protocol error: {msg}"),

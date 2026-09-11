@@ -237,8 +237,46 @@ pub fn output_group() -> &'static CandidateGroup {
     })
 }
 
-/// Hardware power and system controls.
+/// HID system controls (USB HID Usage Page 0x0F... system page keys).
 pub fn system_group() -> &'static CandidateGroup {
+    static GROUP: OnceLock<CandidateGroup> = OnceLock::new();
+    GROUP.get_or_init(|| {
+        let sys_keys = [
+            (
+                HidKey::system(0x81),
+                &["system power", "sys power", "power down", "KC_SYSTEM_POWER"][..],
+            ),
+            (
+                HidKey::system(0x82),
+                &["system sleep", "sys sleep", "sleep", "KC_SYSTEM_SLEEP"][..],
+            ),
+            (
+                HidKey::system(0x83),
+                &["system wake", "sys wake", "wake", "KC_SYSTEM_WAKE"][..],
+            ),
+        ];
+        let candidates = sys_keys
+            .into_iter()
+            .map(|(key, names)| {
+                action_candidate(
+                    KeySpec::KeyPress {
+                        key,
+                        modifiers: Modifiers::default(),
+                    },
+                    names,
+                )
+            })
+            .collect();
+
+        CandidateGroup {
+            name: "System",
+            candidates,
+        }
+    })
+}
+
+/// Boot, reset, and power-control actions.
+pub fn boot_power_group() -> &'static CandidateGroup {
     static GROUP: OnceLock<CandidateGroup> = OnceLock::new();
     GROUP.get_or_init(|| {
         let actions = [
@@ -255,45 +293,21 @@ pub fn system_group() -> &'static CandidateGroup {
                 &["soft off", "power off", "shutdown"][..],
             ),
             (
-                PowerAction::StudioUnlock,
-                &["unlock", "studio unlock", "studio_unlock"][..],
+                PowerAction::UnlockKeymap,
+                &["unlock", "keymap unlock", "studio unlock"][..],
             ),
             (PowerAction::Toggle, &["ext pwr tog", "power toggle"][..]),
             (PowerAction::On, &["ext pwr on", "power on"][..]),
             (PowerAction::Off, &["ext pwr off", "power off"][..]),
         ];
 
-        let mut candidates: Vec<Candidate> = actions
+        let candidates = actions
             .into_iter()
             .map(|(action, names)| action_candidate(KeySpec::Power(action), names))
             .collect();
 
-        let sys_keys = [
-            (
-                HidKey::system(0x81),
-                &["system power", "sys power", "power down", "KC_SYSTEM_POWER"][..],
-            ),
-            (
-                HidKey::system(0x82),
-                &["system sleep", "sys sleep", "sleep", "KC_SYSTEM_SLEEP"][..],
-            ),
-            (
-                HidKey::system(0x83),
-                &["system wake", "sys wake", "wake", "KC_SYSTEM_WAKE"][..],
-            ),
-        ];
-        for (key, names) in sys_keys {
-            candidates.push(action_candidate(
-                KeySpec::KeyPress {
-                    key,
-                    modifiers: Modifiers::default(),
-                },
-                names,
-            ));
-        }
-
         CandidateGroup {
-            name: "System",
+            name: "Boot & Power",
             candidates,
         }
     })
@@ -702,25 +716,6 @@ pub fn special_group() -> &'static CandidateGroup {
                 KeySpec::GraveEscape,
                 &["grave escape", "grave_esc", "QK_GRAVE_ESCAPE"],
             ),
-            action_candidate(
-                KeySpec::Power(PowerAction::Bootloader),
-                &[
-                    "bootloader",
-                    "dfu",
-                    "flash",
-                    "boot",
-                    "QK_BOOTLOADER",
-                    "QK_BOOT",
-                ],
-            ),
-            action_candidate(
-                KeySpec::Power(PowerAction::Reset),
-                &["reset", "reboot", "sys_reset", "QK_REBOOT"],
-            ),
-            action_candidate(
-                KeySpec::Power(PowerAction::Other(0xEE)),
-                &["clear eeprom", "eeprom reset", "QK_CLEAR_EEPROM"],
-            ),
         ];
 
         CandidateGroup {
@@ -778,28 +773,28 @@ pub fn layer_groups(
     let count = layer_count.min(layer_infos.len().max(layer_count)).min(32);
     let ops = [
         (
-            "Momentary (MO)",
+            "Momentary",
             LayerActivation::Momentary,
             &["mo", "momentary"][..],
         ),
         (
-            "Toggle (TG)",
+            "Toggle",
             LayerActivation::Toggle,
             &["tg", "toggle"][..],
         ),
-        ("To Layer (TO)", LayerActivation::To, &["to", "switch"][..]),
+        ("Switch To Layer", LayerActivation::To, &["to", "switch"][..]),
         (
-            "Sticky (SL)",
+            "Sticky Layer",
             LayerActivation::Sticky,
             &["sl", "sticky", "oneshot"][..],
         ),
         (
-            "Default (DF)",
+            "Set Default Layer",
             LayerActivation::Default,
             &["df", "default"][..],
         ),
         (
-            "Tap Toggle (TT)",
+            "Tap Toggle",
             LayerActivation::TapToggle,
             &["tt", "tap toggle"][..],
         ),
@@ -849,7 +844,7 @@ pub fn layer_groups(
         .collect();
 
     groups.push(CandidateGroup {
-        name: "Layer Tap (LT)",
+        name: "Layer Tap",
         candidates: lt_candidates,
     });
 

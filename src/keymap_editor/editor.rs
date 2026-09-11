@@ -15,14 +15,10 @@ use crate::key_spec::{HidKey, KeySpec, LayerActivation};
 use crate::keyboard::Keyboard;
 use crate::ui_widgets::titled_group;
 
-const EDITOR_SECTIONS: [super::SidebarSection<EditorSection>; 6] = [
+const EDITOR_SECTIONS: [super::SidebarSection<EditorSection>; 7] = [
     super::SidebarSection {
         title: "Keys",
-        items: &[
-            EditorSection::Keyboard,
-            EditorSection::Media,
-            EditorSection::KeyToggle,
-        ],
+        items: &[EditorSection::Keyboard, EditorSection::KeyToggle],
     },
     super::SidebarSection {
         title: "Layers & Mods",
@@ -37,6 +33,10 @@ const EDITOR_SECTIONS: [super::SidebarSection<EditorSection>; 6] = [
     super::SidebarSection {
         title: "Wireless",
         items: &[EditorSection::Bluetooth, EditorSection::Output],
+    },
+    super::SidebarSection {
+        title: "Power",
+        items: &[EditorSection::BootPower, EditorSection::System],
     },
     super::SidebarSection {
         title: "Lighting & Audio",
@@ -128,16 +128,6 @@ impl EditorState {
                 EditorSection::Keyboard => {
                     self.draw_keyboard_page(ui, keyboard, target, &search_query, style);
                 }
-                EditorSection::Media => {
-                    self.draw_single_group_page(
-                        ui,
-                        keyboard,
-                        target,
-                        catalog::media_group(),
-                        &search_query,
-                        style,
-                    );
-                }
                 EditorSection::KeyToggle => {
                     self.draw_key_toggle_page(ui, keyboard, target, &search_query, is_valid, style);
                 }
@@ -182,6 +172,16 @@ impl EditorState {
                         keyboard,
                         target,
                         catalog::system_group(),
+                        &search_query,
+                        style,
+                    );
+                }
+                EditorSection::BootPower => {
+                    self.draw_single_group_page(
+                        ui,
+                        keyboard,
+                        target,
+                        catalog::boot_power_group(),
                         &search_query,
                         style,
                     );
