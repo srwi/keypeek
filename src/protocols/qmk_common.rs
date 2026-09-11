@@ -153,6 +153,18 @@ impl KeyboardProtocol for QmkProtocol {
     fn action_filter(&self) -> Option<crate::protocols::ActionFilter> {
         qmk_action_filter(self.features)
     }
+
+    fn supports_raw_keycode_entry(&self) -> bool {
+        true
+    }
+
+    fn supports_live_layout_switching(&self) -> bool {
+        true
+    }
+
+    fn parse_raw_keycode(&self, code: u16) -> Option<KeySpec> {
+        Some(qmk_codec::qmk_to_keyspec(code))
+    }
 }
 
 /// Returns an action filter that disables keycodes not supported by the keyboard's features.

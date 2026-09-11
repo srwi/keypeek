@@ -5,7 +5,7 @@
 
 use crate::hid_labels::Modifiers;
 use crate::key_spec::{
-    BacklightAction, CustomBinding, CustomKind, HidKey, KeySpec, LayerActivation, LightingAction,
+    BacklightAction, HidKey, KeySpec, LayerActivation, LightingAction,
 };
 use crate::keyboard::Keyboard;
 use crate::protocols::WriteSupport;
@@ -94,10 +94,13 @@ impl EditorSection {
     pub fn is_supported(self, keyboard: &Keyboard) -> bool {
         match self {
             Self::Keyboard => true,
-            Self::Media => super::catalog::media_group()
-                .candidates
-                .iter()
-                .any(|c| keyboard.is_action_supported(&c.binding)),
+            Self::Media => {
+                matches!(keyboard.write_support(), WriteSupport::Immediate)
+                    && super::catalog::media_group()
+                        .candidates
+                        .iter()
+                        .any(|c| keyboard.is_action_supported(&c.binding))
+            }
             Self::KeyToggle => keyboard.is_action_supported(&KeySpec::KeyToggle {
                 key: HidKey::keyboard(0x04),
                 modifiers: Modifiers::default(),
@@ -167,7 +170,7 @@ impl EditorSection {
                 .iter()
                 .flat_map(|g| &g.candidates)
                 .any(|c| keyboard.is_action_supported(&c.binding)),
-            Self::RawHex => matches!(keyboard.write_support(), WriteSupport::Immediate),
+            Self::RawHex => keyboard.supports_raw_keycode_entry(),
         }
     }
 }
@@ -289,6 +292,12 @@ impl KeyDraft {
             KeySpec::Lighting(LightingAction::Rgb(_)) => {
                 draft.section = EditorSection::Rgb;
             }
+            KeySpec::Lighting(LightingAction::RgbMatrix(_)) => {
+                draft.section = EditorSection::RgbMatrix;
+            }
+            KeySpec::Audio(_) => {
+                draft.section = EditorSection::Audio;
+            }
             KeySpec::Mouse(_) => {
                 draft.section = EditorSection::Mouse;
             }
@@ -299,30 +308,8 @@ impl KeyDraft {
             | KeySpec::None => {
                 draft.section = EditorSection::Special;
             }
-            KeySpec::Custom(CustomBinding { id, kind, .. }) => {
-                if let Ok(kc) = qmk_via_api::keycodes::Keycode::try_from(*id as u16) {
-                    match kc.category() {
-                        qmk_via_api::keycodes::KeycodeCategory::Audio => {
-                            draft.section = EditorSection::Audio;
-                        }
-                        qmk_via_api::keycodes::KeycodeCategory::RgbMatrix => {
-                            draft.section = EditorSection::RgbMatrix;
-                        }
-                        _ => {
-                            draft.section = EditorSection::Custom;
-                        }
-                    }
-                } else {
-                    draft.section = EditorSection::Custom;
-                }
-                let raw_base = match kind {
-                    CustomKind::TapDance => 0x5700,
-                    CustomKind::Macro => 0x7700,
-                    CustomKind::User => 0x7E00,
-                    CustomKind::Keyboard => 0x5F00,
-                    CustomKind::Raw => 0,
-                };
-                draft.hex = format!("{:04X}", raw_base + id);
+            KeySpec::Custom(_) => {
+                draft.section = EditorSection::Custom;
             }
         }
 
@@ -330,11 +317,13 @@ impl KeyDraft {
     }
 
     /// Decodes an existing [`KeySpec`] into draft state.
+    #[allow(dead_code)]
     pub fn from_spec(spec: &KeySpec) -> Self {
         Self::from_spec_for_support(spec, WriteSupport::Immediate)
     }
 
     /// Initializes draft for a section, preserving active parameters if relevant.
+    #[allow(dead_code)]
     pub fn for_section(section: EditorSection, current_spec: Option<&KeySpec>) -> Self {
         Self::for_section_with_support(section, current_spec, WriteSupport::Immediate)
     }
@@ -376,7 +365,29 @@ impl KeyDraft {
     }
 
     /// Returns the staged [`KeySpec`] if all required parameters are valid.
+    ///
+    /// Raw-hex staging additionally requires the keyboard's raw-keycode
+    /// parsing; use [`KeyDraft::staged_for`] when a keyboard is available.
     pub fn staged(&self) -> Option<KeySpec> {
+        match self.section {
+            EditorSection::RawHex => None,
+            _ => self.staged_section(),
+        }
+    }
+
+    /// Like [`KeyDraft::staged`], resolving raw hex entry through the
+    /// keyboard's protocol (see `Keyboard::parse_raw_keycode`).
+    pub fn staged_for(&self, keyboard: &Keyboard) -> Option<KeySpec> {
+        match self.section {
+            EditorSection::RawHex => {
+                let code = u16::from_str_radix(&self.hex, 16).ok()?;
+                keyboard.parse_raw_keycode(code)
+            }
+            _ => self.staged_section(),
+        }
+    }
+
+    fn staged_section(&self) -> Option<KeySpec> {
         match self.section {
             EditorSection::Keyboard => {
                 let tap = self.tap_key?;
@@ -451,10 +462,6 @@ impl KeyDraft {
                     modifiers: modifiers_from_u8(self.modifiers),
                 })
             }
-            EditorSection::RawHex => {
-                let code = u16::from_str_radix(&self.hex, 16).ok()?;
-                Some(crate::protocols::qmk_codec::qmk_to_keyspec(code))
-            }
             _ => None,
         }
     }
@@ -466,8 +473,8 @@ impl KeyDraft {
             | EditorSection::ModTap
             | EditorSection::OneShot
             | EditorSection::KeyToggle
-            | EditorSection::LayerMod
-            | EditorSection::RawHex => self.staged().is_some(),
+            | EditorSection::LayerMod => self.staged().is_some(),
+            EditorSection::RawHex => u16::from_str_radix(&self.hex, 16).is_ok(),
             EditorSection::Layers => {
                 if self.is_layer_tap {
                     self.target_layer.is_some() && self.tap_key.is_some()
@@ -737,13 +744,9 @@ mod tests {
             ..Default::default()
         };
         assert!(draft.is_valid());
-        assert_eq!(
-            draft.staged(),
-            Some(KeySpec::KeyPress {
-                key: HidKey::keyboard(0x04),
-                modifiers: Modifiers::default(),
-            })
-        );
+        // Staging raw hex requires a keyboard whose protocol parses raw
+        // keycodes; without one nothing stages (see Keyboard::parse_raw_keycode).
+        assert_eq!(draft.staged(), None);
     }
 
     #[test]
@@ -807,29 +810,13 @@ mod tests {
 
     #[test]
     fn from_spec_routes_audio_and_rgb_matrix() {
-        let audio_code = qmk_via_api::keycodes::Keycode::all_in_category(
-            qmk_via_api::keycodes::KeycodeCategory::Audio,
-        )[0] as u32;
-        let audio_spec = KeySpec::Custom(CustomBinding {
-            kind: CustomKind::Raw,
-            id: audio_code,
-            name: None,
-            param1: None,
-            param2: None,
-        });
+        let audio_spec = KeySpec::Audio(crate::key_spec::AudioAction::On);
         let draft = KeyDraft::from_spec(&audio_spec);
         assert_eq!(draft.section, EditorSection::Audio);
 
-        let rgb_matrix_code = qmk_via_api::keycodes::Keycode::all_in_category(
-            qmk_via_api::keycodes::KeycodeCategory::RgbMatrix,
-        )[0] as u32;
-        let rgb_matrix_spec = KeySpec::Custom(CustomBinding {
-            kind: CustomKind::Raw,
-            id: rgb_matrix_code,
-            name: None,
-            param1: None,
-            param2: None,
-        });
+        let rgb_matrix_spec = KeySpec::Lighting(crate::key_spec::LightingAction::RgbMatrix(
+            crate::key_spec::RgbMatrixAction::Toggle,
+        ));
         let draft = KeyDraft::from_spec(&rgb_matrix_spec);
         assert_eq!(draft.section, EditorSection::RgbMatrix);
     }

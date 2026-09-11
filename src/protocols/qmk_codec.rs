@@ -2,8 +2,8 @@
 
 use crate::hid_labels::Modifiers;
 use crate::key_spec::{
-    BacklightAction, CustomBinding, CustomKind, HidKey, KeySpec, LayerActivation, LightingAction,
-    MouseAction, MouseButton, PowerAction, RgbAction,
+    AudioAction, BacklightAction, CustomBinding, CustomKind, HidKey, KeySpec, LayerActivation,
+    LightingAction, MouseAction, MouseButton, PowerAction, RgbAction, RgbMatrixAction,
 };
 use crate::protocols::DeviceError;
 use qmk_via_api::keycodes::Keycode;
@@ -97,10 +97,11 @@ pub fn qmk_to_keyspec(code: u16) -> KeySpec {
             }
 
             // Fallback for quantum or custom keycodes
+            let name = super::qmk_keycode_labels::try_resolve_qmk_key(code).map(|lk| lk.tap.full);
             KeySpec::Custom(CustomBinding {
                 kind: CustomKind::Raw,
                 id: code as u32,
-                name: None,
+                name,
                 param1: None,
                 param2: None,
             })
@@ -276,8 +277,47 @@ pub fn keyspec_to_qmk(spec: &KeySpec) -> Result<u16, DeviceError> {
             }
             LightingAction::Rgb(RgbAction::SpeedInc) => Ok(Keycode::QK_UNDERGLOW_SPEED_UP as u16),
             LightingAction::Rgb(RgbAction::SpeedDec) => Ok(Keycode::QK_UNDERGLOW_SPEED_DOWN as u16),
+            LightingAction::RgbMatrix(action) => match action {
+                RgbMatrixAction::Toggle => Ok(Keycode::QK_RGB_MATRIX_TOGGLE as u16),
+                RgbMatrixAction::On => Ok(Keycode::QK_RGB_MATRIX_ON as u16),
+                RgbMatrixAction::Off => Ok(Keycode::QK_RGB_MATRIX_OFF as u16),
+                RgbMatrixAction::ModeNext => Ok(Keycode::QK_RGB_MATRIX_MODE_NEXT as u16),
+                RgbMatrixAction::ModePrev => Ok(Keycode::QK_RGB_MATRIX_MODE_PREVIOUS as u16),
+                RgbMatrixAction::HueInc => Ok(Keycode::QK_RGB_MATRIX_HUE_UP as u16),
+                RgbMatrixAction::HueDec => Ok(Keycode::QK_RGB_MATRIX_HUE_DOWN as u16),
+                RgbMatrixAction::SatInc => Ok(Keycode::QK_RGB_MATRIX_SATURATION_UP as u16),
+                RgbMatrixAction::SatDec => Ok(Keycode::QK_RGB_MATRIX_SATURATION_DOWN as u16),
+                RgbMatrixAction::BrightInc => Ok(Keycode::QK_RGB_MATRIX_VALUE_UP as u16),
+                RgbMatrixAction::BrightDec => Ok(Keycode::QK_RGB_MATRIX_VALUE_DOWN as u16),
+                RgbMatrixAction::SpeedInc => Ok(Keycode::QK_RGB_MATRIX_SPEED_UP as u16),
+                RgbMatrixAction::SpeedDec => Ok(Keycode::QK_RGB_MATRIX_SPEED_DOWN as u16),
+                _ => Err(DeviceError::Unsupported(
+                    "RGB Matrix action not supported in QMK".to_string(),
+                )),
+            },
             _ => Err(DeviceError::Unsupported(
                 "Lighting action not supported in QMK".to_string(),
+            )),
+        },
+
+        KeySpec::Audio(audio) => match audio {
+            AudioAction::On => Ok(Keycode::QK_AUDIO_ON as u16),
+            AudioAction::Off => Ok(Keycode::QK_AUDIO_OFF as u16),
+            AudioAction::Toggle => Ok(Keycode::QK_AUDIO_TOGGLE as u16),
+            AudioAction::ClickyToggle => Ok(Keycode::QK_AUDIO_CLICKY_TOGGLE as u16),
+            AudioAction::ClickyOn => Ok(Keycode::QK_AUDIO_CLICKY_ON as u16),
+            AudioAction::ClickyOff => Ok(Keycode::QK_AUDIO_CLICKY_OFF as u16),
+            AudioAction::ClickyUp => Ok(Keycode::QK_AUDIO_CLICKY_UP as u16),
+            AudioAction::ClickyDown => Ok(Keycode::QK_AUDIO_CLICKY_DOWN as u16),
+            AudioAction::ClickyReset => Ok(Keycode::QK_AUDIO_CLICKY_RESET as u16),
+            AudioAction::MusicOn => Ok(Keycode::QK_MUSIC_ON as u16),
+            AudioAction::MusicOff => Ok(Keycode::QK_MUSIC_OFF as u16),
+            AudioAction::MusicToggle => Ok(Keycode::QK_MUSIC_TOGGLE as u16),
+            AudioAction::MusicModeNext => Ok(Keycode::QK_MUSIC_MODE_NEXT as u16),
+            AudioAction::VoiceNext => Ok(Keycode::QK_AUDIO_VOICE_NEXT as u16),
+            AudioAction::VoicePrev => Ok(Keycode::QK_AUDIO_VOICE_PREVIOUS as u16),
+            _ => Err(DeviceError::Unsupported(
+                "Audio action not supported in QMK".to_string(),
             )),
         },
 
@@ -517,6 +557,64 @@ fn qmk_special_keycode_to_spec(kc: Keycode) -> Option<KeySpec> {
             Some(KeySpec::Lighting(LightingAction::Rgb(RgbAction::SpeedDec)))
         }
 
+        // RGB Matrix
+        Keycode::QK_RGB_MATRIX_TOGGLE => Some(KeySpec::Lighting(LightingAction::RgbMatrix(
+            RgbMatrixAction::Toggle,
+        ))),
+        Keycode::QK_RGB_MATRIX_ON => Some(KeySpec::Lighting(LightingAction::RgbMatrix(
+            RgbMatrixAction::On,
+        ))),
+        Keycode::QK_RGB_MATRIX_OFF => Some(KeySpec::Lighting(LightingAction::RgbMatrix(
+            RgbMatrixAction::Off,
+        ))),
+        Keycode::QK_RGB_MATRIX_MODE_NEXT => Some(KeySpec::Lighting(LightingAction::RgbMatrix(
+            RgbMatrixAction::ModeNext,
+        ))),
+        Keycode::QK_RGB_MATRIX_MODE_PREVIOUS => Some(KeySpec::Lighting(LightingAction::RgbMatrix(
+            RgbMatrixAction::ModePrev,
+        ))),
+        Keycode::QK_RGB_MATRIX_HUE_UP => Some(KeySpec::Lighting(LightingAction::RgbMatrix(
+            RgbMatrixAction::HueInc,
+        ))),
+        Keycode::QK_RGB_MATRIX_HUE_DOWN => Some(KeySpec::Lighting(LightingAction::RgbMatrix(
+            RgbMatrixAction::HueDec,
+        ))),
+        Keycode::QK_RGB_MATRIX_SATURATION_UP => Some(KeySpec::Lighting(LightingAction::RgbMatrix(
+            RgbMatrixAction::SatInc,
+        ))),
+        Keycode::QK_RGB_MATRIX_SATURATION_DOWN => Some(KeySpec::Lighting(
+            LightingAction::RgbMatrix(RgbMatrixAction::SatDec),
+        )),
+        Keycode::QK_RGB_MATRIX_VALUE_UP => Some(KeySpec::Lighting(LightingAction::RgbMatrix(
+            RgbMatrixAction::BrightInc,
+        ))),
+        Keycode::QK_RGB_MATRIX_VALUE_DOWN => Some(KeySpec::Lighting(LightingAction::RgbMatrix(
+            RgbMatrixAction::BrightDec,
+        ))),
+        Keycode::QK_RGB_MATRIX_SPEED_UP => Some(KeySpec::Lighting(LightingAction::RgbMatrix(
+            RgbMatrixAction::SpeedInc,
+        ))),
+        Keycode::QK_RGB_MATRIX_SPEED_DOWN => Some(KeySpec::Lighting(LightingAction::RgbMatrix(
+            RgbMatrixAction::SpeedDec,
+        ))),
+
+        // Audio
+        Keycode::QK_AUDIO_ON => Some(KeySpec::Audio(AudioAction::On)),
+        Keycode::QK_AUDIO_OFF => Some(KeySpec::Audio(AudioAction::Off)),
+        Keycode::QK_AUDIO_TOGGLE => Some(KeySpec::Audio(AudioAction::Toggle)),
+        Keycode::QK_AUDIO_CLICKY_TOGGLE => Some(KeySpec::Audio(AudioAction::ClickyToggle)),
+        Keycode::QK_AUDIO_CLICKY_ON => Some(KeySpec::Audio(AudioAction::ClickyOn)),
+        Keycode::QK_AUDIO_CLICKY_OFF => Some(KeySpec::Audio(AudioAction::ClickyOff)),
+        Keycode::QK_AUDIO_CLICKY_UP => Some(KeySpec::Audio(AudioAction::ClickyUp)),
+        Keycode::QK_AUDIO_CLICKY_DOWN => Some(KeySpec::Audio(AudioAction::ClickyDown)),
+        Keycode::QK_AUDIO_CLICKY_RESET => Some(KeySpec::Audio(AudioAction::ClickyReset)),
+        Keycode::QK_MUSIC_ON => Some(KeySpec::Audio(AudioAction::MusicOn)),
+        Keycode::QK_MUSIC_OFF => Some(KeySpec::Audio(AudioAction::MusicOff)),
+        Keycode::QK_MUSIC_TOGGLE => Some(KeySpec::Audio(AudioAction::MusicToggle)),
+        Keycode::QK_MUSIC_MODE_NEXT => Some(KeySpec::Audio(AudioAction::MusicModeNext)),
+        Keycode::QK_AUDIO_VOICE_NEXT => Some(KeySpec::Audio(AudioAction::VoiceNext)),
+        Keycode::QK_AUDIO_VOICE_PREVIOUS => Some(KeySpec::Audio(AudioAction::VoicePrev)),
+
         _ => None,
     }
 }
@@ -612,6 +710,69 @@ pub fn from_qmk_mask(mods: qmk_via_api::QmkModMask) -> Modifiers {
         right_alt: mods.has_alt() && is_right,
         right_gui: mods.has_gui() && is_right,
     }
+}
+
+/// Returns QMK keycode search tokens for a given standard HID usage.
+pub fn qmk_search_tokens_for_hid(page: u16, id: u16) -> Vec<String> {
+    let mut tokens = Vec::new();
+    if page == 0x07 {
+        if let Ok(kc) = Keycode::try_from(id) {
+            tokens.push(kc.as_ref().to_string());
+        }
+    } else if page == 0x0C {
+        if let Ok(code) = consumer_hid_to_qmk(id) {
+            if let Ok(kc) = Keycode::try_from(code) {
+                tokens.push(kc.as_ref().to_string());
+            }
+        }
+    } else if page == 0x01 {
+        if let Ok(code) = system_hid_to_qmk(id) {
+            if let Ok(kc) = Keycode::try_from(code) {
+                tokens.push(kc.as_ref().to_string());
+            }
+        }
+    }
+    tokens
+}
+
+/// Enumerates all USB HID keyboard usage IDs supported by QMK Basic keycodes.
+pub fn qmk_all_basic_usages() -> Vec<u16> {
+    qmk_via_api::keycodes::Keycode::all_in_category(qmk_via_api::keycodes::KeycodeCategory::Basic)
+        .iter()
+        .filter_map(|&k| {
+            let code = k as u16;
+            if code == Keycode::KC_TRANSPARENT as u16 || code == Keycode::KC_NO as u16 {
+                None
+            } else if let KeySpec::KeyPress { key, .. } = qmk_to_keyspec(code) {
+                if key.page == 0x07 {
+                    Some(key.id)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Enumerates all USB HID consumer usage IDs supported by QMK Media keycodes.
+pub fn qmk_all_media_usages() -> Vec<u16> {
+    qmk_via_api::keycodes::Keycode::all_in_category(qmk_via_api::keycodes::KeycodeCategory::Media)
+        .iter()
+        .filter_map(|&k| {
+            let code = k as u16;
+            if let KeySpec::KeyPress { key, .. } = qmk_to_keyspec(code) {
+                if key.page == 0x0C {
+                    Some(key.id)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -742,7 +903,7 @@ mod tests {
 
         let empty_layer_names: Vec<String> = vec![];
         for code in test_codes {
-            let legacy_layout = crate::qmk_keycode_labels::qmk_to_layout_key(code);
+            let legacy_layout = super::super::qmk_keycode_labels::qmk_to_layout_key(code);
             let spec = qmk_to_keyspec(code);
             let spec_layout = spec.resolve_label(&empty_layer_names);
             if code == Keycode::QK_UNDERGLOW_TOGGLE as u16 {

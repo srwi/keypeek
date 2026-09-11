@@ -220,7 +220,13 @@ pub fn keyspec_to_zmk(spec: &KeySpec) -> Result<Behavior, DeviceError> {
         KeySpec::Lighting(lighting) => match lighting {
             LightingAction::Backlight(bl) => Ok(Behavior::Backlight(domain_to_backlight(bl)?)),
             LightingAction::Rgb(ug) => Ok(Behavior::Underglow(domain_to_underglow(ug))),
+            LightingAction::RgbMatrix(_) => Err(DeviceError::Unsupported(
+                "RGB Matrix not supported in ZMK Studio".to_string(),
+            )),
         },
+        KeySpec::Audio(_) => Err(DeviceError::Unsupported(
+            "Audio commands not supported in ZMK".to_string(),
+        )),
         KeySpec::Mouse(action) => match action {
             MouseAction::Press(btn) => Ok(Behavior::MouseKeyPress(domain_to_mouse_btn(btn))),
             MouseAction::Move { x, y } => Ok(Behavior::MouseMove { x: *x, y: *y }),
@@ -476,6 +482,44 @@ pub fn to_zmk_mask(mods: Modifiers) -> u8 {
     mods.to_hid_mask()
 }
 
+/// Returns ZMK keycode search tokens for a given standard HID usage.
+pub fn zmk_search_tokens_for_hid(page: u16, id: u16) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let usage = HidUsage::from_parts(page, id, 0);
+    let encoded = usage.to_hid_usage();
+    tokens.push(format!("{:08x}", encoded));
+    if let Ok(kc) = zmk_studio_api::Keycode::try_from(encoded) {
+        tokens.push(kc.as_ref().to_string());
+        let name = kc.to_name();
+        if !name.is_empty() && name != kc.as_ref() {
+            tokens.push(name.to_string());
+        }
+    }
+    tokens
+}
+
+/// Enumerates all USB HID keyboard usage IDs in ZMK Studio.
+pub fn zmk_all_keyboard_usages() -> Vec<u16> {
+    zmk_studio_api::Keycode::all_keyboard()
+        .iter()
+        .map(|k| {
+            let usage = HidUsage::from_encoded(k.to_hid_usage());
+            usage.id()
+        })
+        .collect()
+}
+
+/// Enumerates all USB HID consumer usage IDs in ZMK Studio.
+pub fn zmk_all_consumer_usages() -> Vec<u16> {
+    zmk_studio_api::Keycode::all_consumer()
+        .iter()
+        .map(|k| {
+            let usage = HidUsage::from_encoded(k.to_hid_usage());
+            usage.id()
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -583,7 +627,8 @@ mod tests {
                 // KeySpec normalizes it to standard one-shot mod with tap glyph and proper mod_mask.
                 continue;
             }
-            let legacy_layout = crate::zmk_keycode_labels::behavior_to_layout_key(b, &layer_names);
+            let legacy_layout =
+                super::super::zmk_keycode_labels::behavior_to_layout_key(b, &layer_names);
             let spec = zmk_to_keyspec(b);
             let spec_layout = spec.resolve_label(&layer_names);
             assert_eq!(
@@ -605,7 +650,8 @@ mod tests {
             Err(DeviceError::Unsupported(_))
         ));
 
-        let bl_spec = KeySpec::Lighting(LightingAction::Backlight(BacklightAction::BreathingToggle));
+        let bl_spec =
+            KeySpec::Lighting(LightingAction::Backlight(BacklightAction::BreathingToggle));
         assert!(matches!(
             keyspec_to_zmk(&bl_spec),
             Err(DeviceError::Unsupported(_))

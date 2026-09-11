@@ -46,9 +46,9 @@ pub enum PendingKind {
     Save,
 }
 
-/// Connection state of the ZMK Studio session.
+/// Connection state of the edit session for protocols requiring an explicit session.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum ZmkSessionState {
+pub enum SessionWriteState {
     /// No active session.
     Idle,
     /// Session is connecting.
@@ -85,10 +85,10 @@ pub struct EditorState {
     pub error: Option<String>,
     /// Draft state for the active key editor.
     pub draft: KeyDraft,
-    /// Indicates unsaved ZMK changes on the device.
-    pub zmk_dirty: bool,
-    /// State of the ZMK Studio session.
-    pub zmk_session: ZmkSessionState,
+    /// Indicates unsaved changes on the device.
+    pub dirty: bool,
+    /// State of the edit session.
+    pub session: SessionWriteState,
     /// Indicates the window is saving changes before closing.
     pub closing: bool,
     /// Active search filter for key candidate groups.
@@ -103,8 +103,8 @@ impl Default for EditorState {
             queued: None,
             error: None,
             draft: KeyDraft::default(),
-            zmk_dirty: false,
-            zmk_session: ZmkSessionState::Idle,
+            dirty: false,
+            session: SessionWriteState::Idle,
             closing: false,
             search_query: String::new(),
         }
@@ -125,9 +125,9 @@ impl EditorState {
     pub fn overlay(&self) -> Option<EditorOverlay> {
         if self.closing {
             Some(EditorOverlay::Saving)
-        } else if self.zmk_session == ZmkSessionState::Opening {
+        } else if self.session == SessionWriteState::Opening {
             Some(EditorOverlay::Connecting)
-        } else if self.zmk_session == ZmkSessionState::Failed {
+        } else if self.session == SessionWriteState::Failed {
             Some(EditorOverlay::Failed)
         } else {
             None
@@ -143,9 +143,9 @@ impl EditorState {
     /// Updates session or dirty flags upon successful completion of a background operation.
     pub fn complete_task(&mut self, kind: PendingKind) {
         match kind {
-            PendingKind::Open => self.zmk_session = ZmkSessionState::Ready,
-            PendingKind::Set => self.zmk_dirty = true,
-            PendingKind::Save => self.zmk_dirty = false,
+            PendingKind::Open => self.session = SessionWriteState::Ready,
+            PendingKind::Set => self.dirty = true,
+            PendingKind::Save => self.dirty = false,
         }
     }
 
@@ -153,7 +153,7 @@ impl EditorState {
     pub fn fail_task(&mut self, error: impl Into<String>) {
         if let Some(task) = self.pending.take() {
             if task.kind == PendingKind::Open {
-                self.zmk_session = ZmkSessionState::Failed;
+                self.session = SessionWriteState::Failed;
             }
         }
         self.queued = None;
@@ -161,11 +161,11 @@ impl EditorState {
         self.error = Some(error.into());
     }
 
-    /// Requests window close. If ZMK has unsaved changes, starts a save operation
+    /// Requests window close. If the session has unsaved changes, starts a save operation
     /// before closing. Returns `true` if closed immediately.
     pub fn request_close(&mut self) -> bool {
         self.error = None;
-        if self.zmk_dirty {
+        if self.dirty {
             self.closing = true;
             false
         } else {
@@ -179,8 +179,8 @@ impl EditorState {
         self.target = Some(target);
         self.error = None;
         self.search_query.clear();
-        if self.zmk_session == ZmkSessionState::Failed {
-            self.zmk_session = ZmkSessionState::Idle;
+        if self.session == SessionWriteState::Failed {
+            self.session = SessionWriteState::Idle;
         }
         if let Some(action) = target.action(keyboard) {
             self.draft = KeyDraft::from_spec_for_support(&action, keyboard.write_support());
@@ -304,19 +304,19 @@ impl EditorState {
             return;
         };
 
-        // Save unsaved ZMK changes before closing the window.
-        if self.closing && self.pending.is_none() && self.zmk_dirty {
+        // Save unsaved changes before closing the window.
+        if self.closing && self.pending.is_none() && self.dirty {
             self.start_save(keyboard);
         }
 
         self.poll_pending_write(ctx, keyboard);
 
         if matches!(keyboard.write_support(), WriteSupport::Session) && !self.closing {
-            self.ensure_zmk_session(keyboard);
+            self.ensure_session(keyboard);
         }
 
         let closing = self.closing;
-        let title = if self.zmk_dirty {
+        let title = if self.dirty {
             "Edit key (Unsaved changes)"
         } else {
             "Edit key"
@@ -444,7 +444,7 @@ impl EditorState {
                 if is_retry {
                     ui.add_space(8.0);
                     if ui.button("Retry").clicked() {
-                        self.zmk_session = ZmkSessionState::Idle;
+                        self.session = SessionWriteState::Idle;
                         self.error = None;
                     }
                 }
@@ -459,12 +459,12 @@ impl EditorState {
         self.start_task(PendingKind::Save, keyboard.save_keymap());
     }
 
-    /// Starts the ZMK Studio session connection if idle.
-    fn ensure_zmk_session(&mut self, keyboard: &Keyboard) {
-        if self.zmk_session != ZmkSessionState::Idle || self.pending.is_some() {
+    /// Starts the edit session connection if idle.
+    fn ensure_session(&mut self, keyboard: &Keyboard) {
+        if self.session != SessionWriteState::Idle || self.pending.is_some() {
             return;
         }
-        self.zmk_session = ZmkSessionState::Opening;
+        self.session = SessionWriteState::Opening;
         self.start_task(PendingKind::Open, keyboard.open_edit_session());
     }
 
@@ -492,7 +492,7 @@ impl EditorState {
                     self.apply_write(keyboard, target, action);
                 }
                 if self.closing {
-                    if self.zmk_dirty {
+                    if self.dirty {
                         self.start_save(keyboard);
                     } else if self.pending.is_none() {
                         self.reset();

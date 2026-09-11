@@ -2,7 +2,7 @@ use crate::connection::ConnectionTask;
 use crate::device_discovery::DiscoveredDevice;
 use crate::keyboard::Keyboard;
 use crate::protocols::{ConnectionSpec, KeyboardDefinition, Reopener};
-use crate::settings::{ProtocolType, Settings};
+use crate::settings::Settings;
 
 use egui_file_dialog::FileDialog;
 use std::sync::Arc;
@@ -32,17 +32,6 @@ pub enum ConnectionDraft {
     Vial,
     Zmk { transport: ZmkTransportDraft },
     Mock,
-}
-
-impl ConnectionDraft {
-    pub fn protocol_type(&self) -> ProtocolType {
-        match self {
-            ConnectionDraft::Via { .. } => ProtocolType::Via,
-            ConnectionDraft::Vial => ProtocolType::Vial,
-            ConnectionDraft::Zmk { .. } => ProtocolType::Zmk,
-            ConnectionDraft::Mock => ProtocolType::Via,
-        }
-    }
 }
 
 pub struct UiState {

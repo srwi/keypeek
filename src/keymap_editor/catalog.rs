@@ -6,8 +6,9 @@
 use super::picker::{Candidate, CandidateGroup};
 use crate::hid_labels::Modifiers;
 use crate::key_spec::{
-    BacklightAction, BluetoothAction, CustomBinding, CustomKind, HidKey, KeySpec, LayerActivation,
-    LayerInfo, LightingAction, MouseAction, MouseButton, OutputTarget, PowerAction, RgbAction,
+    AudioAction, BacklightAction, BluetoothAction, CustomBinding, CustomKind, HidKey, KeySpec,
+    LayerActivation, LayerInfo, LightingAction, MouseAction, MouseButton, OutputTarget,
+    PowerAction, RgbAction, RgbMatrixAction,
 };
 use std::sync::OnceLock;
 
@@ -15,63 +16,25 @@ use std::sync::OnceLock;
 pub fn keyboard_group() -> &'static CandidateGroup {
     static GROUP: OnceLock<CandidateGroup> = OnceLock::new();
     GROUP.get_or_init(|| {
-        let mut candidates = Vec::with_capacity(256);
-        let mut seen = std::collections::HashSet::new();
-
-        // 1. All ZMK keyboard keys (216 standard HID page 0x07 keys with labels & tokens)
-        for &k in zmk_studio_api::Keycode::all_keyboard() {
-            let encoded = k.to_hid_usage();
-            let usage = zmk_studio_api::HidUsage::from_encoded(encoded);
-            let id = usage.id();
-            seen.insert(id);
-
-            let action = KeySpec::KeyPress {
-                key: HidKey::keyboard(id),
-                modifiers: Modifiers::default(),
-            };
-            let mut cand = Candidate::from_action(action, &[]);
-            if cand.key.symbol.is_none() && cand.key.tap.is_empty() {
-                cand.key.symbol = Some(format!("0x{:02X}", id));
-            }
-            cand = cand.with_search_token(format!("{:04x}", id));
-            cand = cand.with_search_token(format!("{:08x}", encoded));
-            cand = cand.with_search_token(k.as_ref());
-            cand = cand.with_search_token(k.to_name());
-
-            if let Ok(qmk_kc) = qmk_via_api::keycodes::Keycode::try_from(id) {
-                cand = cand.with_search_token(qmk_kc.as_ref());
-            }
-
-            cand = attach_friendly_keyboard_aliases(cand, id);
-            candidates.push(cand);
-        }
-
-        // 2. Any additional QMK basic keycodes
-        for &qmk_kc in qmk_via_api::keycodes::Keycode::all_in_category(
-            qmk_via_api::keycodes::KeycodeCategory::Basic,
-        ) {
-            let code = qmk_kc as u16;
-            if code == qmk_via_api::keycodes::Keycode::KC_TRANSPARENT as u16
-                || code == qmk_via_api::keycodes::Keycode::KC_NO as u16
-            {
-                continue;
-            }
-            if let KeySpec::KeyPress { key, .. } = crate::protocols::qmk_codec::qmk_to_keyspec(code)
-            {
-                if key.page == 0x07 && seen.insert(key.id) {
-                    let mut cand = Candidate::from_action(
-                        KeySpec::KeyPress {
-                            key,
-                            modifiers: Modifiers::default(),
-                        },
-                        &[],
-                    );
-                    cand = cand.with_search_token(format!("{:04x}", key.id));
-                    cand = cand.with_search_token(qmk_kc.as_ref());
-                    candidates.push(cand);
+        let usages = crate::protocols::all_keyboard_usages();
+        let candidates = usages
+            .into_iter()
+            .map(|id| {
+                let action = KeySpec::KeyPress {
+                    key: HidKey::keyboard(id),
+                    modifiers: Modifiers::default(),
+                };
+                let mut cand = Candidate::from_action(action, &[]);
+                if cand.key.symbol.is_none() && cand.key.tap.is_empty() {
+                    cand.key.symbol = Some(format!("0x{:02X}", id));
                 }
-            }
-        }
+                cand = cand.with_search_token(format!("{:04x}", id));
+                for token in crate::protocols::protocol_search_tokens_for_hid(0x07, id) {
+                    cand = cand.with_search_token(token);
+                }
+                attach_friendly_keyboard_aliases(cand, id)
+            })
+            .collect();
 
         CandidateGroup {
             name: "Keyboard",
@@ -128,60 +91,25 @@ fn attach_friendly_keyboard_aliases(mut cand: Candidate, id: u16) -> Candidate {
 pub fn media_group() -> &'static CandidateGroup {
     static GROUP: OnceLock<CandidateGroup> = OnceLock::new();
     GROUP.get_or_init(|| {
-        let mut candidates = Vec::with_capacity(180);
-        let mut seen = std::collections::HashSet::new();
-
-        // 1. All ZMK consumer keys (152 standard Consumer Usage 0x0C keys)
-        for &k in zmk_studio_api::Keycode::all_consumer() {
-            let encoded = k.to_hid_usage();
-            let usage = zmk_studio_api::HidUsage::from_encoded(encoded);
-            let id = usage.id();
-            seen.insert(id);
-
-            let action = KeySpec::KeyPress {
-                key: HidKey::consumer(id),
-                modifiers: Modifiers::default(),
-            };
-            let mut cand = Candidate::from_action(action, &[]);
-            if cand.key.symbol.is_none() && cand.key.tap.is_empty() {
-                cand.key.symbol = Some(format!("0x{:04X}", id));
-            }
-            cand = cand.with_search_token(format!("{:04x}", id));
-            cand = cand.with_search_token(format!("{:08x}", encoded));
-            cand = cand.with_search_token(k.as_ref());
-            cand = cand.with_search_token(k.to_name());
-
-            if let Ok(qmk_code) = crate::protocols::qmk_codec::consumer_hid_to_qmk(id) {
-                if let Ok(qmk_kc) = qmk_via_api::keycodes::Keycode::try_from(qmk_code) {
-                    cand = cand.with_search_token(qmk_kc.as_ref());
+        let usages = crate::protocols::all_consumer_usages();
+        let candidates = usages
+            .into_iter()
+            .map(|id| {
+                let action = KeySpec::KeyPress {
+                    key: HidKey::consumer(id),
+                    modifiers: Modifiers::default(),
+                };
+                let mut cand = Candidate::from_action(action, &[]);
+                if cand.key.symbol.is_none() && cand.key.tap.is_empty() {
+                    cand.key.symbol = Some(format!("0x{:04X}", id));
                 }
-            }
-
-            cand = attach_friendly_media_aliases(cand, id);
-            candidates.push(cand);
-        }
-
-        // 2. Additional QMK media keys
-        for &qmk_kc in qmk_via_api::keycodes::Keycode::all_in_category(
-            qmk_via_api::keycodes::KeycodeCategory::Media,
-        ) {
-            let code = qmk_kc as u16;
-            if let KeySpec::KeyPress { key, .. } = crate::protocols::qmk_codec::qmk_to_keyspec(code)
-            {
-                if key.page == 0x0C && seen.insert(key.id) {
-                    let mut cand = Candidate::from_action(
-                        KeySpec::KeyPress {
-                            key,
-                            modifiers: Modifiers::default(),
-                        },
-                        &[],
-                    );
-                    cand = cand.with_search_token(format!("{:04x}", key.id));
-                    cand = cand.with_search_token(qmk_kc.as_ref());
-                    candidates.push(cand);
+                cand = cand.with_search_token(format!("{:04x}", id));
+                for token in crate::protocols::protocol_search_tokens_for_hid(0x0C, id) {
+                    cand = cand.with_search_token(token);
                 }
-            }
-        }
+                attach_friendly_media_aliases(cand, id)
+            })
+            .collect();
 
         CandidateGroup {
             name: "Media",
@@ -484,23 +412,12 @@ pub fn lighting_groups() -> &'static [CandidateGroup] {
             (RgbAction::Color, &["rgb color", "color"][..]),
         ];
 
-        let mut rgb_candidates: Vec<Candidate> = rgb_actions
+        let rgb_candidates: Vec<Candidate> = rgb_actions
             .into_iter()
             .map(|(action, names)| {
                 action_candidate(KeySpec::Lighting(LightingAction::Rgb(action)), names)
             })
             .collect();
-
-        // Include QMK Rgblight keys
-        for &k in qmk_via_api::keycodes::Keycode::all_in_category(
-            qmk_via_api::keycodes::KeycodeCategory::Rgblight,
-        ) {
-            let code = k as u16;
-            let cand = qmk_candidate(code, k.as_ref());
-            if !rgb_candidates.iter().any(|c| c.binding == cand.binding) {
-                rgb_candidates.push(cand);
-            }
-        }
 
         vec![
             CandidateGroup {
@@ -519,12 +436,57 @@ pub fn lighting_groups() -> &'static [CandidateGroup] {
 pub fn rgb_matrix_group() -> &'static CandidateGroup {
     static GROUP: OnceLock<CandidateGroup> = OnceLock::new();
     GROUP.get_or_init(|| {
-        let codes = qmk_via_api::keycodes::Keycode::all_in_category(
-            qmk_via_api::keycodes::KeycodeCategory::RgbMatrix,
-        );
-        let candidates = codes
-            .iter()
-            .map(|&k| qmk_candidate(k as u16, k.as_ref()))
+        let actions = [
+            (
+                RgbMatrixAction::Toggle,
+                &["rgb matrix toggle", "rgb_tog", "RGB_MATRIX_TOGGLE"][..],
+            ),
+            (
+                RgbMatrixAction::ModeNext,
+                &["rgb matrix next", "rgb_mod", "RGB_MATRIX_MODE_NEXT"][..],
+            ),
+            (
+                RgbMatrixAction::ModePrev,
+                &["rgb matrix prev", "rgb_rmod", "RGB_MATRIX_MODE_PREVIOUS"][..],
+            ),
+            (
+                RgbMatrixAction::HueInc,
+                &["rgb matrix hue+", "rgb_hui", "RGB_MATRIX_HUE_UP"][..],
+            ),
+            (
+                RgbMatrixAction::HueDec,
+                &["rgb matrix hue-", "rgb_hud", "RGB_MATRIX_HUE_DOWN"][..],
+            ),
+            (
+                RgbMatrixAction::SatInc,
+                &["rgb matrix sat+", "rgb_sai", "RGB_MATRIX_SATURATION_UP"][..],
+            ),
+            (
+                RgbMatrixAction::SatDec,
+                &["rgb matrix sat-", "rgb_sad", "RGB_MATRIX_SATURATION_DOWN"][..],
+            ),
+            (
+                RgbMatrixAction::BrightInc,
+                &["rgb matrix val+", "rgb_vai", "RGB_MATRIX_VALUE_UP"][..],
+            ),
+            (
+                RgbMatrixAction::BrightDec,
+                &["rgb matrix val-", "rgb_vad", "RGB_MATRIX_VALUE_DOWN"][..],
+            ),
+            (
+                RgbMatrixAction::SpeedInc,
+                &["rgb matrix speed+", "rgb_spi", "RGB_MATRIX_SPEED_UP"][..],
+            ),
+            (
+                RgbMatrixAction::SpeedDec,
+                &["rgb matrix speed-", "rgb_spd", "RGB_MATRIX_SPEED_DOWN"][..],
+            ),
+        ];
+        let candidates = actions
+            .into_iter()
+            .map(|(act, names)| {
+                action_candidate(KeySpec::Lighting(LightingAction::RgbMatrix(act)), names)
+            })
             .collect();
         CandidateGroup {
             name: "RGB Matrix",
@@ -537,12 +499,68 @@ pub fn rgb_matrix_group() -> &'static CandidateGroup {
 pub fn audio_group() -> &'static CandidateGroup {
     static GROUP: OnceLock<CandidateGroup> = OnceLock::new();
     GROUP.get_or_init(|| {
-        let codes = qmk_via_api::keycodes::Keycode::all_in_category(
-            qmk_via_api::keycodes::KeycodeCategory::Audio,
-        );
-        let candidates = codes
-            .iter()
-            .map(|&k| qmk_candidate(k as u16, k.as_ref()))
+        let actions = [
+            (AudioAction::On, &["audio on", "au_on", "QK_AUDIO_ON"][..]),
+            (
+                AudioAction::Off,
+                &["audio off", "au_off", "QK_AUDIO_OFF"][..],
+            ),
+            (
+                AudioAction::Toggle,
+                &["audio toggle", "au_tog", "QK_AUDIO_TOGGLE"][..],
+            ),
+            (
+                AudioAction::ClickyToggle,
+                &["clicky toggle", "ck_tog", "QK_AUDIO_CLICKY_TOGGLE"][..],
+            ),
+            (
+                AudioAction::ClickyOn,
+                &["clicky on", "ck_on", "QK_AUDIO_CLICKY_ON"][..],
+            ),
+            (
+                AudioAction::ClickyOff,
+                &["clicky off", "ck_off", "QK_AUDIO_CLICKY_OFF"][..],
+            ),
+            (
+                AudioAction::ClickyUp,
+                &["clicky up", "ck_up", "QK_AUDIO_CLICKY_UP"][..],
+            ),
+            (
+                AudioAction::ClickyDown,
+                &["clicky down", "ck_down", "QK_AUDIO_CLICKY_DOWN"][..],
+            ),
+            (
+                AudioAction::ClickyReset,
+                &["clicky reset", "ck_rst", "QK_AUDIO_CLICKY_RESET"][..],
+            ),
+            (
+                AudioAction::MusicOn,
+                &["music on", "mu_on", "QK_MUSIC_ON"][..],
+            ),
+            (
+                AudioAction::MusicOff,
+                &["music off", "mu_off", "QK_MUSIC_OFF"][..],
+            ),
+            (
+                AudioAction::MusicToggle,
+                &["music toggle", "mu_tog", "QK_MUSIC_TOGGLE"][..],
+            ),
+            (
+                AudioAction::MusicModeNext,
+                &["music mode", "mu_mod", "QK_MUSIC_MODE_NEXT"][..],
+            ),
+            (
+                AudioAction::VoiceNext,
+                &["audio voice+", "voice next", "QK_AUDIO_VOICE_NEXT"][..],
+            ),
+            (
+                AudioAction::VoicePrev,
+                &["audio voice-", "voice prev", "QK_AUDIO_VOICE_PREVIOUS"][..],
+            ),
+        ];
+        let candidates = actions
+            .into_iter()
+            .map(|(act, names)| action_candidate(KeySpec::Audio(act), names))
             .collect();
         CandidateGroup {
             name: "Audio",
@@ -666,43 +684,44 @@ pub fn mouse_groups() -> &'static [CandidateGroup] {
 pub fn special_group() -> &'static CandidateGroup {
     static GROUP: OnceLock<CandidateGroup> = OnceLock::new();
     GROUP.get_or_init(|| {
-        let mut candidates = Vec::with_capacity(200);
-
-        candidates.push(action_candidate(
-            KeySpec::Transparent,
-            &["transparent", "trans", "pass", "KC_TRNS"],
-        ));
-        candidates.push(action_candidate(
-            KeySpec::None,
-            &["none", "noop", "unbound", "KC_NO"],
-        ));
-        candidates.push(action_candidate(
-            KeySpec::CapsWord,
-            &["caps word", "caps_word", "cw", "QK_CAPS_WORD_TOGGLE"],
-        ));
-        candidates.push(action_candidate(
-            KeySpec::KeyRepeat,
-            &["key repeat", "key_repeat", "repeat", "QK_KEY_REPEAT"],
-        ));
-        candidates.push(action_candidate(
-            KeySpec::GraveEscape,
-            &["grave escape", "grave_esc", "QK_GRAVE_ESCAPE"],
-        ));
-
-        for &k in qmk_via_api::keycodes::Keycode::all_in_category(
-            qmk_via_api::keycodes::KeycodeCategory::Special,
-        ) {
-            let code = k as u16;
-            if code == qmk_via_api::keycodes::Keycode::KC_TRANSPARENT as u16
-                || code == qmk_via_api::keycodes::Keycode::KC_NO as u16
-                || code == qmk_via_api::keycodes::Keycode::QK_CAPS_WORD_TOGGLE as u16
-                || code == qmk_via_api::keycodes::Keycode::QK_REPEAT_KEY as u16
-                || code == qmk_via_api::keycodes::Keycode::QK_GRAVE_ESCAPE as u16
-            {
-                continue;
-            }
-            candidates.push(qmk_candidate(code, k.as_ref()));
-        }
+        let candidates = vec![
+            action_candidate(
+                KeySpec::Transparent,
+                &["transparent", "trans", "pass", "KC_TRNS"],
+            ),
+            action_candidate(KeySpec::None, &["none", "noop", "unbound", "KC_NO"]),
+            action_candidate(
+                KeySpec::CapsWord,
+                &["caps word", "caps_word", "cw", "QK_CAPS_WORD_TOGGLE"],
+            ),
+            action_candidate(
+                KeySpec::KeyRepeat,
+                &["key repeat", "key_repeat", "repeat", "QK_KEY_REPEAT"],
+            ),
+            action_candidate(
+                KeySpec::GraveEscape,
+                &["grave escape", "grave_esc", "QK_GRAVE_ESCAPE"],
+            ),
+            action_candidate(
+                KeySpec::Power(PowerAction::Bootloader),
+                &[
+                    "bootloader",
+                    "dfu",
+                    "flash",
+                    "boot",
+                    "QK_BOOTLOADER",
+                    "QK_BOOT",
+                ],
+            ),
+            action_candidate(
+                KeySpec::Power(PowerAction::Reset),
+                &["reset", "reboot", "sys_reset", "QK_REBOOT"],
+            ),
+            action_candidate(
+                KeySpec::Power(PowerAction::Other(0xEE)),
+                &["clear eeprom", "eeprom reset", "QK_CLEAR_EEPROM"],
+            ),
+        ];
 
         CandidateGroup {
             name: "Special",
@@ -841,19 +860,6 @@ fn action_candidate(spec: KeySpec, names: &[&str]) -> Candidate {
     let mut cand = Candidate::from_action(spec, &[]);
     for name in names {
         cand = cand.with_search_token(*name);
-    }
-    cand
-}
-
-pub fn qmk_candidate(code: u16, qmk_name: &str) -> Candidate {
-    use std::fmt::Write;
-    let spec = crate::protocols::qmk_codec::qmk_to_keyspec(code);
-    let mut cand = Candidate::from_action(spec, &[]);
-    let mut hex = String::with_capacity(5);
-    let _ = write!(&mut hex, "{:04x}", code);
-    cand = cand.with_search_token(hex);
-    if !qmk_name.is_empty() {
-        cand = cand.with_search_token(qmk_name);
     }
     cand
 }

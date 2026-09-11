@@ -1,6 +1,6 @@
+use super::basic::get_basic_layout_key;
+use super::constants::*;
 use crate::layout_key::{behavior_names, BorderStyle, KeycodeKind, Label, LayoutKey};
-use crate::qmk_keycode_labels::basic::get_basic_layout_key;
-use crate::qmk_keycode_labels::constants::*;
 use qmk_via_api::{QmkKeycode, QmkModMask};
 
 pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {

@@ -120,6 +120,10 @@ fn next_visibility_window(
 }
 
 pub struct Keyboard {
+    /// The protocol, shared with the command-execution thread. Capability
+    /// queries lock it briefly; commands hold it for the duration of the
+    /// protocol round-trip.
+    protocol: Arc<Mutex<Box<dyn KeyboardProtocol>>>,
     layout: Mutex<KeyboardLayout>,
     overlay_visibility: Arc<Mutex<VisibilityWindow>>,
     matrix: Arc<Mutex<KeyMatrix>>,
@@ -128,8 +132,6 @@ pub struct Keyboard {
     config: Arc<Mutex<OverlayConfig>>,
     alive: Arc<AtomicBool>,
     command_tx: mpsc::Sender<KeymapCommand>,
-    write_support: WriteSupport,
-    action_filter: Option<crate::protocols::ActionFilter>,
 }
 
 /// A keymap command for the protocol, executed on the reader thread so writes
@@ -237,7 +239,6 @@ impl Keyboard {
             .collect();
         let matrix = KeyMatrix::from_snapshot(snapshot, definition.rows, definition.cols);
 
-        let write_support = protocol.write_support();
         let event_rx = protocol
             .subscribe_events()
             .map_err(|e| format!("Failed to subscribe to keyboard events: {e}"))?;
@@ -250,9 +251,10 @@ impl Keyboard {
         let config = Arc::new(Mutex::new(config));
         let matrix = Arc::new(Mutex::new(matrix));
         let alive = Arc::new(AtomicBool::new(true));
+        let protocol = Arc::new(Mutex::new(protocol));
 
-        let action_filter = protocol.action_filter();
         let keyboard = Keyboard {
+            protocol: Arc::clone(&protocol),
             layout: Mutex::new(layout),
             matrix: Arc::clone(&matrix),
             overlay_visibility: Arc::clone(&overlay_visibility),
@@ -261,8 +263,6 @@ impl Keyboard {
             config: Arc::clone(&config),
             alive: Arc::clone(&alive),
             command_tx,
-            write_support,
-            action_filter,
         };
 
         let layer_state_clone = Arc::clone(&keyboard.layer_state);
@@ -327,8 +327,8 @@ impl Keyboard {
         let matrix_for_cmd = Arc::clone(&matrix);
         let ui_wake_cmd = ui_wake;
         thread::spawn(move || {
-            let mut protocol = protocol;
             while let Ok(command) = command_rx.recv() {
+                let mut protocol = protocol.lock().unwrap();
                 run_keymap_command(
                     protocol.as_mut(),
                     command,
@@ -412,7 +412,23 @@ impl Keyboard {
     }
 
     pub fn write_support(&self) -> WriteSupport {
-        self.write_support
+        self.protocol.lock().unwrap().write_support()
+    }
+
+    /// Whether the device accepts raw firmware keycodes as hex input.
+    pub fn supports_raw_keycode_entry(&self) -> bool {
+        self.protocol.lock().unwrap().supports_raw_keycode_entry()
+    }
+
+    /// Parses a raw firmware keycode into a domain [`KeySpec`]. Only meaningful
+    /// when [`Keyboard::supports_raw_keycode_entry`] is `true`.
+    pub fn parse_raw_keycode(&self, code: u16) -> Option<KeySpec> {
+        self.protocol.lock().unwrap().parse_raw_keycode(code)
+    }
+
+    /// Whether the layout can be switched while connected.
+    pub fn supports_live_layout_switching(&self) -> bool {
+        self.protocol.lock().unwrap().supports_live_layout_switching()
     }
 
     pub fn set_key(
@@ -504,9 +520,8 @@ impl Keyboard {
     }
 
     pub fn is_action_supported(&self, action: &KeySpec) -> bool {
-        self.action_filter
-            .as_ref()
-            .is_none_or(|filter| filter(action))
+        let filter = self.protocol.lock().unwrap().action_filter();
+        filter.is_none_or(|filter| filter(action))
     }
 
     pub fn set_config(&self, config: OverlayConfig) {
@@ -526,6 +541,33 @@ impl Keyboard {
 mod tests {
     use super::ActiveLayers::{Base, Excluded, Selected};
     use super::*;
+
+    fn mock_keyboard() -> Keyboard {
+        let protocol = Box::new(crate::protocols::mock::MockProtocol::connect().unwrap());
+        let layout_name = protocol.get_layout_definition().layouts[0].name.clone();
+        Keyboard::new(
+            protocol,
+            layout_name,
+            CONFIG,
+            UiWake::new(Arc::new(|| ())),
+        )
+        .unwrap()
+    }
+
+    /// Capability queries delegate live to the protocol instead of being
+    /// snapshotted at construction.
+    #[test]
+    fn keyboard_delegates_raw_keycode_capabilities() {
+        let keyboard = mock_keyboard();
+        assert!(keyboard.supports_raw_keycode_entry());
+        assert_eq!(
+            keyboard.parse_raw_keycode(0x0004),
+            Some(KeySpec::KeyPress {
+                key: crate::key_spec::HidKey::keyboard(0x04),
+                modifiers: Default::default(),
+            })
+        );
+    }
 
     const CONFIG: OverlayConfig = OverlayConfig {
         timeout_ms: 2000,

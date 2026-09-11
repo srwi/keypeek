@@ -125,11 +125,52 @@ pub enum RgbAction {
     Other { command: u32, value: u32 },
 }
 
+/// RGB Matrix per-key lighting command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum RgbMatrixAction {
+    Toggle,
+    On,
+    Off,
+    ModeNext,
+    ModePrev,
+    HueInc,
+    HueDec,
+    SatInc,
+    SatDec,
+    BrightInc,
+    BrightDec,
+    SpeedInc,
+    SpeedDec,
+    Other { command: u32, value: u32 },
+}
+
+/// Audio synthesizer and clicky command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum AudioAction {
+    On,
+    Off,
+    Toggle,
+    ClickyToggle,
+    ClickyOn,
+    ClickyOff,
+    ClickyUp,
+    ClickyDown,
+    ClickyReset,
+    MusicOn,
+    MusicOff,
+    MusicToggle,
+    MusicModeNext,
+    VoiceNext,
+    VoicePrev,
+    Other(u32),
+}
+
 /// Lighting command.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum LightingAction {
     Backlight(BacklightAction),
     Rgb(RgbAction),
+    RgbMatrix(RgbMatrixAction),
 }
 
 /// Mouse button identifier.
@@ -218,6 +259,7 @@ pub enum KeySpec {
     Output(OutputTarget),
     Power(PowerAction),
     Lighting(LightingAction),
+    Audio(AudioAction),
     Mouse(MouseAction),
     /// Vendor/firmware-specific user extensions
     Custom(CustomBinding),
@@ -427,9 +469,7 @@ impl KeySpec {
                         BacklightAction::Inc => Label::with_short("BL Inc", "BL+"),
                         BacklightAction::Dec => Label::with_short("BL Dec", "BL-"),
                         BacklightAction::Cycle => Label::with_short("BL Cycle", "BLCyc"),
-                        BacklightAction::BreathingToggle => {
-                            Label::with_short("BL Breath", "BLBrt")
-                        }
+                        BacklightAction::BreathingToggle => Label::with_short("BL Breath", "BLBrt"),
                         BacklightAction::Set(n) => {
                             Label::with_short(format!("BL Set {n}"), format!("BL{n}"))
                         }
@@ -463,6 +503,54 @@ impl KeySpec {
                             Label::new(format!("RGB {command} {value}"))
                         }
                     },
+                    LightingAction::RgbMatrix(mat) => match mat {
+                        RgbMatrixAction::Toggle => Label::with_short("RGB Toggle", "RGBTg"),
+                        RgbMatrixAction::On => Label::with_short("RGB On", "RGBOn"),
+                        RgbMatrixAction::Off => Label::with_short("RGB Off", "RGBOff"),
+                        RgbMatrixAction::ModeNext => Label::with_short("RGB Mode +", "RGBM+"),
+                        RgbMatrixAction::ModePrev => Label::with_short("RGB Mode -", "RGBM-"),
+                        RgbMatrixAction::HueInc => Label::with_short("RGB Hue +", "RGBH+"),
+                        RgbMatrixAction::HueDec => Label::with_short("RGB Hue -", "RGBH-"),
+                        RgbMatrixAction::SatInc => Label::with_short("RGB Sat +", "RGBS+"),
+                        RgbMatrixAction::SatDec => Label::with_short("RGB Sat -", "RGBS-"),
+                        RgbMatrixAction::BrightInc => Label::with_short("RGB Val +", "RGBV+"),
+                        RgbMatrixAction::BrightDec => Label::with_short("RGB Val -", "RGBV-"),
+                        RgbMatrixAction::SpeedInc => Label::with_short("RGB Spd +", "RGBSp+"),
+                        RgbMatrixAction::SpeedDec => Label::with_short("RGB Spd -", "RGBSp-"),
+                        RgbMatrixAction::Other { command, value: 0 } => {
+                            Label::new(format!("RGBM {command}"))
+                        }
+                        RgbMatrixAction::Other { command, value } => {
+                            Label::new(format!("RGBM {command} {value}"))
+                        }
+                    },
+                };
+                Some(LayoutKey {
+                    tap: label,
+                    ..Default::default()
+                })
+            }
+
+            KeySpec::Audio(audio) => {
+                let label = match audio {
+                    AudioAction::On => Label::with_short("Audio On", "AudOn"),
+                    AudioAction::Off => Label::with_short("Audio Off", "AudOff"),
+                    AudioAction::Toggle => Label::with_short("Audio Toggle", "AudTg"),
+                    AudioAction::ClickyToggle => Label::with_short("Clicky Toggle", "ClkTg"),
+                    AudioAction::ClickyOn => Label::with_short("Clicky Enable", "ClkOn"),
+                    AudioAction::ClickyOff => Label::with_short("Clicky Disable", "ClkOff"),
+                    AudioAction::ClickyUp => Label::with_short("Clicky Up", "Clk+"),
+                    AudioAction::ClickyDown => Label::with_short("Clicky Down", "Clk-"),
+                    AudioAction::ClickyReset => Label::with_short("Clicky Reset", "ClkRst"),
+                    AudioAction::MusicOn => Label::with_short("Music On", "MusicOn"),
+                    AudioAction::MusicOff => Label::with_short("Music Off", "MusicOf"),
+                    AudioAction::MusicToggle => Label::with_short("Music Toggle", "MusicTg"),
+                    AudioAction::MusicModeNext => Label::with_short("Music Mode", "MusicMd"),
+                    AudioAction::VoiceNext => Label::with_short("Voice Next", "Voice+"),
+                    AudioAction::VoicePrev => Label::with_short("Voice Prev", "Voice-"),
+                    AudioAction::Other(n) => {
+                        Label::with_short(format!("Audio {n}"), format!("Aud{n}"))
+                    }
                 };
                 Some(LayoutKey {
                     tap: label,
@@ -571,18 +659,6 @@ impl KeySpec {
                         binding.param2,
                         layer_names,
                     ));
-                }
-
-                // Check if the ID can be resolved via standard QMK keycodes (e.g. quantum magic / custom keys)
-                if matches!(
-                    binding.kind,
-                    CustomKind::Keyboard | CustomKind::User | CustomKind::Raw
-                ) {
-                    if let Some(resolved) =
-                        crate::qmk_keycode_labels::try_resolve_qmk_key(binding.id as u16)
-                    {
-                        return Some(resolved);
-                    }
                 }
 
                 match binding.kind {

@@ -59,7 +59,7 @@ fn layer_label(layer: u8) -> Label {
 
 #[cfg(test)]
 mod tests {
-    use crate::qmk_keycode_labels::try_resolve_qmk_key;
+    use super::super::try_resolve_qmk_key;
     use qmk_via_api::ranges::{QK_KB, QK_MACRO, QK_TAP_DANCE, QK_USER};
 
     #[test]

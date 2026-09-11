@@ -15,44 +15,13 @@ use crate::key_spec::{HidKey, KeySpec, LayerActivation};
 use crate::keyboard::Keyboard;
 use crate::ui_widgets::titled_group;
 
-const ZMK_SECTIONS: [super::SidebarSection<EditorSection>; 6] = [
-    super::SidebarSection {
-        title: "Keys",
-        items: &[
-            EditorSection::Keyboard,
-            EditorSection::KeyToggle,
-            EditorSection::OneShot,
-        ],
-    },
-    super::SidebarSection {
-        title: "Layers & Mods",
-        items: &[EditorSection::Layers, EditorSection::ModTap],
-    },
-    super::SidebarSection {
-        title: "Wireless",
-        items: &[EditorSection::Bluetooth, EditorSection::Output],
-    },
-    super::SidebarSection {
-        title: "Lighting",
-        items: &[EditorSection::Backlight, EditorSection::Rgb],
-    },
-    super::SidebarSection {
-        title: "Mouse",
-        items: &[EditorSection::Mouse],
-    },
-    super::SidebarSection {
-        title: "Other",
-        items: &[EditorSection::System, EditorSection::Special],
-    },
-];
-
-const QMK_SECTIONS: [super::SidebarSection<EditorSection>; 5] = [
+const EDITOR_SECTIONS: [super::SidebarSection<EditorSection>; 6] = [
     super::SidebarSection {
         title: "Keys",
         items: &[
             EditorSection::Keyboard,
             EditorSection::Media,
-            EditorSection::Special,
+            EditorSection::KeyToggle,
         ],
     },
     super::SidebarSection {
@@ -64,6 +33,10 @@ const QMK_SECTIONS: [super::SidebarSection<EditorSection>; 5] = [
             EditorSection::ModTap,
             EditorSection::LayerMod,
         ],
+    },
+    super::SidebarSection {
+        title: "Wireless",
+        items: &[EditorSection::Bluetooth, EditorSection::Output],
     },
     super::SidebarSection {
         title: "Lighting & Audio",
@@ -82,6 +55,7 @@ const QMK_SECTIONS: [super::SidebarSection<EditorSection>; 5] = [
         title: "Other",
         items: &[
             EditorSection::System,
+            EditorSection::Special,
             EditorSection::Custom,
             EditorSection::RawHex,
         ],
@@ -113,12 +87,9 @@ impl EditorState {
         target: EditTarget,
         style: &KeyPaintStyle,
     ) {
-        let sections = match keyboard.write_support() {
-            crate::protocols::WriteSupport::Session => &ZMK_SECTIONS[..],
-            _ => &QMK_SECTIONS[..],
-        };
+        let sections = &EDITOR_SECTIONS[..];
 
-        // If current section is unsupported on this keyboard or not in protocol sections, switch to first supported
+        // If current section is unsupported on this keyboard, switch to first supported
         if !self.draft.section.is_supported(keyboard)
             || !sections
                 .iter()
@@ -292,7 +263,8 @@ impl EditorState {
     }
 
     fn commit_draft(&mut self, keyboard: &Keyboard, target: EditTarget) {
-        self.commit_staged(keyboard, target, self.draft.staged());
+        let staged = self.draft.staged_for(keyboard);
+        self.commit_staged(keyboard, target, staged);
     }
 
     fn draw_keyboard_page(

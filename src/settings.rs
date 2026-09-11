@@ -6,15 +6,6 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-/// The protocol a connection speaks. Not persisted; it only distinguishes behavior that
-/// differs between protocols, such as whether layouts can be switched while connected.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ProtocolType {
-    Via,
-    Vial,
-    Zmk,
-}
-
 #[derive(Debug)]
 pub struct ParseSettingsError;
 

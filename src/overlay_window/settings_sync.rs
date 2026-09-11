@@ -1,7 +1,7 @@
 use super::state::AppConnectionState;
 use super::OverlayApp;
 use crate::keyboard::OverlayConfig;
-use crate::settings::{ProtocolType, WindowPosition};
+use crate::settings::WindowPosition;
 use egui::Align2;
 use std::time::Instant;
 
@@ -16,7 +16,7 @@ impl OverlayApp {
     }
 
     pub(super) fn apply_live_visual_settings(&mut self) {
-        if self.settings.active == self.settings.draft {
+        if self.settings.draft == self.settings.active {
             return;
         }
 
@@ -32,10 +32,13 @@ impl OverlayApp {
             return;
         }
 
-        if !matches!(
-            self.connect.draft.protocol_type(),
-            ProtocolType::Via | ProtocolType::Vial
-        ) {
+        let AppConnectionState::Connected { keyboard } = &self.session.connection else {
+            // Not connected: nothing can be switched live.
+            self.session.draft_layout_name = self.session.active_layout_name.clone();
+            return;
+        };
+
+        if !keyboard.supports_live_layout_switching() {
             self.session.draft_layout_name = self.session.active_layout_name.clone();
             return;
         }
@@ -55,10 +58,6 @@ impl OverlayApp {
                 self.session.draft_layout_name = self.session.active_layout_name.clone();
                 return;
             }
-        };
-
-        let AppConnectionState::Connected { keyboard } = &self.session.connection else {
-            return;
         };
 
         keyboard.set_layout(next_layout);

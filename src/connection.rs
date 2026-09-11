@@ -37,10 +37,9 @@ impl ConnectionRequest {
     }
 }
 
-fn format_connect_error(spec: &ConnectionSpec, error: &DeviceError) -> String {
+fn format_connect_error(_spec: &ConnectionSpec, error: &DeviceError) -> String {
     match error {
         DeviceError::DeviceLocked => error.to_string(),
-        _ if matches!(spec, ConnectionSpec::Zmk { .. }) => format!("ZMK error: {error}"),
         _ => format!("Failed to connect to device: {error}"),
     }
 }

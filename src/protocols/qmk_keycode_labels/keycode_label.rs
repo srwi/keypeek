@@ -1,7 +1,7 @@
+use super::advanced::get_advanced_layout_key;
+use super::basic::get_basic_layout_key;
+use super::layer::get_layer_layout_key;
 use crate::layout_key::{Label, LayoutKey};
-use crate::qmk_keycode_labels::advanced::get_advanced_layout_key;
-use crate::qmk_keycode_labels::basic::get_basic_layout_key;
-use crate::qmk_keycode_labels::layer::get_layer_layout_key;
 
 use qmk_via_api::keycodes::Keycode;
 

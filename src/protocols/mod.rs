@@ -5,11 +5,13 @@ pub mod qmk_codec;
 pub mod qmk_common;
 pub mod qmk_discovery;
 pub mod qmk_json_parser;
+pub(crate) mod qmk_keycode_labels;
 pub mod via;
 pub mod vial;
 pub mod zmk;
 pub mod zmk_codec;
 pub mod zmk_discovery;
+pub(crate) mod zmk_keycode_labels;
 pub mod zmk_rpc;
 
 use std::error::Error;
@@ -276,6 +278,22 @@ pub trait KeyboardProtocol: Send {
     fn action_filter(&self) -> Option<ActionFilter> {
         None
     }
+
+    /// Whether the device accepts raw firmware keycodes as hex input.
+    fn supports_raw_keycode_entry(&self) -> bool {
+        false
+    }
+
+    /// Whether the layout can be switched while connected.
+    fn supports_live_layout_switching(&self) -> bool {
+        false
+    }
+
+    /// Parses a raw firmware keycode into a domain [`KeySpec`]. Only called
+    /// when [`KeyboardProtocol::supports_raw_keycode_entry`] is `true`.
+    fn parse_raw_keycode(&self, _code: u16) -> Option<crate::key_spec::KeySpec> {
+        None
+    }
 }
 
 pub trait Reopener: Send + Sync {
@@ -336,6 +354,38 @@ pub fn connect_protocol(spec: &ConnectionSpec) -> Result<Box<dyn KeyboardProtoco
             Ok(Box::new(protocol))
         }
     }
+}
+
+/// Returns all known protocol-specific search tokens for a standard HID usage.
+pub fn protocol_search_tokens_for_hid(page: u16, id: u16) -> Vec<String> {
+    let mut tokens = Vec::new();
+    tokens.extend(qmk_codec::qmk_search_tokens_for_hid(page, id));
+    tokens.extend(zmk_codec::zmk_search_tokens_for_hid(page, id));
+    tokens
+}
+
+/// Enumerates all USB HID keyboard usages (Page 0x07) supported across protocols.
+pub fn all_keyboard_usages() -> Vec<u16> {
+    let mut set = std::collections::BTreeSet::new();
+    for id in zmk_codec::zmk_all_keyboard_usages() {
+        set.insert(id);
+    }
+    for id in qmk_codec::qmk_all_basic_usages() {
+        set.insert(id);
+    }
+    set.into_iter().collect()
+}
+
+/// Enumerates all USB HID consumer usages (Page 0x0C) supported across protocols.
+pub fn all_consumer_usages() -> Vec<u16> {
+    let mut set = std::collections::BTreeSet::new();
+    for id in zmk_codec::zmk_all_consumer_usages() {
+        set.insert(id);
+    }
+    for id in qmk_codec::qmk_all_media_usages() {
+        set.insert(id);
+    }
+    set.into_iter().collect()
 }
 
 #[cfg(test)]

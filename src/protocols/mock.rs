@@ -145,6 +145,18 @@ impl KeyboardProtocol for MockProtocol {
         WriteSupport::Immediate
     }
 
+    fn supports_raw_keycode_entry(&self) -> bool {
+        true
+    }
+
+    fn supports_live_layout_switching(&self) -> bool {
+        true
+    }
+
+    fn parse_raw_keycode(&self, code: u16) -> Option<KeySpec> {
+        Some(super::qmk_codec::qmk_to_keyspec(code))
+    }
+
     fn set_key(
         &mut self,
         _layer: &LayerInfo,
