@@ -22,7 +22,7 @@ impl OverlayApp {
 
         self.settings.active = self.settings.draft.clone();
 
-        if let AppConnectionState::Connected { keyboard } = &self.session.connection {
+        if let AppConnectionState::Connected { keyboard, .. } = &self.session.connection {
             keyboard.set_config(self.overlay_config());
         }
     }
@@ -32,7 +32,7 @@ impl OverlayApp {
             return;
         }
 
-        let AppConnectionState::Connected { keyboard } = &self.session.connection else {
+        let AppConnectionState::Connected { keyboard, .. } = &self.session.connection else {
             // Not connected: nothing can be switched live.
             self.session.draft_layout_name = self.session.active_layout_name.clone();
             return;
@@ -81,7 +81,7 @@ impl OverlayApp {
     pub(super) fn overlay_visible(&self) -> bool {
         match &self.session.connection {
             AppConnectionState::Disconnected | AppConnectionState::Reconnecting { .. } => false,
-            AppConnectionState::Connected { keyboard } => {
+            AppConnectionState::Connected { keyboard, .. } => {
                 self.is_any_window_open() || keyboard.overlay_is_visible(Instant::now())
             }
         }

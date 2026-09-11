@@ -50,6 +50,7 @@ pub struct ConnectedState {
     pub selected_layout_name: String,
     pub keyboard: Keyboard,
     pub reopen: Option<Arc<dyn Reopener>>,
+    pub editor_profile: Arc<dyn crate::keymap_editor::EditorProfile>,
 }
 
 pub struct ConnectionTask {
@@ -82,6 +83,13 @@ pub fn build_connected_state(
     request: ConnectionRequest,
     ui_wake: UiWake,
 ) -> Result<ConnectedState, String> {
+    let editor_profile: Arc<dyn crate::keymap_editor::EditorProfile> = match &request.spec {
+        ConnectionSpec::Via { .. } | ConnectionSpec::Vial { .. } | ConnectionSpec::Mock => {
+            Arc::new(crate::keymap_editor::QmkEditorProfile)
+        }
+        ConnectionSpec::Zmk { .. } => Arc::new(crate::keymap_editor::ZmkEditorProfile),
+    };
+
     let protocol = request.open_protocol()?;
 
     let reopen = protocol.reopener();
@@ -103,5 +111,6 @@ pub fn build_connected_state(
         selected_layout_name,
         keyboard,
         reopen,
+        editor_profile,
     })
 }

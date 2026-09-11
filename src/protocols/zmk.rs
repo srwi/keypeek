@@ -217,10 +217,6 @@ impl KeyboardProtocol for ZmkProtocol {
         WriteSupport::Session
     }
 
-    fn terminology(&self) -> super::Terminology {
-        super::Terminology::Zmk
-    }
-
     fn set_key(
         &mut self,
         layer: &LayerInfo,

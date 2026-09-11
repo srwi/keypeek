@@ -232,17 +232,6 @@ pub enum WriteSupport {
 }
 
 /// Which firmware vocabulary the device's users are familiar with, for UI
-/// labels where firmware communities use different names for the same concept
-/// (e.g. QMK "One-Shot Mod" vs ZMK "Sticky Key"). `Neutral` uses firmware-
-/// agnostic wording.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Terminology {
-    #[default]
-    Neutral,
-    Qmk,
-    Zmk,
-}
-
 pub trait KeyboardProtocol: Send {
     fn get_layout_definition(&self) -> &KeyboardDefinition;
 
@@ -300,11 +289,6 @@ pub trait KeyboardProtocol: Send {
     /// Whether the layout can be switched while connected.
     fn supports_live_layout_switching(&self) -> bool {
         false
-    }
-
-    /// The firmware vocabulary users of this device are familiar with.
-    fn terminology(&self) -> Terminology {
-        Terminology::Neutral
     }
 
     /// Parses a raw firmware keycode into a domain [`KeySpec`]. Only called

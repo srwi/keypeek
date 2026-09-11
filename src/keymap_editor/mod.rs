@@ -4,9 +4,11 @@ mod catalog;
 mod draft;
 mod editor;
 mod picker;
+pub mod profile;
 
 pub use draft::KeyDraft;
 pub use picker::KEY_UNIT;
+pub use profile::{EditorProfile, QmkEditorProfile, SidebarSection, ZmkEditorProfile};
 
 use crate::key_spec::KeySpec;
 use crate::keyboard::Keyboard;
@@ -195,27 +197,16 @@ const SIDEBAR_WIDTH: f32 = 110.0;
 /// Right margin to prevent scrollbar overlap with group borders.
 const SCROLLBAR_GUTTER: f32 = 8.0;
 
-/// Section grouping for the editor's left sidebar.
-pub(super) struct SidebarSection<T: 'static> {
-    pub title: &'static str,
-    pub items: &'static [T],
-}
-
-/// Item in the editor's left sidebar.
-pub(super) trait SidebarItem: Copy + PartialEq {
-    fn label(self, keyboard: &Keyboard) -> &'static str;
-    fn is_supported(self, keyboard: &Keyboard) -> bool;
-}
-
 /// Draws the left category panel with sectioned items and a search bar pinned to the bottom.
-pub(super) fn editor_left_panel<T: SidebarItem>(
+pub(super) fn editor_left_panel(
     ui: &mut egui::Ui,
     left_id: &str,
     keyboard: &Keyboard,
-    current: T,
-    sections: &[SidebarSection<T>],
+    profile: &dyn EditorProfile,
+    current: draft::EditorSection,
+    sections: &[SidebarSection<draft::EditorSection>],
     search_query: &mut String,
-) -> Option<T> {
+) -> Option<draft::EditorSection> {
     let mut selected = None;
     let left_id = egui::Id::new(left_id);
     egui::Panel::left(left_id)
@@ -237,11 +228,11 @@ pub(super) fn editor_left_panel<T: SidebarItem>(
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
                             for section in sections {
-                                let supported: Vec<T> = section
+                                let supported: Vec<draft::EditorSection> = section
                                     .items
                                     .iter()
                                     .copied()
-                                    .filter(|item| item.is_supported(keyboard))
+                                    .filter(|item| profile.is_section_supported(*item, keyboard))
                                     .collect();
                                 if supported.is_empty() {
                                     continue;
@@ -249,7 +240,10 @@ pub(super) fn editor_left_panel<T: SidebarItem>(
                                 ui.weak(section.title);
                                 for item in supported {
                                     if ui
-                                        .selectable_label(current == item, item.label(keyboard))
+                                        .selectable_label(
+                                            current == item,
+                                            profile.section_label(item),
+                                        )
                                         .clicked()
                                     {
                                         selected = Some(item);
@@ -298,6 +292,7 @@ impl EditorState {
         &mut self,
         ctx: &egui::Context,
         keyboard: &Keyboard,
+        profile: &dyn EditorProfile,
         style: &crate::key_paint::KeyPaintStyle,
     ) {
         let Some(target) = self.target else {
@@ -347,7 +342,7 @@ impl EditorState {
                     }
                     WriteSupport::Immediate | WriteSupport::Session => {
                         ui.add_space(8.0);
-                        self.draw_editor_body(ui, keyboard, target, style);
+                        self.draw_editor_body(ui, keyboard, profile, target, style);
                     }
                 }
             });

@@ -153,10 +153,6 @@ impl KeyboardProtocol for MockProtocol {
         true
     }
 
-    fn terminology(&self) -> super::Terminology {
-        super::Terminology::Qmk
-    }
-
     fn parse_raw_keycode(&self, code: u16) -> Option<KeySpec> {
         Some(super::qmk_codec::qmk_to_keyspec(code))
     }

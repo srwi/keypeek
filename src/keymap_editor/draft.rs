@@ -70,16 +70,6 @@ impl EditorSection {
         }
     }
 
-    /// The section label in the vocabulary of the connected keyboard's firmware
-    /// community, for concepts that are named differently across firmwares.
-    pub fn label_for(self, keyboard: &Keyboard) -> &'static str {
-        match (self, keyboard.terminology()) {
-            (Self::OneShot, crate::protocols::Terminology::Qmk) => "One-Shot Mod",
-            (Self::OneShot, crate::protocols::Terminology::Zmk) => "Sticky Key",
-            _ => self.label(),
-        }
-    }
-
     /// Checks if this section is supported by the connected keyboard.
     pub fn is_supported(self, keyboard: &Keyboard) -> bool {
         match self {
@@ -466,23 +456,6 @@ pub fn modifiers_from_u8(mask: u8) -> Modifiers {
 mod tests {
     use super::*;
 
-    fn mock_keyboard() -> Keyboard {
-        let protocol: Box<dyn crate::protocols::KeyboardProtocol> =
-            Box::new(crate::protocols::mock::MockProtocol::connect().unwrap());
-        let layout_name = protocol.get_layout_definition().layouts[0].name.clone();
-        Keyboard::new(
-            protocol,
-            layout_name,
-            crate::keyboard::OverlayConfig {
-                timeout_ms: 2000,
-                activation_delay_ms: 300,
-                visible_layers: u32::MAX,
-            },
-            crate::ui_wake::UiWake::new(std::sync::Arc::new(|| ())),
-        )
-        .unwrap()
-    }
-
     #[test]
     fn default_draft_starts_empty() {
         let draft = KeyDraft::default();
@@ -843,17 +816,6 @@ mod tests {
         assert_eq!(EditorSection::OneShot.label(), "Sticky Key");
         assert_eq!(EditorSection::Output.label(), "Output Selection");
         assert_eq!(EditorSection::Rgb.label(), "Underglow");
-    }
-
-    #[test]
-    fn editor_section_labels_follow_device_terminology() {
-        let keyboard = mock_keyboard();
-        // The mock emulates a QMK device, so QMK vocabulary is shown.
-        assert_eq!(keyboard.terminology(), crate::protocols::Terminology::Qmk);
-        assert_eq!(EditorSection::OneShot.label_for(&keyboard), "One-Shot Mod");
-        // Neutral sections are unaffected.
-        assert_eq!(EditorSection::Keyboard.label_for(&keyboard), "Key Press");
-        assert_eq!(EditorSection::Combo.label_for(&keyboard), "Modifier Key");
     }
 
     #[test]

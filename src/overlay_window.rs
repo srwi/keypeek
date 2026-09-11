@@ -108,7 +108,7 @@ impl OverlayApp {
     /// are pending; otherwise closes immediately.
     pub(crate) fn request_close_editor(&mut self) {
         if self.editor.request_close() {
-            if let AppConnectionState::Connected { keyboard } = &self.session.connection {
+            if let AppConnectionState::Connected { keyboard, .. } = &self.session.connection {
                 keyboard.end_edit_session();
             }
         }
@@ -118,7 +118,7 @@ impl OverlayApp {
     /// connected keyboard, if one is present.
     pub(crate) fn close_editor(&mut self) {
         self.editor.reset();
-        if let AppConnectionState::Connected { keyboard } = &self.session.connection {
+        if let AppConnectionState::Connected { keyboard, .. } = &self.session.connection {
             keyboard.end_edit_session();
         }
     }
@@ -129,7 +129,7 @@ impl OverlayApp {
             return;
         }
 
-        let AppConnectionState::Connected { keyboard } = &self.session.connection else {
+        let AppConnectionState::Connected { keyboard, .. } = &self.session.connection else {
             return;
         };
 
@@ -176,14 +176,15 @@ impl OverlayApp {
         }
 
         self.sync_mouse_passthrough(host);
-        if let AppConnectionState::Connected { keyboard } = &self.session.connection {
+        if let AppConnectionState::Connected { keyboard, profile } = &self.session.connection {
             // Clone the shared keyboard so drawing can mutate app state (the
             // editor) without holding a borrow on `self.session`.
             let keyboard = Arc::clone(keyboard);
+            let profile = Arc::clone(profile);
             self.draw_overlay_window(ctx, &keyboard, self.overlay_visible());
             if self.editor.target.is_some() {
                 let style = self.paint_style(crate::keymap_editor::KEY_UNIT);
-                self.editor.draw_window(ctx, &keyboard, &style);
+                self.editor.draw_window(ctx, &keyboard, profile.as_ref(), &style);
             }
         } else if self.editor.target.is_some() {
             // The connection dropped; close the editor. Unsaved ZMK changes

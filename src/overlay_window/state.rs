@@ -14,6 +14,7 @@ pub enum AppConnectionState {
     /// `Keyboard` while other UI code mutates app state.
     Connected {
         keyboard: Arc<Keyboard>,
+        profile: Arc<dyn crate::keymap_editor::EditorProfile>,
     },
     Reconnecting {
         next_attempt_at: Instant,

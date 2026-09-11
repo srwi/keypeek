@@ -8,69 +8,12 @@ use super::picker::{
     framed_candidate_groups, modifier_toggle_grid, multi_candidate_groups, titled_candidate_group,
     CandidateGroup, SelectedKey,
 };
-use super::{catalog, EditTarget, EditorState};
+use super::{catalog, EditTarget, EditorProfile, EditorState};
 use crate::hid_labels::Modifiers;
 use crate::key_paint::KeyPaintStyle;
 use crate::key_spec::{HidKey, KeySpec, LayerActivation};
 use crate::keyboard::Keyboard;
 use crate::ui_widgets::titled_group;
-
-const EDITOR_SECTIONS: [super::SidebarSection<EditorSection>; 7] = [
-    super::SidebarSection {
-        title: "Keys",
-        items: &[EditorSection::Keyboard, EditorSection::KeyToggle],
-    },
-    super::SidebarSection {
-        title: "Layers & Mods",
-        items: &[
-            EditorSection::Layers,
-            EditorSection::Combo,
-            EditorSection::OneShot,
-            EditorSection::ModTap,
-            EditorSection::LayerMod,
-        ],
-    },
-    super::SidebarSection {
-        title: "Wireless",
-        items: &[EditorSection::Bluetooth, EditorSection::Output],
-    },
-    super::SidebarSection {
-        title: "Power",
-        items: &[EditorSection::BootPower, EditorSection::System],
-    },
-    super::SidebarSection {
-        title: "Lighting & Audio",
-        items: &[
-            EditorSection::Backlight,
-            EditorSection::Rgb,
-            EditorSection::RgbMatrix,
-            EditorSection::Audio,
-        ],
-    },
-    super::SidebarSection {
-        title: "Mouse",
-        items: &[EditorSection::Mouse],
-    },
-    super::SidebarSection {
-        title: "Other",
-        items: &[
-            EditorSection::System,
-            EditorSection::Special,
-            EditorSection::Custom,
-            EditorSection::RawHex,
-        ],
-    },
-];
-
-impl super::SidebarItem for EditorSection {
-    fn label(self, keyboard: &Keyboard) -> &'static str {
-        self.label_for(keyboard)
-    }
-
-    fn is_supported(self, keyboard: &Keyboard) -> bool {
-        EditorSection::is_supported(self, keyboard)
-    }
-}
 
 struct TapPickerOpts<'a> {
     id_salt: &'static str,
@@ -84,13 +27,14 @@ impl EditorState {
         &mut self,
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
+        profile: &dyn EditorProfile,
         target: EditTarget,
         style: &KeyPaintStyle,
     ) {
-        let sections = &EDITOR_SECTIONS[..];
+        let sections = profile.sidebar_sections();
 
         // If current section is unsupported on this keyboard, switch to first supported
-        if !self.draft.section.is_supported(keyboard)
+        if !profile.is_section_supported(self.draft.section, keyboard)
             || !sections
                 .iter()
                 .any(|s| s.items.contains(&self.draft.section))
@@ -99,7 +43,7 @@ impl EditorState {
                 .iter()
                 .flat_map(|s| s.items.iter())
                 .copied()
-                .find(|s| s.is_supported(keyboard))
+                .find(|s| profile.is_section_supported(*s, keyboard))
             {
                 self.draft.section = first;
             }
@@ -110,6 +54,7 @@ impl EditorState {
             ui,
             "editor_sections",
             keyboard,
+            profile,
             current_section,
             sections,
             &mut self.search_query,

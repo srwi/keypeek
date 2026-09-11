@@ -111,6 +111,7 @@ impl OverlayApp {
         self.session.reopen = connected.reopen;
         self.session.connection = AppConnectionState::Connected {
             keyboard: Arc::new(connected.keyboard),
+            profile: connected.editor_profile,
         };
         self.session.ever_connected = true;
         self.ui.settings_error = None;
@@ -197,7 +198,7 @@ impl OverlayApp {
     /// Detects a dropped connection and drives background reconnect attempts, reusing
     /// the last successful spec. Called every frame.
     pub(super) fn maintain_connection(&mut self, ctx: &egui::Context) {
-        if let AppConnectionState::Connected { keyboard } = &self.session.connection {
+        if let AppConnectionState::Connected { keyboard, .. } = &self.session.connection {
             if !keyboard.is_alive() {
                 self.close_editor();
                 self.session.connection = AppConnectionState::Reconnecting {
