@@ -1,35 +1,9 @@
-use crate::protocols::zmk_rpc;
+//! Extensible device discovery for keyboards using protocol-provided scanners.
+//!
+//! Orchestrates discovery across registered [`DeviceDriverScanner`] implementations,
+//! managing shared transport snapshots (e.g. USB HID devices) and conflict resolution.
+
 use std::collections::HashSet;
-
-const VIA_USAGE_PAGE: u16 = 0xff60;
-
-/// Identifiers for the virtual keyboard. They must match `resources/mock_keyboard.json`
-/// and are deliberately outside the ranges real boards use.
-const MOCK_VID: u16 = 0xF00D;
-const MOCK_PID: u16 = 0xF00D;
-
-struct HidInfo {
-    vendor_id: u16,
-    product_id: u16,
-    usage_page: u16,
-    product: Option<String>,
-    serial_number: Option<String>,
-}
-
-fn scan_all_hid() -> Vec<HidInfo> {
-    let Ok(api) = hidapi::HidApi::new() else {
-        return Vec::new();
-    };
-    api.device_list()
-        .map(|d| HidInfo {
-            vendor_id: d.vendor_id(),
-            product_id: d.product_id(),
-            usage_page: d.usage_page(),
-            product: d.product_string().map(|s| s.to_string()),
-            serial_number: d.serial_number().map(|s| s.to_string()),
-        })
-        .collect()
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DeviceKind {
@@ -50,7 +24,7 @@ impl DeviceKind {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DiscoveredDevice {
     pub base_name: String,
     pub vid: u16,
@@ -77,97 +51,98 @@ impl DiscoveredDevice {
     }
 }
 
-pub fn discover_devices() -> Vec<DiscoveredDevice> {
-    let all_hid: Vec<HidInfo> = scan_all_hid();
+/// Generic, protocol-agnostic snapshot of an attached USB HID interface.
+#[derive(Clone, Debug)]
+pub struct HidDeviceInfo {
+    pub vendor_id: u16,
+    pub product_id: u16,
+    pub usage_page: u16,
+    pub product: Option<String>,
+    pub serial_number: Option<String>,
+}
 
-    let mut devices: Vec<DiscoveredDevice> = Vec::new();
-    let mut zmk_vid_pid: HashSet<(u16, u16)> = HashSet::new();
+/// Scans all currently enumerated USB HID interfaces on the system.
+pub fn scan_all_hid() -> Vec<HidDeviceInfo> {
+    let Ok(api) = hidapi::HidApi::new() else {
+        return Vec::new();
+    };
+    api.device_list()
+        .map(|d| HidDeviceInfo {
+            vendor_id: d.vendor_id(),
+            product_id: d.product_id(),
+            usage_page: d.usage_page(),
+            product: d.product_string().map(|s| s.to_string()),
+            serial_number: d.serial_number().map(|s| s.to_string()),
+        })
+        .collect()
+}
 
-    for sp in zmk_rpc::scan_serial_ports() {
-        let base_name = all_hid
+/// Context shared across device driver scanners during discovery.
+pub struct DiscoveryContext {
+    hid_devices: Vec<HidDeviceInfo>,
+    claimed_vid_pids: HashSet<(u16, u16)>,
+}
+
+impl DiscoveryContext {
+    pub fn new(hid_devices: Vec<HidDeviceInfo>) -> Self {
+        Self {
+            hid_devices,
+            claimed_vid_pids: HashSet::new(),
+        }
+    }
+
+    pub fn from_system() -> Self {
+        Self::new(scan_all_hid())
+    }
+
+    pub fn hid_devices(&self) -> &[HidDeviceInfo] {
+        &self.hid_devices
+    }
+
+    pub fn is_claimed(&self, vid: u16, pid: u16) -> bool {
+        self.claimed_vid_pids.contains(&(vid, pid))
+    }
+
+    pub fn claim(&mut self, vid: u16, pid: u16) {
+        self.claimed_vid_pids.insert((vid, pid));
+    }
+
+    /// Finds the product name of an HID device matching the given VID/PID, if present.
+    pub fn find_product(&self, vid: u16, pid: u16) -> Option<String> {
+        self.hid_devices
             .iter()
-            .find(|d| d.vendor_id == sp.vid && d.product_id == sp.pid)
+            .find(|d| d.vendor_id == vid && d.product_id == pid)
             .and_then(|d| d.product.clone())
-            .or(sp.product)
-            .unwrap_or_else(|| format!("{:04X}:{:04X}", sp.vid, sp.pid));
-        devices.push(DiscoveredDevice {
-            base_name: format!("{} [{}]", base_name, sp.port_name),
-            vid: sp.vid,
-            pid: sp.pid,
-            serial_port: Some(sp.port_name),
-            ble_device_id: None,
-            kind: DeviceKind::Zmk,
-        });
-        zmk_vid_pid.insert((sp.vid, sp.pid));
+    }
+}
+
+/// Port for firmware adapters to discover compatible hardware.
+pub trait DeviceDriverScanner: Send + Sync {
+    fn scan(&self, ctx: &mut DiscoveryContext) -> Vec<DiscoveredDevice>;
+}
+
+/// Returns the standard list of registered device scanners.
+pub fn default_scanners() -> Vec<Box<dyn DeviceDriverScanner>> {
+    let mut scanners: Vec<Box<dyn DeviceDriverScanner>> = vec![
+        Box::new(crate::protocols::zmk_discovery::ZmkScanner),
+        Box::new(crate::protocols::qmk_discovery::QmkScanner),
+    ];
+
+    if cfg!(debug_assertions) {
+        scanners.push(Box::new(crate::protocols::mock::MockScanner));
     }
 
-    if let Ok(ble_devices) = zmk_rpc::scan_ble_devices() {
-        for ble in ble_devices {
-            if let Some(hid) = find_matching_hid_for_ble(&all_hid, &ble.display_name) {
-                if zmk_vid_pid.contains(&(hid.vendor_id, hid.product_id)) {
-                    let has_serial = devices.iter().any(|d| {
-                        d.kind == DeviceKind::Zmk
-                            && d.vid == hid.vendor_id
-                            && d.pid == hid.product_id
-                            && d.serial_port.is_some()
-                    });
-                    if !has_serial {
-                        if let Some(existing) = devices.iter_mut().find(|d| {
-                            d.kind == DeviceKind::Zmk
-                                && d.vid == hid.vendor_id
-                                && d.pid == hid.product_id
-                                && d.serial_port.is_none()
-                        }) {
-                            existing.ble_device_id = Some(ble.device_id.clone());
-                        }
-                    }
-                    continue;
-                }
+    scanners
+}
 
-                devices.push(DiscoveredDevice {
-                    base_name: hid
-                        .product
-                        .clone()
-                        .unwrap_or_else(|| ble.display_name.clone()),
-                    vid: hid.vendor_id,
-                    pid: hid.product_id,
-                    serial_port: None,
-                    ble_device_id: Some(ble.device_id),
-                    kind: DeviceKind::Zmk,
-                });
-                zmk_vid_pid.insert((hid.vendor_id, hid.product_id));
-            }
-        }
-    }
-
-    let mut seen_via: HashSet<(u16, u16)> = HashSet::new();
-    for dev in &all_hid {
-        if dev.usage_page != VIA_USAGE_PAGE {
-            continue;
-        }
-        if !seen_via.insert((dev.vendor_id, dev.product_id)) {
-            continue;
-        }
-        if zmk_vid_pid.contains(&(dev.vendor_id, dev.product_id)) {
-            continue;
-        }
-        let base_name = dev
-            .product
-            .clone()
-            .unwrap_or_else(|| format!("{:04X}:{:04X}", dev.vendor_id, dev.product_id));
-        let kind = if is_vial_device(dev) {
-            DeviceKind::Vial
-        } else {
-            DeviceKind::Qmk
-        };
-        devices.push(DiscoveredDevice {
-            base_name,
-            vid: dev.vendor_id,
-            pid: dev.product_id,
-            serial_port: None,
-            ble_device_id: None,
-            kind,
-        });
+/// Runs discovery over the specified scanners and context.
+pub fn discover_devices_with(
+    ctx: &mut DiscoveryContext,
+    scanners: &[Box<dyn DeviceDriverScanner>],
+) -> Vec<DiscoveredDevice> {
+    let mut devices = Vec::new();
+    for scanner in scanners {
+        devices.extend(scanner.scan(ctx));
     }
 
     devices.sort_by_cached_key(|d| d.display_name());
@@ -179,75 +154,25 @@ pub fn discover_devices() -> Vec<DiscoveredDevice> {
             && a.ble_device_id == b.ble_device_id
     });
 
-    if cfg!(debug_assertions) {
-        devices.push(mock_device());
-    }
-
     devices
 }
 
-fn mock_device() -> DiscoveredDevice {
-    DiscoveredDevice {
-        base_name: "Virtual Keyboard".to_string(),
-        vid: MOCK_VID,
-        pid: MOCK_PID,
-        serial_port: None,
-        ble_device_id: None,
-        kind: DeviceKind::Mock,
-    }
+/// Discovers all available keyboards using system hardware scans and default protocol scanners.
+pub fn discover_devices() -> Vec<DiscoveredDevice> {
+    let mut ctx = DiscoveryContext::from_system();
+    let scanners = default_scanners();
+    discover_devices_with(&mut ctx, &scanners)
 }
 
-fn is_possible_ble_match(hid: &HidInfo, ble_name: &str) -> bool {
-    let hid_name = hid
-        .product
-        .as_deref()
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    let ble_name = ble_name.to_ascii_lowercase();
-    if hid_name.is_empty() || ble_name.is_empty() {
-        return false;
-    }
-
-    if hid_name.contains(&ble_name) || ble_name.contains(&hid_name) {
-        return true;
-    }
-
-    let hid_norm = normalize_name_for_match(&hid_name);
-    let ble_norm = normalize_name_for_match(&ble_name);
-    !hid_norm.is_empty()
-        && !ble_norm.is_empty()
-        && (hid_norm.contains(&ble_norm) || ble_norm.contains(&hid_norm))
-}
-
-fn find_matching_hid_for_ble<'a>(all_hid: &'a [HidInfo], ble_name: &str) -> Option<&'a HidInfo> {
-    // Prefer non-VIA HID interfaces when available, but fall back to VIA interfaces.
-    // On macOS, BLE keyboards can be exposed only through a VIA usage-page interface.
-    all_hid
-        .iter()
-        .find(|d| d.usage_page != VIA_USAGE_PAGE && is_possible_ble_match(d, ble_name))
-        .or_else(|| {
-            all_hid
-                .iter()
-                .find(|d| d.usage_page == VIA_USAGE_PAGE && is_possible_ble_match(d, ble_name))
-        })
-}
-
-fn normalize_name_for_match(name: &str) -> String {
-    name.chars().filter(|c| c.is_ascii_alphanumeric()).collect()
-}
-
-fn is_vial_device(dev: &HidInfo) -> bool {
-    dev.serial_number
-        .as_deref()
-        .is_some_and(|s| s.to_ascii_lowercase().starts_with("vial:"))
+/// Constructs a mock virtual keyboard descriptor.
+#[cfg(test)]
+pub fn mock_device() -> DiscoveredDevice {
+    crate::protocols::mock::mock_device()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        find_matching_hid_for_ble, is_possible_ble_match, mock_device, DeviceKind,
-        DiscoveredDevice, HidInfo, VIA_USAGE_PAGE,
-    };
+    use super::*;
 
     #[test]
     fn display_name_uses_kind_label() {
@@ -322,53 +247,75 @@ mod tests {
         assert!(ble.display_name().contains("ZMK BLE"));
     }
 
-    #[test]
-    fn ble_match_prefers_non_via_interface() {
-        let via_hid = HidInfo {
-            vendor_id: 0x1234,
-            product_id: 0x5678,
-            usage_page: VIA_USAGE_PAGE,
-            product: Some("Corne".to_string()),
-            serial_number: None,
-        };
-        let non_via_hid = HidInfo {
-            vendor_id: 0x1234,
-            product_id: 0x5678,
-            usage_page: 0x0001,
-            product: Some("Corne".to_string()),
-            serial_number: None,
-        };
+    struct TestScanner {
+        devices: Vec<DiscoveredDevice>,
+    }
 
-        let hid = [via_hid, non_via_hid];
-        let match_hid = find_matching_hid_for_ble(&hid, "Corne");
-        assert_eq!(match_hid.map(|h| h.usage_page), Some(0x0001));
+    impl DeviceDriverScanner for TestScanner {
+        fn scan(&self, ctx: &mut DiscoveryContext) -> Vec<DiscoveredDevice> {
+            let mut result = Vec::new();
+            for d in &self.devices {
+                if !ctx.is_claimed(d.vid, d.pid) {
+                    ctx.claim(d.vid, d.pid);
+                    result.push(d.clone());
+                }
+            }
+            result
+        }
     }
 
     #[test]
-    fn ble_match_falls_back_to_via_interface() {
-        let via_hid = HidInfo {
-            vendor_id: 0x1234,
-            product_id: 0x5678,
-            usage_page: VIA_USAGE_PAGE,
-            product: Some("Corne".to_string()),
-            serial_number: None,
-        };
+    fn discover_devices_with_deduplicates_and_sorts() {
+        let mut ctx = DiscoveryContext::new(Vec::new());
+        let scanner1: Box<dyn DeviceDriverScanner> = Box::new(TestScanner {
+            devices: vec![
+                DiscoveredDevice {
+                    base_name: "B Keyboard".to_string(),
+                    vid: 0x0002,
+                    pid: 0x0002,
+                    serial_port: None,
+                    ble_device_id: None,
+                    kind: DeviceKind::Qmk,
+                },
+                DiscoveredDevice {
+                    base_name: "A Keyboard".to_string(),
+                    vid: 0x0001,
+                    pid: 0x0001,
+                    serial_port: None,
+                    ble_device_id: None,
+                    kind: DeviceKind::Qmk,
+                },
+            ],
+        });
 
-        let hid = [via_hid];
-        let match_hid = find_matching_hid_for_ble(&hid, "Corne");
-        assert_eq!(match_hid.map(|h| h.usage_page), Some(VIA_USAGE_PAGE));
-    }
+        let scanner2: Box<dyn DeviceDriverScanner> = Box::new(TestScanner {
+            devices: vec![
+                // Already claimed VID/PID 0x0001:0x0001 by scanner1, should be skipped
+                DiscoveredDevice {
+                    base_name: "A Keyboard Duplicate".to_string(),
+                    vid: 0x0001,
+                    pid: 0x0001,
+                    serial_port: None,
+                    ble_device_id: None,
+                    kind: DeviceKind::Vial,
+                },
+                DiscoveredDevice {
+                    base_name: "C Keyboard".to_string(),
+                    vid: 0x0003,
+                    pid: 0x0003,
+                    serial_port: None,
+                    ble_device_id: None,
+                    kind: DeviceKind::Zmk,
+                },
+            ],
+        });
 
-    #[test]
-    fn ble_match_handles_backend_decorated_name() {
-        let hid = HidInfo {
-            vendor_id: 0x1234,
-            product_id: 0x5678,
-            usage_page: VIA_USAGE_PAGE,
-            product: Some("Corne".to_string()),
-            serial_number: None,
-        };
+        let scanners = vec![scanner1, scanner2];
+        let discovered = discover_devices_with(&mut ctx, &scanners);
 
-        assert!(is_possible_ble_match(&hid, "Corne [{\"uuid\":\"abc\"}]"));
+        assert_eq!(discovered.len(), 3);
+        assert_eq!(discovered[0].base_name, "A Keyboard");
+        assert_eq!(discovered[1].base_name, "B Keyboard");
+        assert_eq!(discovered[2].base_name, "C Keyboard");
     }
 }

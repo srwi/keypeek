@@ -237,3 +237,32 @@ fn keycode_names() -> &'static HashMap<String, u16> {
             .collect()
     })
 }
+
+/// Identifiers for the virtual keyboard. They must match `resources/mock_keyboard.json`
+/// and are deliberately outside the ranges real boards use.
+pub const MOCK_VID: u16 = 0xF00D;
+pub const MOCK_PID: u16 = 0xF00D;
+
+/// Constructs the mock virtual keyboard descriptor.
+pub fn mock_device() -> crate::device_discovery::DiscoveredDevice {
+    crate::device_discovery::DiscoveredDevice {
+        base_name: "Virtual Keyboard".to_string(),
+        vid: MOCK_VID,
+        pid: MOCK_PID,
+        serial_port: None,
+        ble_device_id: None,
+        kind: crate::device_discovery::DeviceKind::Mock,
+    }
+}
+
+/// Scanner for the virtual/mock keyboard.
+pub struct MockScanner;
+
+impl crate::device_discovery::DeviceDriverScanner for MockScanner {
+    fn scan(
+        &self,
+        _ctx: &mut crate::device_discovery::DiscoveryContext,
+    ) -> Vec<crate::device_discovery::DiscoveredDevice> {
+        vec![mock_device()]
+    }
+}

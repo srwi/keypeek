@@ -3,11 +3,13 @@ pub mod layout_geometry;
 pub mod mock;
 pub mod qmk_codec;
 pub mod qmk_common;
+pub mod qmk_discovery;
 pub mod qmk_json_parser;
 pub mod via;
 pub mod vial;
 pub mod zmk;
 pub mod zmk_codec;
+pub mod zmk_discovery;
 pub mod zmk_rpc;
 
 use std::error::Error;
