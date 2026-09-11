@@ -630,7 +630,9 @@ mod tests {
             let legacy_layout =
                 super::super::zmk_keycode_labels::behavior_to_layout_key(b, &layer_names);
             let spec = zmk_to_keyspec(b);
-            let spec_layout = spec.resolve_label(&layer_names);
+            use crate::key_presenter::KeyPresenter;
+            let presenter = crate::key_presenter::ZmkKeyPresenter;
+            let spec_layout = presenter.present_key(&spec, &layer_names);
             assert_eq!(
                 legacy_layout, spec_layout,
                 "Parity mismatch for behavior {:?}",

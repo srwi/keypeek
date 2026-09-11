@@ -6,7 +6,9 @@
 use std::sync::OnceLock;
 
 use crate::keyboard::Keyboard;
+use crate::key_presenter::{KeyPresenter, QmkKeyPresenter, ZmkKeyPresenter};
 use crate::key_spec::{HidKey, KeySpec, LayerInfo};
+use crate::layout_key::LayoutKey;
 use crate::keymap_editor::catalog::common;
 use crate::keymap_editor::picker::{CandidateGroup};
 use super::draft::EditorSection;
@@ -19,7 +21,10 @@ pub struct SidebarSection<T: 'static> {
 }
 
 /// Defines firmware-native editor structure, candidate presentation, and sidebar layout.
-pub trait EditorProfile: Send + Sync {
+pub trait EditorProfile: KeyPresenter + Send + Sync {
+    /// Returns the key presenter for this profile.
+    fn presenter(&self) -> &dyn KeyPresenter;
+
     /// Name of the profile (e.g. "QMK", "ZMK").
     #[allow(dead_code)]
     fn name(&self) -> &'static str;
@@ -118,7 +123,7 @@ fn qmk_keyboard_group() -> &'static CandidateGroup {
     static GROUP: OnceLock<CandidateGroup> = OnceLock::new();
     GROUP.get_or_init(|| {
         let usages = crate::protocols::qmk_codec::qmk_all_basic_usages();
-        let candidates = common::build_keyboard_candidates(usages, |id| {
+        let candidates = common::build_keyboard_candidates(&QmkKeyPresenter, usages, |id| {
             crate::protocols::qmk_codec::qmk_search_tokens_for_hid(0x07, id)
         });
         CandidateGroup {
@@ -132,7 +137,7 @@ fn qmk_media_group() -> &'static CandidateGroup {
     static GROUP: OnceLock<CandidateGroup> = OnceLock::new();
     GROUP.get_or_init(|| {
         let usages = crate::protocols::qmk_codec::qmk_all_media_usages();
-        let candidates = common::build_media_candidates(usages, |id| {
+        let candidates = common::build_media_candidates(&QmkKeyPresenter, usages, |id| {
             crate::protocols::qmk_codec::qmk_search_tokens_for_hid(0x0C, id)
         });
         CandidateGroup {
@@ -149,22 +154,22 @@ fn qmk_tap_categories() -> &'static [CandidateGroup] {
 
 fn qmk_bluetooth_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
-    GROUPS.get_or_init(|| vec![common::build_bluetooth_group(|_| &[])])
+    GROUPS.get_or_init(|| vec![common::build_bluetooth_group(&QmkKeyPresenter, |_| &[])])
 }
 
 fn qmk_output_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
-    GROUPS.get_or_init(|| vec![common::build_output_group(|_| &[])])
+    GROUPS.get_or_init(|| vec![common::build_output_group(&QmkKeyPresenter, |_| &[])])
 }
 
 fn qmk_system_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
-        vec![common::build_system_group(|id| match id {
-            0x81 => &["KC_SYSTEM_POWER"],
-            0x82 => &["KC_SYSTEM_SLEEP"],
-            0x83 => &["KC_SYSTEM_WAKE"],
-            _ => &[],
+        vec![common::build_system_group(&QmkKeyPresenter, |id| match id {
+            0x81 => &["KC_SYSTEM_POWER"][..],
+            0x82 => &["KC_SYSTEM_SLEEP"][..],
+            0x83 => &["KC_SYSTEM_WAKE"][..],
+            _ => &[][..],
         })]
     })
 }
@@ -173,7 +178,7 @@ fn qmk_boot_power_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
         use crate::key_spec::PowerAction;
-        vec![common::build_boot_power_group(|act| match act {
+        vec![common::build_boot_power_group(&QmkKeyPresenter, |act| match act {
             PowerAction::Reset => &["QK_BOOT"],
             _ => &[],
         })]
@@ -184,7 +189,7 @@ fn qmk_backlight_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
         use crate::key_spec::BacklightAction;
-        vec![common::build_backlight_group(|act| match act {
+        vec![common::build_backlight_group(&QmkKeyPresenter, |act| match act {
             BacklightAction::Toggle => &["BL_TOGG", "QK_BACKLIGHT_TOGGLE"],
             BacklightAction::On => &["BL_ON", "QK_BACKLIGHT_ON"],
             BacklightAction::Off => &["BL_OFF", "QK_BACKLIGHT_OFF"],
@@ -201,7 +206,7 @@ fn qmk_rgb_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
         use crate::key_spec::RgbAction;
-        vec![common::build_rgb_underglow_group(|act| match act {
+        vec![common::build_rgb_underglow_group(&QmkKeyPresenter, |act| match act {
             RgbAction::Toggle => &["RGB_TOG", "QK_UNDERGLOW_TOGGLE"],
             RgbAction::On => &["RGB_ON"],
             RgbAction::Off => &["RGB_OFF"],
@@ -224,7 +229,7 @@ fn qmk_rgb_matrix_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
         use crate::key_spec::RgbMatrixAction;
-        vec![common::build_rgb_matrix_group(|act| match act {
+        vec![common::build_rgb_matrix_group(&QmkKeyPresenter, |act| match act {
             RgbMatrixAction::Toggle => &["RGB_MATRIX_TOGGLE"],
             RgbMatrixAction::On => &["RGB_MATRIX_ON"],
             RgbMatrixAction::Off => &["RGB_MATRIX_OFF"],
@@ -247,7 +252,7 @@ fn qmk_audio_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
         use crate::key_spec::AudioAction;
-        vec![common::build_audio_group(|act| match act {
+        vec![common::build_audio_group(&QmkKeyPresenter, |act| match act {
             AudioAction::On => &["QK_AUDIO_ON"],
             AudioAction::Off => &["QK_AUDIO_OFF"],
             AudioAction::Toggle => &["QK_AUDIO_TOGGLE"],
@@ -272,7 +277,7 @@ fn qmk_mouse_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
         use crate::key_spec::{MouseAction, MouseButton};
-        common::build_mouse_groups(|spec| match spec {
+        common::build_mouse_groups(&QmkKeyPresenter, |spec| match spec {
             KeySpec::Mouse(MouseAction::Press(MouseButton::Left)) => &["MS_BTN1"],
             KeySpec::Mouse(MouseAction::Press(MouseButton::Right)) => &["MS_BTN2"],
             KeySpec::Mouse(MouseAction::Press(MouseButton::Middle)) => &["MS_BTN3"],
@@ -298,7 +303,7 @@ fn qmk_mouse_groups() -> &'static [CandidateGroup] {
 fn qmk_special_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
-        vec![common::build_special_group(|spec| match spec {
+        vec![common::build_special_group(&QmkKeyPresenter, |spec| match spec {
             KeySpec::Transparent => &["KC_TRNS"],
             KeySpec::None => &["KC_NO"],
             KeySpec::CapsWord => &["QK_CAPS_WORD_TOGGLE"],
@@ -311,10 +316,20 @@ fn qmk_special_groups() -> &'static [CandidateGroup] {
 
 fn common_custom_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
-    GROUPS.get_or_init(|| common::build_custom_groups())
+    GROUPS.get_or_init(|| common::build_custom_groups(&QmkKeyPresenter))
+}
+
+impl KeyPresenter for QmkEditorProfile {
+    fn present_key(&self, spec: &KeySpec, layer_names: &[String]) -> Option<LayoutKey> {
+        QmkKeyPresenter.present_key(spec, layer_names)
+    }
 }
 
 impl EditorProfile for QmkEditorProfile {
+    fn presenter(&self) -> &dyn KeyPresenter {
+        self
+    }
+
     fn name(&self) -> &'static str {
         "QMK"
     }
@@ -369,7 +384,7 @@ impl EditorProfile for QmkEditorProfile {
         layer_names: &[String],
         tap_key: Option<HidKey>,
     ) -> Vec<CandidateGroup> {
-        common::build_layer_groups(layer_count, layer_infos, layer_names, tap_key, |_| &[])
+        common::build_layer_groups(&QmkKeyPresenter, layer_count, layer_infos, layer_names, tap_key, |_| &[])
     }
 }
 
@@ -424,7 +439,7 @@ fn zmk_keyboard_group() -> &'static CandidateGroup {
     static GROUP: OnceLock<CandidateGroup> = OnceLock::new();
     GROUP.get_or_init(|| {
         let usages = crate::protocols::zmk_codec::zmk_all_keyboard_usages();
-        let candidates = common::build_keyboard_candidates(usages, |id| {
+        let candidates = common::build_keyboard_candidates(&ZmkKeyPresenter, usages, |id| {
             crate::protocols::zmk_codec::zmk_search_tokens_for_hid(0x07, id)
         });
         CandidateGroup {
@@ -438,7 +453,7 @@ fn zmk_media_group() -> &'static CandidateGroup {
     static GROUP: OnceLock<CandidateGroup> = OnceLock::new();
     GROUP.get_or_init(|| {
         let usages = crate::protocols::zmk_codec::zmk_all_consumer_usages();
-        let candidates = common::build_media_candidates(usages, |id| {
+        let candidates = common::build_media_candidates(&ZmkKeyPresenter, usages, |id| {
             crate::protocols::zmk_codec::zmk_search_tokens_for_hid(0x0C, id)
         });
         CandidateGroup {
@@ -457,7 +472,7 @@ fn zmk_bluetooth_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
         use crate::key_spec::BluetoothAction;
-        vec![common::build_bluetooth_group(|act| match act {
+        vec![common::build_bluetooth_group(&ZmkKeyPresenter, |act| match act {
             BluetoothAction::Clear => &["&bt BT_CLR", "bt_clr"],
             BluetoothAction::Next => &["&bt BT_NXT", "bt_nxt"],
             BluetoothAction::Prev => &["&bt BT_PRV", "bt_prv"],
@@ -473,7 +488,7 @@ fn zmk_output_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
         use crate::key_spec::OutputTarget;
-        vec![common::build_output_group(|target| match target {
+        vec![common::build_output_group(&ZmkKeyPresenter, |target| match target {
             OutputTarget::Toggle => &["&out OUT_TOG", "out_tog"],
             OutputTarget::Usb => &["&out OUT_USB", "out_usb"],
             OutputTarget::Ble => &["&out OUT_BLE", "out_ble"],
@@ -485,14 +500,14 @@ fn zmk_output_groups() -> &'static [CandidateGroup] {
 
 fn zmk_system_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
-    GROUPS.get_or_init(|| vec![common::build_system_group(|_| &[])])
+    GROUPS.get_or_init(|| vec![common::build_system_group(&ZmkKeyPresenter, |_| &[])])
 }
 
 fn zmk_boot_power_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
         use crate::key_spec::PowerAction;
-        vec![common::build_boot_power_group(|act| match act {
+        vec![common::build_boot_power_group(&QmkKeyPresenter, |act| match act {
             PowerAction::Reset => &["&sys_reset"],
             PowerAction::Bootloader => &["&bootloader"],
             PowerAction::SoftOff => &["&soft_off"],
@@ -509,7 +524,7 @@ fn zmk_backlight_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
         use crate::key_spec::BacklightAction;
-        vec![common::build_backlight_group(|act| match act {
+        vec![common::build_backlight_group(&QmkKeyPresenter, |act| match act {
             BacklightAction::Toggle => &["&bl BL_TOG"],
             BacklightAction::On => &["&bl BL_ON"],
             BacklightAction::Off => &["&bl BL_OFF"],
@@ -525,7 +540,7 @@ fn zmk_rgb_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
         use crate::key_spec::RgbAction;
-        vec![common::build_rgb_underglow_group(|act| match act {
+        vec![common::build_rgb_underglow_group(&QmkKeyPresenter, |act| match act {
             RgbAction::Toggle => &["&rgb_ug RGB_TOG"],
             RgbAction::On => &["&rgb_ug RGB_ON"],
             RgbAction::Off => &["&rgb_ug RGB_OFF"],
@@ -548,7 +563,7 @@ fn zmk_mouse_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
         use crate::key_spec::{MouseAction, MouseButton};
-        common::build_mouse_groups(|spec| match spec {
+        common::build_mouse_groups(&QmkKeyPresenter, |spec| match spec {
             KeySpec::Mouse(MouseAction::Press(MouseButton::Left)) => &["&mkp LCLK"],
             KeySpec::Mouse(MouseAction::Press(MouseButton::Right)) => &["&mkp RCLK"],
             KeySpec::Mouse(MouseAction::Press(MouseButton::Middle)) => &["&mkp MCLK"],
@@ -568,7 +583,7 @@ fn zmk_mouse_groups() -> &'static [CandidateGroup] {
 fn zmk_special_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
-        vec![common::build_special_group(|spec| match spec {
+        vec![common::build_special_group(&QmkKeyPresenter, |spec| match spec {
             KeySpec::Transparent => &["&trans"],
             KeySpec::None => &["&none"],
             KeySpec::CapsWord => &["&caps_word"],
@@ -578,7 +593,17 @@ fn zmk_special_groups() -> &'static [CandidateGroup] {
     })
 }
 
+impl KeyPresenter for ZmkEditorProfile {
+    fn present_key(&self, spec: &KeySpec, layer_names: &[String]) -> Option<LayoutKey> {
+        ZmkKeyPresenter.present_key(spec, layer_names)
+    }
+}
+
 impl EditorProfile for ZmkEditorProfile {
+    fn presenter(&self) -> &dyn KeyPresenter {
+        self
+    }
+
     fn name(&self) -> &'static str {
         "ZMK"
     }
@@ -633,16 +658,23 @@ impl EditorProfile for ZmkEditorProfile {
         layer_names: &[String],
         tap_key: Option<HidKey>,
     ) -> Vec<CandidateGroup> {
-        common::build_layer_groups(layer_count, layer_infos, layer_names, tap_key, |act| {
-            use crate::key_spec::LayerActivation;
-            match act {
-                LayerActivation::Momentary => &["&mo"],
-                LayerActivation::Toggle => &["&tog"],
-                LayerActivation::To => &["&to"],
-                LayerActivation::Sticky => &["&sl"],
-                _ => &[],
-            }
-        })
+        common::build_layer_groups(
+            &ZmkKeyPresenter,
+            layer_count,
+            layer_infos,
+            layer_names,
+            tap_key,
+            |act| {
+                use crate::key_spec::LayerActivation;
+                match act {
+                    LayerActivation::Momentary => &["&mo"][..],
+                    LayerActivation::Toggle => &["&tog"][..],
+                    LayerActivation::To => &["&to"][..],
+                    LayerActivation::Sticky => &["&sl"][..],
+                    _ => &[][..],
+                }
+            },
+        )
     }
 }
 
@@ -734,6 +766,7 @@ mod tests {
                 visible_layers: u32::MAX,
             },
             crate::ui_wake::UiWake::new(std::sync::Arc::new(|| ())),
+            std::sync::Arc::new(QmkEditorProfile),
         )
         .unwrap();
 

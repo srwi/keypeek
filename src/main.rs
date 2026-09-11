@@ -4,6 +4,7 @@ mod device_discovery;
 mod hid_labels;
 mod key_matrix;
 mod key_paint;
+mod key_presenter;
 mod key_spec;
 mod keyboard;
 mod keymap_editor;

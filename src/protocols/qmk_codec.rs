@@ -902,10 +902,12 @@ mod tests {
         ];
 
         let empty_layer_names: Vec<String> = vec![];
+        use crate::key_presenter::KeyPresenter;
+        let presenter = crate::key_presenter::QmkKeyPresenter;
         for code in test_codes {
             let legacy_layout = super::super::qmk_keycode_labels::qmk_to_layout_key(code);
             let spec = qmk_to_keyspec(code);
-            let spec_layout = spec.resolve_label(&empty_layer_names);
+            let spec_layout = presenter.present_key(&spec, &empty_layer_names);
             if code == Keycode::QK_UNDERGLOW_TOGGLE as u16 {
                 // Legacy QMK used "UG Toggle", KeySpec unifies to "RGB Toggle" across protocols
                 assert_eq!(spec_layout.unwrap().tap.full, "RGB Toggle");

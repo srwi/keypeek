@@ -63,7 +63,11 @@ impl Candidate {
 
     /// Creates a candidate for any key action, providing consistent display
     /// labels for transparent and none slots across protocols.
-    pub fn from_action(binding: KeySpec, layer_names: &[String]) -> Self {
+    pub fn from_action(
+        binding: KeySpec,
+        presenter: &dyn crate::key_presenter::KeyPresenter,
+        layer_names: &[String],
+    ) -> Self {
         let is_none = matches!(binding, KeySpec::None);
         if is_none {
             return Self::new(
@@ -75,7 +79,7 @@ impl Candidate {
             );
         }
 
-        match binding.resolve_label(layer_names) {
+        match presenter.present_key(&binding, layer_names) {
             None => Self::new(
                 binding,
                 LayoutKey {
@@ -493,30 +497,29 @@ pub fn modifier_toggle_grid(
 mod tests {
     use super::*;
     use crate::hid_labels::Modifiers;
+    use crate::key_presenter::StandardKeyPresenter;
     use crate::key_spec::HidKey;
+
+    fn test_candidate(binding: KeySpec) -> Candidate {
+        Candidate::from_action(binding, &StandardKeyPresenter, &[])
+    }
 
     #[test]
     fn candidate_matches_query_by_label_and_short() {
-        let space = Candidate::from_action(
-            KeySpec::KeyPress {
-                key: HidKey::keyboard(0x2c),
-                modifiers: Modifiers::default(),
-            },
-            &[],
-        );
+        let space = test_candidate(KeySpec::KeyPress {
+            key: HidKey::keyboard(0x2c),
+            modifiers: Modifiers::default(),
+        });
         assert!(space.matches_query(""));
         assert!(space.matches_query("space"));
         assert!(space.matches_query("SPACE"));
         assert!(space.matches_query("spc"));
         assert!(!space.matches_query("enter"));
 
-        let del = Candidate::from_action(
-            KeySpec::KeyPress {
-                key: HidKey::keyboard(0x4c),
-                modifiers: Modifiers::default(),
-            },
-            &[],
-        );
+        let del = test_candidate(KeySpec::KeyPress {
+            key: HidKey::keyboard(0x4c),
+            modifiers: Modifiers::default(),
+        });
         assert!(del.matches_query("delete"));
         assert!(del.matches_query("DEL"));
         assert!(!del.matches_query("space"));
@@ -524,36 +527,27 @@ mod tests {
 
     #[test]
     fn candidate_matches_query_by_shifted_and_symbol() {
-        let digit_1 = Candidate::from_action(
-            KeySpec::KeyPress {
-                key: HidKey::keyboard(0x1e),
-                modifiers: Modifiers::default(),
-            },
-            &[],
-        );
+        let digit_1 = test_candidate(KeySpec::KeyPress {
+            key: HidKey::keyboard(0x1e),
+            modifiers: Modifiers::default(),
+        });
         assert!(digit_1.matches_query("1"));
         assert!(digit_1.matches_query("!"));
 
-        let enter = Candidate::from_action(
-            KeySpec::KeyPress {
-                key: HidKey::keyboard(0x28),
-                modifiers: Modifiers::default(),
-            },
-            &[],
-        );
+        let enter = test_candidate(KeySpec::KeyPress {
+            key: HidKey::keyboard(0x28),
+            modifiers: Modifiers::default(),
+        });
         assert!(enter.matches_query("enter"));
         assert!(enter.matches_query(egui_phosphor::regular::ARROW_ELBOW_DOWN_LEFT));
     }
 
     #[test]
     fn candidate_matches_extra_search_tokens() {
-        let candidate = Candidate::from_action(
-            KeySpec::KeyPress {
-                key: HidKey::keyboard(0x2c),
-                modifiers: Modifiers::default(),
-            },
-            &[],
-        )
+        let candidate = test_candidate(KeySpec::KeyPress {
+            key: HidKey::keyboard(0x2c),
+            modifiers: Modifiers::default(),
+        })
         .with_search_token("custom_token");
 
         assert!(candidate.matches_query("space"));
@@ -562,13 +556,10 @@ mod tests {
 
     #[test]
     fn candidate_matches_hex_and_whitespace_query() {
-        let a_key = Candidate::from_action(
-            KeySpec::KeyPress {
-                key: HidKey::keyboard(0x04),
-                modifiers: Modifiers::default(),
-            },
-            &[],
-        );
+        let a_key = test_candidate(KeySpec::KeyPress {
+            key: HidKey::keyboard(0x04),
+            modifiers: Modifiers::default(),
+        });
         assert!(a_key.matches_query("  "));
         assert!(a_key.matches_query("0004"));
         assert!(!a_key.matches_query("9999"));
@@ -577,27 +568,18 @@ mod tests {
     #[test]
     fn filter_candidates_filters_by_query() {
         let candidates = vec![
-            Candidate::from_action(
-                KeySpec::KeyPress {
-                    key: HidKey::keyboard(0x29),
-                    modifiers: Modifiers::default(),
-                },
-                &[],
-            ),
-            Candidate::from_action(
-                KeySpec::KeyPress {
-                    key: HidKey::keyboard(0x28),
-                    modifiers: Modifiers::default(),
-                },
-                &[],
-            ),
-            Candidate::from_action(
-                KeySpec::KeyPress {
-                    key: HidKey::keyboard(0x2c),
-                    modifiers: Modifiers::default(),
-                },
-                &[],
-            ),
+            test_candidate(KeySpec::KeyPress {
+                key: HidKey::keyboard(0x29),
+                modifiers: Modifiers::default(),
+            }),
+            test_candidate(KeySpec::KeyPress {
+                key: HidKey::keyboard(0x28),
+                modifiers: Modifiers::default(),
+            }),
+            test_candidate(KeySpec::KeyPress {
+                key: HidKey::keyboard(0x2c),
+                modifiers: Modifiers::default(),
+            }),
         ];
         let empty_filter = filter_candidates(&candidates, "", |_| true);
         assert_eq!(empty_filter.len(), 3);

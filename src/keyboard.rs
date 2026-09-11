@@ -162,6 +162,7 @@ fn run_keymap_command(
     layer_names: &[String],
     matrix: &Arc<Mutex<KeyMatrix>>,
     ui_wake: &UiWake,
+    presenter: &dyn crate::key_presenter::KeyPresenter,
 ) {
     match command {
         KeymapCommand::OpenEditSession { respond } => {
@@ -191,7 +192,7 @@ fn run_keymap_command(
                 });
 
             if result.is_ok() {
-                let label = action.resolve_label(layer_names);
+                let label = presenter.present_key(&action, layer_names);
                 let mut guard = matrix.lock().unwrap();
                 if let Some(cell) = guard
                     .keys
@@ -220,6 +221,7 @@ impl Keyboard {
         layout_name: String,
         config: OverlayConfig,
         ui_wake: UiWake,
+        presenter: Arc<dyn crate::key_presenter::KeyPresenter>,
     ) -> Result<Self, String> {
         let definition = protocol.get_layout_definition();
 
@@ -237,7 +239,12 @@ impl Keyboard {
             .iter()
             .map(|l| l.name.clone().unwrap_or_default())
             .collect();
-        let matrix = KeyMatrix::from_snapshot(snapshot, definition.rows, definition.cols);
+        let matrix = KeyMatrix::from_snapshot(
+            snapshot,
+            definition.rows,
+            definition.cols,
+            presenter.as_ref(),
+        );
 
         let event_rx = protocol
             .subscribe_events()
@@ -326,6 +333,7 @@ impl Keyboard {
         // 2. Command execution loop (runs writes on dedicated worker)
         let matrix_for_cmd = Arc::clone(&matrix);
         let ui_wake_cmd = ui_wake;
+        let presenter_cmd = Arc::clone(&presenter);
         thread::spawn(move || {
             while let Ok(command) = command_rx.recv() {
                 let mut protocol = protocol.lock().unwrap();
@@ -335,6 +343,7 @@ impl Keyboard {
                     &layer_names,
                     &matrix_for_cmd,
                     &ui_wake_cmd,
+                    presenter_cmd.as_ref(),
                 );
             }
         });
@@ -550,6 +559,7 @@ mod tests {
             layout_name,
             CONFIG,
             UiWake::new(Arc::new(|| ())),
+            Arc::new(crate::key_presenter::StandardKeyPresenter),
         )
         .unwrap()
     }

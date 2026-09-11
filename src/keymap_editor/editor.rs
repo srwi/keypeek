@@ -86,7 +86,7 @@ impl EditorState {
                     self.draw_layers_page(ui, keyboard, profile, target, &search_query, style);
                 }
                 EditorSection::LayerMod => {
-                    self.draw_layer_mod_page(ui, keyboard, target, &search_query, is_valid, style);
+                    self.draw_layer_mod_page(ui, keyboard, profile, target, &search_query, is_valid, style);
                 }
                 EditorSection::OneShot => {
                     self.draw_one_shot_page(ui, keyboard, profile, target, &search_query, is_valid, style);
@@ -606,6 +606,7 @@ impl EditorState {
         &mut self,
         ui: &mut egui::Ui,
         keyboard: &Keyboard,
+        profile: &dyn EditorProfile,
         target: EditTarget,
         search_query: &str,
         is_valid: bool,
@@ -625,6 +626,7 @@ impl EditorState {
                         layer: layer as u8,
                         activation: LayerActivation::Momentary,
                     },
+                    profile.presenter(),
                     &layer_names,
                 );
                 cand = cand.with_search_token(format!("l{layer}"));

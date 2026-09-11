@@ -5,6 +5,7 @@
 //! own usage sets and firmware-specific aliases.
 
 use crate::hid_labels::Modifiers;
+use crate::key_presenter::KeyPresenter;
 use crate::key_spec::{
     AudioAction, BacklightAction, BluetoothAction, CustomBinding, CustomKind, HidKey, KeySpec,
     LayerActivation, LayerInfo, LightingAction, MouseAction, MouseButton, OutputTarget,
@@ -13,8 +14,8 @@ use crate::key_spec::{
 use crate::keymap_editor::picker::{Candidate, CandidateGroup};
 
 /// Creates a candidate from a [`KeySpec`] and attaches search tokens.
-pub fn action_candidate(spec: KeySpec, names: &[&str]) -> Candidate {
-    let mut cand = Candidate::from_action(spec, &[]);
+pub fn action_candidate(spec: KeySpec, names: &[&str], presenter: &dyn KeyPresenter) -> Candidate {
+    let mut cand = Candidate::from_action(spec, presenter, &[]);
     for name in names {
         cand = cand.with_search_token(*name);
     }
@@ -97,6 +98,7 @@ pub fn attach_friendly_media_aliases(mut cand: Candidate, id: u16) -> Candidate 
 
 /// Builds candidates for keyboard usages (USB HID Page 0x07).
 pub fn build_keyboard_candidates(
+    presenter: &dyn KeyPresenter,
     usages: impl IntoIterator<Item = u16>,
     token_fn: impl Fn(u16) -> Vec<String>,
 ) -> Vec<Candidate> {
@@ -107,7 +109,7 @@ pub fn build_keyboard_candidates(
                 key: HidKey::keyboard(id),
                 modifiers: Modifiers::default(),
             };
-            let mut cand = Candidate::from_action(action, &[]);
+            let mut cand = Candidate::from_action(action, presenter, &[]);
             if cand.key.symbol.is_none() && cand.key.tap.is_empty() {
                 cand.key.symbol = Some(format!("0x{:02X}", id));
             }
@@ -122,6 +124,7 @@ pub fn build_keyboard_candidates(
 
 /// Builds candidates for consumer/media usages (USB HID Page 0x0C).
 pub fn build_media_candidates(
+    presenter: &dyn KeyPresenter,
     usages: impl IntoIterator<Item = u16>,
     token_fn: impl Fn(u16) -> Vec<String>,
 ) -> Vec<Candidate> {
@@ -132,7 +135,7 @@ pub fn build_media_candidates(
                 key: HidKey::consumer(id),
                 modifiers: Modifiers::default(),
             };
-            let mut cand = Candidate::from_action(action, &[]);
+            let mut cand = Candidate::from_action(action, presenter, &[]);
             if cand.key.symbol.is_none() && cand.key.tap.is_empty() {
                 cand.key.symbol = Some(format!("0x{:04X}", id));
             }
@@ -147,6 +150,7 @@ pub fn build_media_candidates(
 
 /// Builds the Bluetooth candidate group with optional extra firmware-specific tokens.
 pub fn build_bluetooth_group(
+    presenter: &dyn KeyPresenter,
     extra_tokens_fn: impl Fn(BluetoothAction) -> &'static [&'static str],
 ) -> CandidateGroup {
     let mut actions = vec![
@@ -166,7 +170,7 @@ pub fn build_bluetooth_group(
     let candidates = actions
         .into_iter()
         .map(|(action, names)| {
-            let mut cand = Candidate::from_action(KeySpec::Bluetooth(action), &[]);
+            let mut cand = action_candidate(KeySpec::Bluetooth(action), names, presenter);
             for name in names {
                 cand = cand.with_search_token(*name);
             }
@@ -197,6 +201,7 @@ pub fn build_bluetooth_group(
 
 /// Builds the Output candidate group with optional extra firmware-specific tokens.
 pub fn build_output_group(
+    presenter: &dyn KeyPresenter,
     extra_tokens_fn: impl Fn(OutputTarget) -> &'static [&'static str],
 ) -> CandidateGroup {
     let targets = [
@@ -209,7 +214,7 @@ pub fn build_output_group(
     let candidates = targets
         .into_iter()
         .map(|(target, names)| {
-            let mut cand = action_candidate(KeySpec::Output(target), names);
+            let mut cand = action_candidate(KeySpec::Output(target), names, presenter);
             for extra in extra_tokens_fn(target) {
                 cand = cand.with_search_token(*extra);
             }
@@ -225,6 +230,7 @@ pub fn build_output_group(
 
 /// Builds the System candidate group with optional extra firmware-specific tokens.
 pub fn build_system_group(
+    presenter: &dyn KeyPresenter,
     extra_tokens_fn: impl Fn(u16) -> &'static [&'static str],
 ) -> CandidateGroup {
     let sys_keys = [
@@ -241,6 +247,7 @@ pub fn build_system_group(
                     modifiers: Modifiers::default(),
                 },
                 names,
+                presenter,
             );
             for extra in extra_tokens_fn(key.id) {
                 cand = cand.with_search_token(*extra);
@@ -257,6 +264,7 @@ pub fn build_system_group(
 
 /// Builds the Boot & Power candidate group with optional extra firmware-specific tokens.
 pub fn build_boot_power_group(
+    presenter: &dyn KeyPresenter,
     extra_tokens_fn: impl Fn(PowerAction) -> &'static [&'static str],
 ) -> CandidateGroup {
     let actions = [
@@ -272,7 +280,7 @@ pub fn build_boot_power_group(
     let candidates = actions
         .into_iter()
         .map(|(action, names)| {
-            let mut cand = action_candidate(KeySpec::Power(action), names);
+            let mut cand = action_candidate(KeySpec::Power(action), names, presenter);
             for extra in extra_tokens_fn(action) {
                 cand = cand.with_search_token(*extra);
             }
@@ -288,6 +296,7 @@ pub fn build_boot_power_group(
 
 /// Builds the Backlight candidate group with optional extra firmware-specific tokens.
 pub fn build_backlight_group(
+    presenter: &dyn KeyPresenter,
     extra_tokens_fn: impl Fn(BacklightAction) -> &'static [&'static str],
 ) -> CandidateGroup {
     let bl_actions = [
@@ -303,7 +312,7 @@ pub fn build_backlight_group(
     let candidates = bl_actions
         .into_iter()
         .map(|(action, names)| {
-            let mut cand = action_candidate(KeySpec::Lighting(LightingAction::Backlight(action)), names);
+            let mut cand = action_candidate(KeySpec::Lighting(LightingAction::Backlight(action)), names, presenter);
             for extra in extra_tokens_fn(action) {
                 cand = cand.with_search_token(*extra);
             }
@@ -319,6 +328,7 @@ pub fn build_backlight_group(
 
 /// Builds the RGB Underglow candidate group with optional extra firmware-specific tokens.
 pub fn build_rgb_underglow_group(
+    presenter: &dyn KeyPresenter,
     extra_tokens_fn: impl Fn(RgbAction) -> &'static [&'static str],
 ) -> CandidateGroup {
     let rgb_actions = [
@@ -342,7 +352,7 @@ pub fn build_rgb_underglow_group(
     let candidates = rgb_actions
         .into_iter()
         .map(|(action, names)| {
-            let mut cand = action_candidate(KeySpec::Lighting(LightingAction::Rgb(action)), names);
+            let mut cand = action_candidate(KeySpec::Lighting(LightingAction::Rgb(action)), names, presenter);
             for extra in extra_tokens_fn(action) {
                 cand = cand.with_search_token(*extra);
             }
@@ -358,6 +368,7 @@ pub fn build_rgb_underglow_group(
 
 /// Builds the RGB Matrix candidate group with optional extra firmware-specific tokens.
 pub fn build_rgb_matrix_group(
+    presenter: &dyn KeyPresenter,
     extra_tokens_fn: impl Fn(RgbMatrixAction) -> &'static [&'static str],
 ) -> CandidateGroup {
     let actions = [
@@ -376,7 +387,7 @@ pub fn build_rgb_matrix_group(
     let candidates = actions
         .into_iter()
         .map(|(act, names)| {
-            let mut cand = action_candidate(KeySpec::Lighting(LightingAction::RgbMatrix(act)), names);
+            let mut cand = action_candidate(KeySpec::Lighting(LightingAction::RgbMatrix(act)), names, presenter);
             for extra in extra_tokens_fn(act) {
                 cand = cand.with_search_token(*extra);
             }
@@ -391,6 +402,7 @@ pub fn build_rgb_matrix_group(
 
 /// Builds the Audio candidate group with optional extra firmware-specific tokens.
 pub fn build_audio_group(
+    presenter: &dyn KeyPresenter,
     extra_tokens_fn: impl Fn(AudioAction) -> &'static [&'static str],
 ) -> CandidateGroup {
     let actions = [
@@ -413,7 +425,7 @@ pub fn build_audio_group(
     let candidates = actions
         .into_iter()
         .map(|(act, names)| {
-            let mut cand = action_candidate(KeySpec::Audio(act), names);
+            let mut cand = action_candidate(KeySpec::Audio(act), names, presenter);
             for extra in extra_tokens_fn(act) {
                 cand = cand.with_search_token(*extra);
             }
@@ -428,6 +440,7 @@ pub fn build_audio_group(
 
 /// Builds the Mouse candidate groups (Buttons, Movement, Scroll, Acceleration).
 pub fn build_mouse_groups(
+    presenter: &dyn KeyPresenter,
     extra_tokens_fn: impl Fn(&KeySpec) -> &'static [&'static str],
 ) -> Vec<CandidateGroup> {
     let buttons = [
@@ -445,7 +458,7 @@ pub fn build_mouse_groups(
         .into_iter()
         .map(|(btn, names)| {
             let spec = KeySpec::Mouse(MouseAction::Press(btn));
-            let mut cand = action_candidate(spec.clone(), names);
+            let mut cand = action_candidate(spec.clone(), names, presenter);
             for extra in extra_tokens_fn(&spec) {
                 cand = cand.with_search_token(*extra);
             }
@@ -464,7 +477,7 @@ pub fn build_mouse_groups(
         .into_iter()
         .map(|(action, names)| {
             let spec = KeySpec::Mouse(action);
-            let mut cand = action_candidate(spec.clone(), names);
+            let mut cand = action_candidate(spec.clone(), names, presenter);
             for extra in extra_tokens_fn(&spec) {
                 cand = cand.with_search_token(*extra);
             }
@@ -483,7 +496,7 @@ pub fn build_mouse_groups(
         .into_iter()
         .map(|(action, names)| {
             let spec = KeySpec::Mouse(action);
-            let mut cand = action_candidate(spec.clone(), names);
+            let mut cand = action_candidate(spec.clone(), names, presenter);
             for extra in extra_tokens_fn(&spec) {
                 cand = cand.with_search_token(*extra);
             }
@@ -501,7 +514,7 @@ pub fn build_mouse_groups(
         .into_iter()
         .map(|(level, names)| {
             let spec = KeySpec::Mouse(MouseAction::Acceleration(level));
-            let mut cand = action_candidate(spec.clone(), names);
+            let mut cand = action_candidate(spec.clone(), names, presenter);
             for extra in extra_tokens_fn(&spec) {
                 cand = cand.with_search_token(*extra);
             }
@@ -531,6 +544,7 @@ pub fn build_mouse_groups(
 
 /// Builds the Special candidate group with optional extra firmware-specific tokens.
 pub fn build_special_group(
+    presenter: &dyn KeyPresenter,
     extra_tokens_fn: impl Fn(&KeySpec) -> &'static [&'static str],
 ) -> CandidateGroup {
     let actions: [(KeySpec, &[&str]); 5] = [
@@ -544,7 +558,7 @@ pub fn build_special_group(
     let candidates = actions
         .into_iter()
         .map(|(spec, names)| {
-            let mut cand = action_candidate(spec.clone(), names);
+            let mut cand = action_candidate(spec.clone(), names, presenter);
             for extra in extra_tokens_fn(&spec) {
                 cand = cand.with_search_token(*extra);
             }
@@ -559,7 +573,7 @@ pub fn build_special_group(
 }
 
 /// Builds candidate groups for user macros and firmware extensions.
-pub fn build_custom_groups() -> Vec<CandidateGroup> {
+pub fn build_custom_groups(presenter: &dyn KeyPresenter) -> Vec<CandidateGroup> {
     let kinds = [
         ("Macro", CustomKind::Macro),
         ("Tap Dance", CustomKind::TapDance),
@@ -579,7 +593,7 @@ pub fn build_custom_groups() -> Vec<CandidateGroup> {
                         param1: None,
                         param2: None,
                     });
-                    Candidate::from_action(spec, &[])
+                    Candidate::from_action(spec, presenter, &[])
                         .with_search_token(title)
                         .with_search_token(format!("{title} {i}"))
                 })
@@ -595,6 +609,7 @@ pub fn build_custom_groups() -> Vec<CandidateGroup> {
 
 /// Candidate groups for all supported layer operation types across real layers.
 pub fn build_layer_groups(
+    presenter: &dyn KeyPresenter,
     layer_count: usize,
     layer_infos: &[LayerInfo],
     layer_names: &[String],
@@ -621,6 +636,7 @@ pub fn build_layer_groups(
                             layer: layer as u8,
                             activation,
                         },
+                        presenter,
                         layer_names,
                     );
                     for token in search_tokens {
@@ -647,6 +663,7 @@ pub fn build_layer_groups(
                     tap,
                     tap_modifiers: Modifiers::default(),
                 },
+                presenter,
                 layer_names,
             );
             cand = cand.with_search_token("lt");
@@ -671,7 +688,7 @@ mod tests {
 
     #[test]
     fn common_keyboard_candidates_produce_expected_specs() {
-        let cands = build_keyboard_candidates(vec![0x04, 0x28], |_| vec!["token".to_string()]);
+        let cands = build_keyboard_candidates(&crate::key_presenter::StandardKeyPresenter, vec![0x04, 0x28], |_| vec!["token".to_string()]);
         assert_eq!(cands.len(), 2);
         assert_eq!(
             cands[0].binding,
@@ -687,7 +704,7 @@ mod tests {
 
     #[test]
     fn common_bluetooth_candidates_produce_bluetooth_specs() {
-        let group = build_bluetooth_group(|_| &["test_extra"]);
+        let group = build_bluetooth_group(&crate::key_presenter::StandardKeyPresenter, |_| &["test_extra"]);
         assert_eq!(group.name, "Bluetooth");
         assert!(group.candidates.iter().any(|c| matches!(
             c.binding,

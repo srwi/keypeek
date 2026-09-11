@@ -1,3 +1,4 @@
+use crate::key_presenter::KeyPresenter;
 use crate::key_spec::{KeySpec, KeymapSnapshot, LayerInfo};
 use crate::layout_key::LayoutKey;
 
@@ -14,7 +15,12 @@ pub struct KeyMatrix {
 }
 
 impl KeyMatrix {
-    pub fn from_snapshot(snapshot: KeymapSnapshot, rows: usize, cols: usize) -> Self {
+    pub fn from_snapshot(
+        snapshot: KeymapSnapshot,
+        rows: usize,
+        cols: usize,
+        presenter: &dyn KeyPresenter,
+    ) -> Self {
         // Unnamed layers stay empty strings so the label fallback inside
         // `behavior_to_layout_key` applies, exactly as the ZMK protocol passes
         // names today.
@@ -34,7 +40,7 @@ impl KeyMatrix {
                         row.into_iter()
                             .map(|cell| {
                                 cell.map(|action| BoundKey {
-                                    label: action.resolve_label(&layer_names),
+                                    label: presenter.present_key(&action, &layer_names),
                                     action,
                                 })
                             })

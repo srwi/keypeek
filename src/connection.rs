@@ -83,11 +83,18 @@ pub fn build_connected_state(
     request: ConnectionRequest,
     ui_wake: UiWake,
 ) -> Result<ConnectedState, String> {
-    let editor_profile: Arc<dyn crate::keymap_editor::EditorProfile> = match &request.spec {
-        ConnectionSpec::Via { .. } | ConnectionSpec::Vial { .. } | ConnectionSpec::Mock => {
-            Arc::new(crate::keymap_editor::QmkEditorProfile)
-        }
-        ConnectionSpec::Zmk { .. } => Arc::new(crate::keymap_editor::ZmkEditorProfile),
+    let (editor_profile, presenter): (
+        Arc<dyn crate::keymap_editor::EditorProfile>,
+        Arc<dyn crate::key_presenter::KeyPresenter>,
+    ) = match &request.spec {
+        ConnectionSpec::Via { .. } | ConnectionSpec::Vial { .. } | ConnectionSpec::Mock => (
+            Arc::new(crate::keymap_editor::QmkEditorProfile),
+            Arc::new(crate::key_presenter::QmkKeyPresenter),
+        ),
+        ConnectionSpec::Zmk { .. } => (
+            Arc::new(crate::keymap_editor::ZmkEditorProfile),
+            Arc::new(crate::key_presenter::ZmkKeyPresenter),
+        ),
     };
 
     let protocol = request.open_protocol()?;
@@ -102,6 +109,7 @@ pub fn build_connected_state(
         selected_layout_name.clone(),
         request.overlay_config,
         ui_wake,
+        presenter,
     )
     .map_err(|e| format!("Failed to create keyboard: {e}"))?;
 
