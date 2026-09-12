@@ -27,42 +27,6 @@ impl OverlayApp {
         }
     }
 
-    pub(super) fn apply_live_layout_settings(&mut self) {
-        if self.session.active_layout_name == self.session.draft_layout_name {
-            return;
-        }
-
-        let AppConnectionState::Connected { keyboard, .. } = &self.session.connection else {
-            // Not connected: nothing can be switched live.
-            self.session.draft_layout_name = self.session.active_layout_name.clone();
-            return;
-        };
-
-        if !keyboard.supports_live_layout_switching() {
-            self.session.draft_layout_name = self.session.active_layout_name.clone();
-            return;
-        }
-
-        let Some(definition) = self.session.connected_definition.as_ref() else {
-            self.ui.settings_error =
-                Some("Missing keyboard definition for live layout switch".to_string());
-            self.session.draft_layout_name = self.session.active_layout_name.clone();
-            return;
-        };
-
-        let selected_layout = self.session.draft_layout_name.clone();
-        let next_layout = match definition.get_layout(&selected_layout) {
-            Ok(layout) => layout,
-            Err(e) => {
-                self.ui.settings_error = Some(format!("Failed to switch layout: {e}"));
-                self.session.draft_layout_name = self.session.active_layout_name.clone();
-                return;
-            }
-        };
-
-        keyboard.set_layout(next_layout);
-        self.session.active_layout_name = selected_layout;
-    }
 
     pub(super) fn get_anchor_params(&self) -> (Align2, egui::Vec2) {
         use WindowPosition::*;

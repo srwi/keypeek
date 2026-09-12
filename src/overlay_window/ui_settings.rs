@@ -175,26 +175,45 @@ impl OverlayApp {
 
                             ui.label("Layout");
                             ui.horizontal(|ui| {
-                                let layout_enabled = !self.session.layout_names.is_empty();
+                                let (layout_enabled, current_layout, layout_names) =
+                                    match &self.session.connection {
+                                        AppConnectionState::Connected { keyboard, .. } => (
+                                            keyboard.supports_live_layout_switching(),
+                                            keyboard.active_layout_name(),
+                                            keyboard.layout_names(),
+                                        ),
+                                        _ => (
+                                            false,
+                                            "Connect to device first".to_string(),
+                                            Vec::new(),
+                                        ),
+                                    };
                                 let layout_width =
                                     (ui.available_width() - RIGHT_COLUMN_WIDTH - control_spacing)
                                         .max(120.0);
                                 ui.add_enabled_ui(layout_enabled, |ui| {
-                                    let selected_text = if self.session.layout_names.is_empty() {
-                                        "Connect to device first".to_string()
-                                    } else {
-                                        self.session.draft_layout_name.clone()
-                                    };
                                     egui::ComboBox::from_id_salt("layout_combo")
                                         .width(layout_width)
-                                        .selected_text(selected_text)
+                                        .selected_text(&current_layout)
                                         .show_ui(ui, |ui| {
-                                            for name in &self.session.layout_names {
-                                                ui.selectable_value(
-                                                    &mut self.session.draft_layout_name,
-                                                    name.clone(),
-                                                    name,
-                                                );
+                                            for name in &layout_names {
+                                                let is_selected = name == &current_layout;
+                                                if ui.selectable_label(is_selected, name).clicked()
+                                                    && !is_selected
+                                                {
+                                                    if let AppConnectionState::Connected {
+                                                        keyboard,
+                                                        ..
+                                                    } = &self.session.connection
+                                                    {
+                                                        if let Err(e) = keyboard.switch_layout(name) {
+                                                            self.ui.settings_error = Some(e);
+                                                        } else {
+                                                            self.session.preferred_layout_name =
+                                                                Some(name.clone());
+                                                        }
+                                                    }
+                                                }
                                             }
                                         });
                                 });

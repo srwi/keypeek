@@ -7,21 +7,11 @@ use std::time::{Duration, Instant};
 
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(3);
 
-fn layout_preference(name: &str) -> Option<String> {
-    if name.is_empty() {
-        None
-    } else {
-        Some(name.to_string())
-    }
-}
-
 impl OverlayApp {
     pub(super) fn select_device(&mut self, index: usize) {
         if self.connect.available_devices.get(index).is_some() {
             self.connect.selected_device_index = Some(index);
-            self.session.layout_names.clear();
-            self.session.active_layout_name.clear();
-            self.session.draft_layout_name.clear();
+            self.session.preferred_layout_name = None;
             self.ui.settings_error = None;
         }
     }
@@ -47,10 +37,7 @@ impl OverlayApp {
     }
 
     pub(super) fn apply_connected_state(&mut self, connected: ConnectedState) {
-        self.session.layout_names = connected.layout_names;
-        self.session.active_layout_name = connected.selected_layout_name.clone();
-        self.session.draft_layout_name = connected.selected_layout_name;
-        self.session.connected_definition = Some(connected.definition);
+        self.session.preferred_layout_name = Some(connected.keyboard.active_layout_name());
         self.session.reopen = connected.reopen;
         self.session.connection = AppConnectionState::Connected {
             keyboard: Arc::new(connected.keyboard),
@@ -114,7 +101,7 @@ impl OverlayApp {
         self.session.last_spec = Some(spec.clone());
         self.session.reopen = None;
 
-        let layout_name = layout_preference(&self.session.draft_layout_name);
+        let layout_name = self.session.preferred_layout_name.clone();
         self.spawn_connection(spec, layout_name, None);
         self.ui.settings_error = None;
     }
@@ -173,7 +160,7 @@ impl OverlayApp {
             return;
         };
 
-        let layout_name = layout_preference(&self.session.active_layout_name);
+        let layout_name = self.session.preferred_layout_name.clone();
         let reopen = self.session.reopen.clone();
         self.spawn_connection(spec, layout_name, reopen);
     }

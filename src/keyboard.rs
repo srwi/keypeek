@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use crate::key_matrix::KeyMatrix;
 use crate::key_spec::{KeySpec, LayerInfo};
 use crate::layout_key::LayoutKey;
-use crate::protocols::{KeyboardLayout, KeyboardProtocol, WriteSupport};
+use crate::protocols::{KeyboardDefinition, KeyboardLayout, KeyboardProtocol, WriteSupport};
 use crate::session::KeyboardSession;
 use crate::ui_wake::UiWake;
 use crate::visibility::VisibilityStateMachine;
@@ -15,6 +15,8 @@ pub use crate::visibility::OverlayConfig;
 /// Pure domain aggregate holding keyboard layout, matrix bindings, layer states,
 /// and overlay visibility. Has no background threads or communication channels.
 pub struct KeyboardDomain {
+    definition: KeyboardDefinition,
+    active_layout_name: Mutex<String>,
     layout: Mutex<KeyboardLayout>,
     matrix: Mutex<KeyMatrix>,
     layer_state: Mutex<u32>,
@@ -23,8 +25,16 @@ pub struct KeyboardDomain {
 }
 
 impl KeyboardDomain {
-    pub fn new(layout: KeyboardLayout, matrix: KeyMatrix, config: OverlayConfig) -> Self {
+    pub fn new(
+        definition: KeyboardDefinition,
+        active_layout_name: String,
+        layout: KeyboardLayout,
+        matrix: KeyMatrix,
+        config: OverlayConfig,
+    ) -> Self {
         Self {
+            definition,
+            active_layout_name: Mutex::new(active_layout_name),
             layout: Mutex::new(layout),
             matrix: Mutex::new(matrix),
             layer_state: Mutex::new(0),
@@ -130,12 +140,28 @@ impl KeyboardDomain {
         self.visibility.lock().unwrap().set_config(config);
     }
 
-    pub fn layout(&self) -> KeyboardLayout {
-        self.layout.lock().unwrap().clone()
+    #[allow(dead_code)]
+    pub fn layout_definition(&self) -> &KeyboardDefinition {
+        &self.definition
     }
 
-    pub fn set_layout(&self, layout: KeyboardLayout) {
-        *self.layout.lock().unwrap() = layout;
+    pub fn layout_names(&self) -> Vec<String> {
+        self.definition.get_layout_names()
+    }
+
+    pub fn active_layout_name(&self) -> String {
+        self.active_layout_name.lock().unwrap().clone()
+    }
+
+    pub fn switch_layout(&self, name: &str) -> Result<(), String> {
+        let next_layout = self.definition.get_layout(name)?;
+        *self.layout.lock().unwrap() = next_layout;
+        *self.active_layout_name.lock().unwrap() = name.to_string();
+        Ok(())
+    }
+
+    pub fn layout(&self) -> KeyboardLayout {
+        self.layout.lock().unwrap().clone()
     }
 }
 
@@ -155,7 +181,7 @@ impl Keyboard {
         ui_wake: UiWake,
         presenter: Arc<dyn crate::key_presenter::KeyPresenter>,
     ) -> Result<Self, String> {
-        let definition = protocol.get_layout_definition();
+        let definition = protocol.get_layout_definition().clone();
 
         let layout = definition
             .get_layout(&layout_name)
@@ -178,7 +204,13 @@ impl Keyboard {
             presenter.as_ref(),
         );
 
-        let domain = Arc::new(KeyboardDomain::new(layout, matrix, config));
+        let domain = Arc::new(KeyboardDomain::new(
+            definition,
+            layout_name,
+            layout,
+            matrix,
+            config,
+        ));
         let session = KeyboardSession::start(
             protocol,
             Arc::clone(&domain),
@@ -278,6 +310,26 @@ impl Keyboard {
         self.domain.is_ralt_held()
     }
 
+    #[allow(dead_code)]
+    pub fn layout_definition(&self) -> &KeyboardDefinition {
+        self.domain.layout_definition()
+    }
+
+    pub fn layout_names(&self) -> Vec<String> {
+        self.domain.layout_names()
+    }
+
+    pub fn active_layout_name(&self) -> String {
+        self.domain.active_layout_name()
+    }
+
+    pub fn switch_layout(&self, name: &str) -> Result<(), String> {
+        if !self.supports_live_layout_switching() {
+            return Err("Device does not support live layout switching".to_string());
+        }
+        self.domain.switch_layout(name)
+    }
+
     pub fn set_config(&self, config: OverlayConfig) {
         self.domain.set_config(config);
     }
@@ -285,8 +337,63 @@ impl Keyboard {
     pub fn layout(&self) -> KeyboardLayout {
         self.domain.layout()
     }
+}
 
-    pub fn set_layout(&self, layout: KeyboardLayout) {
-        self.domain.set_layout(layout);
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_domain() -> KeyboardDomain {
+        let definition = KeyboardDefinition {
+            vid: 0x1234,
+            pid: 0x5678,
+            rows: 1,
+            cols: 2,
+            layouts: vec![
+                KeyboardLayout {
+                    name: "Default".to_string(),
+                    keys: vec![],
+                },
+                KeyboardLayout {
+                    name: "Alternative".to_string(),
+                    keys: vec![],
+                },
+            ],
+        };
+        let layout = definition.get_layout("Default").unwrap();
+        let matrix = KeyMatrix::from_snapshot(
+            crate::key_spec::KeymapSnapshot {
+                layers: vec![],
+                actions: vec![],
+            },
+            1,
+            2,
+            &crate::key_presenter::StandardKeyPresenter,
+        );
+        let config = OverlayConfig {
+            timeout_ms: 2000,
+            activation_delay_ms: 300,
+            visible_layers: u32::MAX,
+        };
+        KeyboardDomain::new(definition, "Default".to_string(), layout, matrix, config)
+    }
+
+    #[test]
+    fn test_layout_names_and_active_layout() {
+        let domain = create_test_domain();
+        assert_eq!(domain.layout_names(), vec!["Default", "Alternative"]);
+        assert_eq!(domain.active_layout_name(), "Default");
+    }
+
+    #[test]
+    fn test_switch_layout_success_and_failure() {
+        let domain = create_test_domain();
+        assert!(domain.switch_layout("Alternative").is_ok());
+        assert_eq!(domain.active_layout_name(), "Alternative");
+        assert_eq!(domain.layout().name, "Alternative");
+
+        let err = domain.switch_layout("NonExistent");
+        assert!(err.is_err());
+        assert_eq!(domain.active_layout_name(), "Alternative");
     }
 }

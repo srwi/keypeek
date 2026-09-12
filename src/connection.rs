@@ -1,6 +1,6 @@
 use crate::keyboard::{Keyboard, OverlayConfig};
 use crate::protocols::{
-    connect_protocol, ConnectionSpec, DeviceError, KeyboardDefinition, KeyboardProtocol, Reopener,
+    connect_protocol, ConnectionSpec, DeviceError, KeyboardProtocol, Reopener,
 };
 use crate::ui_wake::UiWake;
 use std::sync::mpsc::{self, TryRecvError};
@@ -45,9 +45,6 @@ fn format_connect_error(_spec: &ConnectionSpec, error: &DeviceError) -> String {
 }
 
 pub struct ConnectedState {
-    pub definition: KeyboardDefinition,
-    pub layout_names: Vec<String>,
-    pub selected_layout_name: String,
     pub keyboard: Keyboard,
     pub reopen: Option<Arc<dyn Reopener>>,
     pub editor_profile: Arc<dyn crate::keymap_editor::EditorProfile>,
@@ -92,11 +89,10 @@ pub fn build_connected_state(
     let reopen = protocol.reopener();
     let layout_names = protocol.get_layout_definition().get_layout_names();
     let selected_layout_name = request.pick_layout_name(&layout_names)?;
-    let definition = protocol.get_layout_definition().clone();
 
     let keyboard = Keyboard::new(
         protocol,
-        selected_layout_name.clone(),
+        selected_layout_name,
         request.overlay_config,
         ui_wake,
         presenter,
@@ -104,9 +100,6 @@ pub fn build_connected_state(
     .map_err(|e| format!("Failed to create keyboard: {e}"))?;
 
     Ok(ConnectedState {
-        definition,
-        layout_names,
-        selected_layout_name,
         keyboard,
         reopen,
         editor_profile,
