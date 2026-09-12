@@ -232,12 +232,12 @@ impl Keyboard {
         self.session.save_keymap()
     }
 
-    pub fn open_edit_session(&self) -> mpsc::Receiver<Result<(), String>> {
-        self.session.open_edit_session()
+    pub fn acquire_edit_lock(&self) -> mpsc::Receiver<Result<(), String>> {
+        self.session.acquire_edit_lock()
     }
 
-    pub fn end_edit_session(&self) {
-        self.session.end_edit_session();
+    pub fn release_edit_lock(&self) {
+        self.session.release_edit_lock();
     }
 
     // --- Domain delegations ---

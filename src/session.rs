@@ -12,8 +12,8 @@ use std::time::Instant;
 /// A keymap command for the protocol, executed on the reader thread so writes
 /// and reads never race the same HID handle.
 pub enum KeymapCommand {
-    /// Opens the transient write session ahead of the first write (ZMK).
-    OpenEditSession {
+    /// Acquires an exclusive write lock ahead of key writes (ZMK).
+    AcquireEditLock {
         respond: mpsc::Sender<Result<(), String>>,
     },
     SetKey {
@@ -26,8 +26,8 @@ pub enum KeymapCommand {
     Save {
         respond: mpsc::Sender<Result<(), String>>,
     },
-    /// Fire-and-forget; closes any transient write connection.
-    EndEditSession,
+    /// Fire-and-forget; releases any active write lock.
+    ReleaseEditLock,
 }
 
 /// Manages background worker threads, command queue, and protocol communication.
@@ -158,12 +158,12 @@ impl KeyboardSession {
         self.send_keymap_command(|respond| KeymapCommand::Save { respond })
     }
 
-    pub fn open_edit_session(&self) -> mpsc::Receiver<Result<(), String>> {
-        self.send_keymap_command(|respond| KeymapCommand::OpenEditSession { respond })
+    pub fn acquire_edit_lock(&self) -> mpsc::Receiver<Result<(), String>> {
+        self.send_keymap_command(|respond| KeymapCommand::AcquireEditLock { respond })
     }
 
-    pub fn end_edit_session(&self) {
-        let _ = self.command_tx.send(KeymapCommand::EndEditSession);
+    pub fn release_edit_lock(&self) {
+        let _ = self.command_tx.send(KeymapCommand::ReleaseEditLock);
     }
 
     fn send_keymap_command(
@@ -177,10 +177,10 @@ impl KeyboardSession {
             match send_error.0 {
                 KeymapCommand::SetKey { respond, .. }
                 | KeymapCommand::Save { respond }
-                | KeymapCommand::OpenEditSession { respond } => {
+                | KeymapCommand::AcquireEditLock { respond } => {
                     let _ = respond.send(Err("Connection lost".to_string()));
                 }
-                KeymapCommand::EndEditSession => {}
+                KeymapCommand::ReleaseEditLock => {}
             }
         }
         receiver
@@ -197,8 +197,8 @@ fn run_keymap_command(
     presenter: &dyn KeyPresenter,
 ) {
     match command {
-        KeymapCommand::OpenEditSession { respond } => {
-            let result = protocol.open_edit_session().map_err(|e| e.to_string());
+        KeymapCommand::AcquireEditLock { respond } => {
+            let result = protocol.acquire_edit_lock().map_err(|e| e.to_string());
             let _ = respond.send(result);
         }
         KeymapCommand::SetKey {
@@ -228,6 +228,6 @@ fn run_keymap_command(
             let result = protocol.save_keymap().map_err(|e| e.to_string());
             let _ = respond.send(result);
         }
-        KeymapCommand::EndEditSession => protocol.end_edit_session(),
+        KeymapCommand::ReleaseEditLock => protocol.release_edit_lock(),
     }
 }

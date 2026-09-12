@@ -107,17 +107,17 @@ impl OverlayApp {
     pub(crate) fn request_close_editor(&mut self) {
         if self.editor.request_close() {
             if let AppConnectionState::Connected { keyboard, .. } = &self.session.connection {
-                keyboard.end_edit_session();
+                keyboard.release_edit_lock();
             }
         }
     }
 
-    /// Closes the editor window immediately and ends any open ZMK write session on the
+    /// Closes the editor window immediately and releases any open write lock on the
     /// connected keyboard, if one is present.
     pub(crate) fn close_editor(&mut self) {
         self.editor.reset();
         if let AppConnectionState::Connected { keyboard, .. } = &self.session.connection {
-            keyboard.end_edit_session();
+            keyboard.release_edit_lock();
         }
     }
 

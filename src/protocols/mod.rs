@@ -227,8 +227,8 @@ pub enum WriteSupport {
     None,
     /// Every write persists at once (QMK/Vial/mock).
     Immediate,
-    /// Writes live in RAM until `save_keymap` persists them (ZMK).
-    Session,
+    /// Writes are staged in RAM until `save_keymap` persists them (ZMK).
+    Staged,
 }
 
 /// Which firmware vocabulary the device's users are familiar with, for UI
@@ -263,15 +263,14 @@ pub trait KeyboardProtocol: Send {
         Ok(())
     }
 
-    /// Opens the transient write session ahead of the first write (ZMK Studio
-    /// client), so the first key change does not wait on a connection.
-    /// Protocols without a session are already ready.
-    fn open_edit_session(&mut self) -> Result<(), DeviceError> {
+    /// Acquires an exclusive write lock ahead of key writes (e.g. ZMK Studio unlock).
+    /// Protocols without locking are ready immediately.
+    fn acquire_edit_lock(&mut self) -> Result<(), DeviceError> {
         Ok(())
     }
 
-    /// Closes any transient write connection (ZMK Studio client).
-    fn end_edit_session(&mut self) {}
+    /// Releases any active write lock on the device.
+    fn release_edit_lock(&mut self) {}
 
     fn reopener(&self) -> Option<Arc<dyn Reopener>> {
         None

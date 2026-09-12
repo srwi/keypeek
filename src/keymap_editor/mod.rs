@@ -43,21 +43,21 @@ impl EditTarget {
 /// Operation type of an active background task.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PendingKind {
-    Open,
+    AcquireLock,
     Set,
     Save,
 }
 
-/// Connection state of the edit session for protocols requiring an explicit session.
+/// Lock state for protocols requiring an explicit hardware edit lock ahead of writes.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum SessionWriteState {
-    /// No active session.
+pub enum EditLockState {
+    /// No active edit lock.
     Idle,
-    /// Session is connecting.
-    Opening,
-    /// Session is connected and ready for writes.
-    Ready,
-    /// Session connection failed.
+    /// Lock request is in flight.
+    Acquiring,
+    /// Edit lock is active and ready for writes.
+    Locked,
+    /// Acquiring edit lock failed.
     Failed,
 }
 
@@ -67,10 +67,10 @@ pub struct PendingTask {
     pub receiver: mpsc::Receiver<Result<(), String>>,
 }
 
-/// Blocking overlay state for connecting, saving, or failed operations.
+/// Blocking overlay state for locking, saving, or failed operations.
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum EditorOverlay {
-    Connecting,
+    AcquiringLock,
     Saving,
     Failed,
 }
@@ -89,8 +89,8 @@ pub struct EditorState {
     pub draft: KeyDraft,
     /// Indicates unsaved changes on the device.
     pub dirty: bool,
-    /// State of the edit session.
-    pub session: SessionWriteState,
+    /// State of the hardware edit lock.
+    pub lock_state: EditLockState,
     /// Indicates the window is saving changes before closing.
     pub closing: bool,
     /// Active search filter for key candidate groups.
@@ -106,7 +106,7 @@ impl Default for EditorState {
             error: None,
             draft: KeyDraft::default(),
             dirty: false,
-            session: SessionWriteState::Idle,
+            lock_state: EditLockState::Idle,
             closing: false,
             search_query: String::new(),
         }
@@ -127,9 +127,9 @@ impl EditorState {
     pub fn overlay(&self) -> Option<EditorOverlay> {
         if self.closing {
             Some(EditorOverlay::Saving)
-        } else if self.session == SessionWriteState::Opening {
-            Some(EditorOverlay::Connecting)
-        } else if self.session == SessionWriteState::Failed {
+        } else if self.lock_state == EditLockState::Acquiring {
+            Some(EditorOverlay::AcquiringLock)
+        } else if self.lock_state == EditLockState::Failed {
             Some(EditorOverlay::Failed)
         } else {
             None
@@ -142,10 +142,10 @@ impl EditorState {
         self.error = None;
     }
 
-    /// Updates session or dirty flags upon successful completion of a background operation.
+    /// Updates lock or dirty flags upon successful completion of a background operation.
     pub fn complete_task(&mut self, kind: PendingKind) {
         match kind {
-            PendingKind::Open => self.session = SessionWriteState::Ready,
+            PendingKind::AcquireLock => self.lock_state = EditLockState::Locked,
             PendingKind::Set => self.dirty = true,
             PendingKind::Save => self.dirty = false,
         }
@@ -154,8 +154,8 @@ impl EditorState {
     /// Clears the active background task and records an error, cancelling queued and closing states.
     pub fn fail_task(&mut self, error: impl Into<String>) {
         if let Some(task) = self.pending.take() {
-            if task.kind == PendingKind::Open {
-                self.session = SessionWriteState::Failed;
+            if task.kind == PendingKind::AcquireLock {
+                self.lock_state = EditLockState::Failed;
             }
         }
         self.queued = None;
@@ -181,8 +181,8 @@ impl EditorState {
         self.target = Some(target);
         self.error = None;
         self.search_query.clear();
-        if self.session == SessionWriteState::Failed {
-            self.session = SessionWriteState::Idle;
+        if self.lock_state == EditLockState::Failed {
+            self.lock_state = EditLockState::Idle;
         }
         if let Some(action) = target.action(keyboard) {
             self.draft = KeyDraft::from_spec(&action);
@@ -306,8 +306,8 @@ impl EditorState {
 
         self.poll_pending_write(ctx, keyboard);
 
-        if matches!(keyboard.write_support(), WriteSupport::Session) && !self.closing {
-            self.ensure_session(keyboard);
+        if matches!(keyboard.write_support(), WriteSupport::Staged) && !self.closing {
+            self.ensure_lock(keyboard);
         }
 
         let closing = self.closing;
@@ -340,7 +340,7 @@ impl EditorState {
                         ui.add_space(8.0);
                         ui.weak("This key cannot be edited in this version.");
                     }
-                    WriteSupport::Immediate | WriteSupport::Session => {
+                    WriteSupport::Immediate | WriteSupport::Staged => {
                         ui.add_space(8.0);
                         self.draw_editor_body(ui, keyboard, profile, target, style);
                     }
@@ -351,7 +351,7 @@ impl EditorState {
         });
 
         if !open && self.request_close() {
-            keyboard.end_edit_session();
+            keyboard.release_edit_lock();
         }
     }
 
@@ -422,7 +422,7 @@ impl EditorState {
 
         let (msg, is_spinner, is_retry) = match overlay {
             EditorOverlay::Saving => ("Saving…", true, false),
-            EditorOverlay::Connecting => ("Connecting…", true, false),
+            EditorOverlay::AcquiringLock => ("Connecting…", true, false),
             EditorOverlay::Failed => ("Connection failed", false, true),
         };
 
@@ -439,7 +439,7 @@ impl EditorState {
                 if is_retry {
                     ui.add_space(8.0);
                     if ui.button("Retry").clicked() {
-                        self.session = SessionWriteState::Idle;
+                        self.lock_state = EditLockState::Idle;
                         self.error = None;
                     }
                 }
@@ -454,13 +454,13 @@ impl EditorState {
         self.start_task(PendingKind::Save, keyboard.save_keymap());
     }
 
-    /// Starts the edit session connection if idle.
-    fn ensure_session(&mut self, keyboard: &Keyboard) {
-        if self.session != SessionWriteState::Idle || self.pending.is_some() {
+    /// Acquires the hardware edit lock if idle.
+    fn ensure_lock(&mut self, keyboard: &Keyboard) {
+        if self.lock_state != EditLockState::Idle || self.pending.is_some() {
             return;
         }
-        self.session = SessionWriteState::Opening;
-        self.start_task(PendingKind::Open, keyboard.open_edit_session());
+        self.lock_state = EditLockState::Acquiring;
+        self.start_task(PendingKind::AcquireLock, keyboard.acquire_edit_lock());
     }
 
     /// Sends a write command to the device, or queues it if an operation is in progress.
@@ -491,7 +491,7 @@ impl EditorState {
                         self.start_save(keyboard);
                     } else if self.pending.is_none() {
                         self.reset();
-                        keyboard.end_edit_session();
+                        keyboard.release_edit_lock();
                     }
                 }
             }

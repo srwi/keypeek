@@ -214,7 +214,7 @@ impl KeyboardProtocol for ZmkProtocol {
     }
 
     fn write_support(&self) -> WriteSupport {
-        WriteSupport::Session
+        WriteSupport::Staged
     }
 
     fn set_key(
@@ -243,11 +243,11 @@ impl KeyboardProtocol for ZmkProtocol {
         self.with_session(|session| session.save())
     }
 
-    fn open_edit_session(&mut self) -> Result<(), DeviceError> {
+    fn acquire_edit_lock(&mut self) -> Result<(), DeviceError> {
         self.with_session(|_session| Ok(()))
     }
 
-    fn end_edit_session(&mut self) {
+    fn release_edit_lock(&mut self) {
         self.session = None;
     }
 
