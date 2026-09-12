@@ -1,4 +1,3 @@
-use super::state::AppConnectionState;
 use super::OverlayApp;
 use crate::keyboard::OverlayConfig;
 use crate::settings::WindowPosition;
@@ -22,11 +21,10 @@ impl OverlayApp {
 
         self.settings.active = self.settings.draft.clone();
 
-        if let AppConnectionState::Connected { keyboard, .. } = &self.session.connection {
+        if let Some(keyboard) = self.connection_mgr.connected_keyboard() {
             keyboard.set_config(self.overlay_config());
         }
     }
-
 
     pub(super) fn get_anchor_params(&self) -> (Align2, egui::Vec2) {
         use WindowPosition::*;
@@ -43,11 +41,10 @@ impl OverlayApp {
     }
 
     pub(super) fn overlay_visible(&self) -> bool {
-        match &self.session.connection {
-            AppConnectionState::Disconnected | AppConnectionState::Reconnecting { .. } => false,
-            AppConnectionState::Connected { keyboard, .. } => {
-                self.is_any_window_open() || keyboard.overlay_is_visible(Instant::now())
-            }
+        if let Some(keyboard) = self.connection_mgr.connected_keyboard() {
+            self.is_any_window_open() || keyboard.overlay_is_visible(Instant::now())
+        } else {
+            false
         }
     }
 }

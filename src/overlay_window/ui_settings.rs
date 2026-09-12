@@ -1,4 +1,3 @@
-use super::state::AppConnectionState;
 use super::OverlayApp;
 use crate::settings::{LayerMask, LegendMode, Settings, ThemeColor, ThemeSettings, WindowPosition};
 use crate::ui_widgets::titled_group;
@@ -74,18 +73,10 @@ impl OverlayApp {
         host: &mut dyn crate::platform::OverlayHost,
     ) {
         let mut open = self.ui.settings_visible;
-        let reconnecting = matches!(
-            self.session.connection,
-            AppConnectionState::Reconnecting { .. }
-        );
+        let reconnecting = self.connection_mgr.is_reconnecting();
         // Keep the device/protocol pickers locked while connected or reconnecting.
-        let connection_locked =
-            !matches!(self.session.connection, AppConnectionState::Disconnected);
-        let selected_device = self
-            .connect
-            .selected_device_index
-            .and_then(|i| self.connect.available_devices.get(i))
-            .cloned();
+        let connection_locked = self.connection_mgr.is_locked();
+        let selected_device = self.connection_mgr.selected_device().cloned();
         let selected_device_text = selected_device
             .as_ref()
             .map(|d| d.display_name())
@@ -121,10 +112,10 @@ impl OverlayApp {
                                         .width(combo_width)
                                         .selected_text(selected_device_text.clone())
                                         .show_ui(ui, |ui| {
-                                            for idx in 0..self.connect.available_devices.len() {
-                                                let device = &self.connect.available_devices[idx];
+                                            for idx in 0..self.connection_mgr.available_devices().len() {
+                                                let device = &self.connection_mgr.available_devices()[idx];
                                                 let selected =
-                                                    self.connect.selected_device_index == Some(idx);
+                                                    self.connection_mgr.selected_device_index() == Some(idx);
                                                 if ui
                                                     .selectable_label(
                                                         selected,
@@ -132,10 +123,11 @@ impl OverlayApp {
                                                     )
                                                     .clicked()
                                                 {
-                                                    self.select_device(idx);
+                                                    self.connection_mgr.select_device(idx);
+                                                    self.ui.settings_error = None;
                                                 }
                                             }
-                                            if self.connect.available_devices.is_empty() {
+                                            if self.connection_mgr.available_devices().is_empty() {
                                                 ui.weak("No devices found");
                                             }
                                         });
@@ -145,10 +137,10 @@ impl OverlayApp {
                                         egui::Layout::left_to_right(egui::Align::Center),
                                         |ui| {
                                             let connect_in_progress =
-                                                self.connect.pending_connect.is_some();
+                                                self.connection_mgr.is_connecting();
                                             let can_connect = !connection_locked
                                                 && !connect_in_progress
-                                                && self.connect.selected_device_index.is_some();
+                                                && self.connection_mgr.selected_device_index().is_some();
                                             let button_label = if reconnecting {
                                                 "Reconnecting..."
                                             } else if connect_in_progress {
@@ -176,17 +168,18 @@ impl OverlayApp {
                             ui.label("Layout");
                             ui.horizontal(|ui| {
                                 let (layout_enabled, current_layout, layout_names) =
-                                    match &self.session.connection {
-                                        AppConnectionState::Connected { keyboard, .. } => (
+                                    if let Some(keyboard) = self.connection_mgr.connected_keyboard() {
+                                        (
                                             keyboard.supports_live_layout_switching(),
                                             keyboard.active_layout_name(),
                                             keyboard.layout_names(),
-                                        ),
-                                        _ => (
+                                        )
+                                    } else {
+                                        (
                                             false,
                                             "Connect to device first".to_string(),
                                             Vec::new(),
-                                        ),
+                                        )
                                     };
                                 let layout_width =
                                     (ui.available_width() - RIGHT_COLUMN_WIDTH - control_spacing)
@@ -201,16 +194,14 @@ impl OverlayApp {
                                                 if ui.selectable_label(is_selected, name).clicked()
                                                     && !is_selected
                                                 {
-                                                    if let AppConnectionState::Connected {
-                                                        keyboard,
-                                                        ..
-                                                    } = &self.session.connection
+                                                    if let Some(keyboard) =
+                                                        self.connection_mgr.connected_keyboard()
                                                     {
                                                         if let Err(e) = keyboard.switch_layout(name) {
                                                             self.ui.settings_error = Some(e);
                                                         } else {
-                                                            self.session.preferred_layout_name =
-                                                                Some(name.clone());
+                                                            self.connection_mgr
+                                                                .set_preferred_layout_name(Some(name.clone()));
                                                         }
                                                     }
                                                 }
@@ -404,7 +395,7 @@ impl OverlayApp {
         if self.ui.settings_visible && !open {
             self.ui.settings_visible = false;
             self.persist_settings();
-            if !self.session.ever_connected {
+            if !self.connection_mgr.ever_connected() {
                 self.request_close_editor();
                 host.request_close();
             }

@@ -7,23 +7,21 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-mod connection_flow;
+pub mod connection_manager;
 mod settings_sync;
 mod state;
 mod ui_overlay;
 mod ui_settings;
-use state::{
-    AppConnectionState, ConnectDraftState, SessionState, SettingsState, UiState,
-};
+
+use connection_manager::{ConnectionEvent, ConnectOutcome, DeviceConnectionManager};
+use state::{SettingsState, UiState};
 
 pub struct OverlayApp {
     _tray: crate::tray::Tray,
     settings_requested: Arc<AtomicBool>,
-    ui_wake: UiWake,
     pub(crate) ui: UiState,
     settings: SettingsState,
-    session: SessionState,
-    connect: ConnectDraftState,
+    pub(crate) connection_mgr: DeviceConnectionManager,
     pub(crate) editor: crate::keymap_editor::EditorState,
 }
 
@@ -38,7 +36,6 @@ impl OverlayApp {
         Self {
             _tray: tray,
             settings_requested,
-            ui_wake,
             ui: UiState {
                 settings_visible: true,
                 settings_error: None,
@@ -50,19 +47,7 @@ impl OverlayApp {
                 active: base_settings.clone(),
                 draft: base_settings,
             },
-            session: SessionState {
-                connection: AppConnectionState::Disconnected,
-                ever_connected: false,
-                last_spec: None,
-                reopen: None,
-                preferred_layout_name: None,
-            },
-            connect: ConnectDraftState {
-                available_devices,
-                selected_device_index: None,
-                layout_file_path: String::new(),
-                pending_connect: None,
-            },
+            connection_mgr: DeviceConnectionManager::new(available_devices, ui_wake),
             editor: crate::keymap_editor::EditorState::new(),
         }
     }
@@ -79,6 +64,32 @@ impl OverlayApp {
 
         host.set_passthrough(mouse_passthrough);
         self.ui.mouse_passthrough = Some(mouse_passthrough);
+    }
+
+    pub(crate) fn persist_settings(&self) {
+        if let Err(e) = self.settings.active.save() {
+            eprintln!("Failed to save settings: {e}");
+        }
+    }
+
+    pub(super) fn connect_from_ui(&mut self) {
+        match self.connection_mgr.connect(self.overlay_config()) {
+            ConnectOutcome::Started => {
+                self.ui.settings_error = None;
+            }
+            ConnectOutcome::RequiresLayoutFile => {
+                self.ui.file_dialog.pick_file();
+            }
+            ConnectOutcome::AlreadyConnected => {
+                self.ui.settings_warning = Some(
+                    "Switching device/protocol/layout requires app restart in this version."
+                        .to_string(),
+                );
+            }
+            ConnectOutcome::Failed(e) => {
+                self.ui.settings_error = Some(e);
+            }
+        }
     }
 
     /// Draw a centered modal with `message` and an OK button that clears `slot`.
@@ -103,7 +114,7 @@ impl OverlayApp {
     /// are pending; otherwise closes immediately.
     pub(crate) fn request_close_editor(&mut self) {
         if self.editor.request_close() {
-            if let AppConnectionState::Connected { keyboard, .. } = &self.session.connection {
+            if let Some(keyboard) = self.connection_mgr.connected_keyboard() {
                 keyboard.release_edit_lock();
             }
         }
@@ -113,7 +124,7 @@ impl OverlayApp {
     /// connected keyboard, if one is present.
     pub(crate) fn close_editor(&mut self) {
         self.editor.reset();
-        if let AppConnectionState::Connected { keyboard, .. } = &self.session.connection {
+        if let Some(keyboard) = self.connection_mgr.connected_keyboard() {
             keyboard.release_edit_lock();
         }
     }
@@ -124,7 +135,7 @@ impl OverlayApp {
             return;
         }
 
-        let AppConnectionState::Connected { keyboard, .. } = &self.session.connection else {
+        let Some(keyboard) = self.connection_mgr.connected_keyboard() else {
             return;
         };
 
@@ -157,22 +168,34 @@ impl OverlayApp {
             self.ui.settings_visible = true;
         }
 
-        self.poll_connect_result();
-        self.maintain_connection(ctx);
+        if let Some(event) = self.connection_mgr.update(self.overlay_config(), ctx) {
+            match event {
+                ConnectionEvent::Connected => {
+                    self.ui.settings_error = None;
+                    self.ui.settings_warning = None;
+                    self.persist_settings();
+                }
+                ConnectionEvent::ConnectionFailed(e) => {
+                    self.ui.settings_error = Some(e);
+                }
+                ConnectionEvent::Disconnected => {
+                    self.close_editor();
+                }
+            }
+        }
+
         self.apply_live_visual_settings();
         self.ui.file_dialog.update(ctx);
 
         if let Some(path) = self.ui.file_dialog.take_picked() {
-            self.connect.layout_file_path = path.to_string_lossy().to_string();
+            self.connection_mgr.set_layout_file_path(path.to_string_lossy().to_string());
             self.connect_from_ui();
         }
 
         self.sync_mouse_passthrough(host);
-        if let AppConnectionState::Connected { keyboard, profile } = &self.session.connection {
+        if let Some((keyboard, profile)) = self.connection_mgr.connected_pair() {
             // Clone the shared keyboard so drawing can mutate app state (the
-            // editor) without holding a borrow on `self.session`.
-            let keyboard = Arc::clone(keyboard);
-            let profile = Arc::clone(profile);
+            // editor) without holding a borrow on `self.connection_mgr`.
             self.draw_overlay_window(ctx, &keyboard, self.overlay_visible());
             if self.editor.target.is_some() {
                 let style = self.paint_style(crate::keymap_editor::KEY_UNIT);
