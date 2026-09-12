@@ -13,7 +13,7 @@ mod state;
 mod ui_overlay;
 mod ui_settings;
 use state::{
-    AppConnectionState, ConnectDraftState, ConnectionDraft, SessionState, SettingsState, UiState,
+    AppConnectionState, ConnectDraftState, SessionState, SettingsState, UiState,
 };
 
 pub struct OverlayApp {
@@ -63,9 +63,7 @@ impl OverlayApp {
             connect: ConnectDraftState {
                 available_devices,
                 selected_device_index: None,
-                draft: ConnectionDraft::Via {
-                    json_path: String::new(),
-                },
+                layout_file_path: String::new(),
                 pending_connect: None,
             },
             editor: crate::keymap_editor::EditorState::new(),
@@ -169,9 +167,7 @@ impl OverlayApp {
         self.ui.file_dialog.update(ctx);
 
         if let Some(path) = self.ui.file_dialog.take_picked() {
-            if let ConnectionDraft::Via { json_path } = &mut self.connect.draft {
-                *json_path = path.to_string_lossy().to_string();
-            }
+            self.connect.layout_file_path = path.to_string_lossy().to_string();
             self.connect_from_ui();
         }
 

@@ -4,7 +4,7 @@
 //! so layer-change rendering can be exercised. The mock device is only registered
 //! during discovery in debug builds (`cfg!(debug_assertions)` in `device_discovery`).
 
-use super::{DeviceError, DeviceEvent, KeyboardDefinition, KeyboardProtocol, WriteSupport};
+use super::{ConnectionSpec, DeviceError, DeviceEvent, KeyboardDefinition, KeyboardProtocol, WriteSupport};
 use crate::key_spec::{KeySpec, KeymapSnapshot, LayerInfo};
 use qmk_via_api::keycodes::Keycode;
 use qmk_via_api::QmkLayerOp;
@@ -253,9 +253,10 @@ pub fn mock_device() -> crate::device_discovery::DiscoveredDevice {
         base_name: "Virtual Keyboard".to_string(),
         vid: MOCK_VID,
         pid: MOCK_PID,
-        serial_port: None,
-        ble_device_id: None,
-        kind: crate::device_discovery::DeviceKind::Mock,
+        driver_id: "mock",
+        protocol_label: "Mock",
+        requires_layout_file: false,
+        spec: ConnectionSpec::Mock,
     }
 }
 

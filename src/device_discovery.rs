@@ -4,49 +4,24 @@
 //! managing shared transport snapshots (e.g. USB HID devices) and conflict resolution.
 
 use std::collections::HashSet;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DeviceKind {
-    Zmk,
-    Vial,
-    Qmk,
-    Mock,
-}
-
-impl DeviceKind {
-    pub fn label(self) -> &'static str {
-        match self {
-            DeviceKind::Zmk => "ZMK",
-            DeviceKind::Vial => "Vial",
-            DeviceKind::Qmk => "QMK",
-            DeviceKind::Mock => "Mock",
-        }
-    }
-}
+use crate::protocols::ConnectionSpec;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DiscoveredDevice {
     pub base_name: String,
     pub vid: u16,
     pub pid: u16,
-    pub serial_port: Option<String>,
-    pub ble_device_id: Option<String>,
-    pub kind: DeviceKind,
+    pub driver_id: &'static str,
+    pub protocol_label: &'static str,
+    pub requires_layout_file: bool,
+    pub spec: ConnectionSpec,
 }
 
 impl DiscoveredDevice {
     pub fn display_name(&self) -> String {
-        let protocol = match self.kind {
-            DeviceKind::Qmk | DeviceKind::Vial | DeviceKind::Mock => self.kind.label(),
-            DeviceKind::Zmk => match (&self.serial_port, &self.ble_device_id) {
-                (Some(_), None) => "ZMK Serial",
-                _ => "ZMK BLE",
-            },
-        };
-
         format!(
             "{} ({}, {:04X}:{:04X})",
-            self.base_name, protocol, self.vid, self.pid
+            self.base_name, self.protocol_label, self.vid, self.pid
         )
     }
 }
@@ -149,9 +124,8 @@ pub fn discover_devices_with(
     devices.dedup_by(|a, b| {
         a.vid == b.vid
             && a.pid == b.pid
-            && a.kind == b.kind
-            && a.serial_port == b.serial_port
-            && a.ble_device_id == b.ble_device_id
+            && a.driver_id == b.driver_id
+            && a.spec == b.spec
     });
 
     devices
@@ -175,24 +149,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn display_name_uses_kind_label() {
+    fn display_name_uses_protocol_label() {
         let board = DiscoveredDevice {
             base_name: "Board".to_string(),
             vid: 0x1234,
             pid: 0xABCD,
-            serial_port: None,
-            ble_device_id: None,
-            kind: DeviceKind::Zmk,
+            driver_id: "zmk",
+            protocol_label: "ZMK BLE",
+            requires_layout_file: false,
+            spec: ConnectionSpec::Mock,
         };
         assert_eq!(board.display_name(), "Board (ZMK BLE, 1234:ABCD)");
-    }
-
-    #[test]
-    fn kind_labels_match_expected_ui_text() {
-        assert_eq!(DeviceKind::Zmk.label(), "ZMK");
-        assert_eq!(DeviceKind::Vial.label(), "Vial");
-        assert_eq!(DeviceKind::Qmk.label(), "QMK");
-        assert_eq!(DeviceKind::Mock.label(), "Mock");
     }
 
     #[test]
@@ -204,22 +171,24 @@ mod tests {
     }
 
     #[test]
-    fn display_name_for_other_kinds() {
+    fn display_name_for_various_protocols() {
         let vial_board = DiscoveredDevice {
             base_name: "Board".to_string(),
             vid: 0,
             pid: 0,
-            serial_port: None,
-            ble_device_id: None,
-            kind: DeviceKind::Vial,
+            driver_id: "vial",
+            protocol_label: "Vial",
+            requires_layout_file: false,
+            spec: ConnectionSpec::Mock,
         };
         let qmk_board = DiscoveredDevice {
             base_name: "Board".to_string(),
             vid: 0x0A0B,
             pid: 0x0C0D,
-            serial_port: None,
-            ble_device_id: None,
-            kind: DeviceKind::Qmk,
+            driver_id: "via",
+            protocol_label: "QMK",
+            requires_layout_file: true,
+            spec: ConnectionSpec::Mock,
         };
         assert_eq!(vial_board.display_name(), "Board (Vial, 0000:0000)");
         assert_eq!(qmk_board.display_name(), "Board (QMK, 0A0B:0C0D)");
@@ -231,17 +200,19 @@ mod tests {
             base_name: "Board".to_string(),
             vid: 1,
             pid: 2,
-            serial_port: Some("COM3".to_string()),
-            ble_device_id: None,
-            kind: DeviceKind::Zmk,
+            driver_id: "zmk",
+            protocol_label: "ZMK Serial",
+            requires_layout_file: false,
+            spec: ConnectionSpec::Mock,
         };
         let ble = DiscoveredDevice {
             base_name: "Board".to_string(),
             vid: 1,
             pid: 2,
-            serial_port: None,
-            ble_device_id: Some("id".to_string()),
-            kind: DeviceKind::Zmk,
+            driver_id: "zmk",
+            protocol_label: "ZMK BLE",
+            requires_layout_file: false,
+            spec: ConnectionSpec::Mock,
         };
         assert!(serial.display_name().contains("ZMK Serial"));
         assert!(ble.display_name().contains("ZMK BLE"));
@@ -273,17 +244,19 @@ mod tests {
                     base_name: "B Keyboard".to_string(),
                     vid: 0x0002,
                     pid: 0x0002,
-                    serial_port: None,
-                    ble_device_id: None,
-                    kind: DeviceKind::Qmk,
+                    driver_id: "via",
+                    protocol_label: "QMK",
+                    requires_layout_file: true,
+                    spec: ConnectionSpec::Mock,
                 },
                 DiscoveredDevice {
                     base_name: "A Keyboard".to_string(),
                     vid: 0x0001,
                     pid: 0x0001,
-                    serial_port: None,
-                    ble_device_id: None,
-                    kind: DeviceKind::Qmk,
+                    driver_id: "via",
+                    protocol_label: "QMK",
+                    requires_layout_file: true,
+                    spec: ConnectionSpec::Mock,
                 },
             ],
         });
@@ -295,17 +268,19 @@ mod tests {
                     base_name: "A Keyboard Duplicate".to_string(),
                     vid: 0x0001,
                     pid: 0x0001,
-                    serial_port: None,
-                    ble_device_id: None,
-                    kind: DeviceKind::Vial,
+                    driver_id: "vial",
+                    protocol_label: "Vial",
+                    requires_layout_file: false,
+                    spec: ConnectionSpec::Mock,
                 },
                 DiscoveredDevice {
                     base_name: "C Keyboard".to_string(),
                     vid: 0x0003,
                     pid: 0x0003,
-                    serial_port: None,
-                    ble_device_id: None,
-                    kind: DeviceKind::Zmk,
+                    driver_id: "zmk",
+                    protocol_label: "ZMK",
+                    requires_layout_file: false,
+                    spec: ConnectionSpec::Mock,
                 },
             ],
         });

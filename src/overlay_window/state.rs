@@ -21,20 +21,6 @@ pub enum AppConnectionState {
     },
 }
 
-#[derive(Clone)]
-pub enum ZmkTransportDraft {
-    Serial { port_name: Option<String> },
-    Ble { device_id: Option<String> },
-}
-
-#[derive(Clone)]
-pub enum ConnectionDraft {
-    Via { json_path: String },
-    Vial,
-    Zmk { transport: ZmkTransportDraft },
-    Mock,
-}
-
 pub struct UiState {
     pub settings_visible: bool,
     pub settings_error: Option<String>,
@@ -62,6 +48,6 @@ pub struct SessionState {
 pub struct ConnectDraftState {
     pub available_devices: Vec<DiscoveredDevice>,
     pub selected_device_index: Option<usize>,
-    pub draft: ConnectionDraft,
+    pub layout_file_path: String,
     pub pending_connect: Option<ConnectionTask>,
 }

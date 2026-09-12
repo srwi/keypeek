@@ -3,8 +3,9 @@
 use super::qmk_discovery::VIA_USAGE_PAGE;
 use super::zmk_rpc;
 use crate::device_discovery::{
-    DeviceDriverScanner, DeviceKind, DiscoveredDevice, DiscoveryContext, HidDeviceInfo,
+    DeviceDriverScanner, DiscoveredDevice, DiscoveryContext, HidDeviceInfo,
 };
+use crate::protocols::{ConnectionSpec, ZmkTransportConfig};
 
 /// Scanner for ZMK keyboards via Serial and Bluetooth LE.
 pub struct ZmkScanner;
@@ -23,9 +24,14 @@ impl DeviceDriverScanner for ZmkScanner {
                 base_name: format!("{} [{}]", base_name, sp.port_name),
                 vid: sp.vid,
                 pid: sp.pid,
-                serial_port: Some(sp.port_name),
-                ble_device_id: None,
-                kind: DeviceKind::Zmk,
+                driver_id: "zmk",
+                protocol_label: "ZMK Serial",
+                requires_layout_file: false,
+                spec: ConnectionSpec::Zmk {
+                    vid: sp.vid,
+                    pid: sp.pid,
+                    transport: ZmkTransportConfig::Serial(sp.port_name),
+                },
             });
             ctx.claim(sp.vid, sp.pid);
         }
@@ -38,19 +44,35 @@ impl DeviceDriverScanner for ZmkScanner {
                 if let Some((vid, pid, product)) = matched {
                     if ctx.is_claimed(vid, pid) {
                         let has_serial = devices.iter().any(|d| {
-                            d.kind == DeviceKind::Zmk
+                            d.driver_id == "zmk"
                                 && d.vid == vid
                                 && d.pid == pid
-                                && d.serial_port.is_some()
+                                && matches!(
+                                    d.spec,
+                                    ConnectionSpec::Zmk {
+                                        transport: ZmkTransportConfig::Serial(_),
+                                        ..
+                                    }
+                                )
                         });
                         if !has_serial {
                             if let Some(existing) = devices.iter_mut().find(|d| {
-                                d.kind == DeviceKind::Zmk
+                                d.driver_id == "zmk"
                                     && d.vid == vid
                                     && d.pid == pid
-                                    && d.serial_port.is_none()
+                                    && matches!(
+                                        d.spec,
+                                        ConnectionSpec::Zmk {
+                                            transport: ZmkTransportConfig::Ble(_),
+                                            ..
+                                        }
+                                    )
                             }) {
-                                existing.ble_device_id = Some(ble.device_id.clone());
+                                existing.spec = ConnectionSpec::Zmk {
+                                    vid,
+                                    pid,
+                                    transport: ZmkTransportConfig::Ble(ble.device_id.clone()),
+                                };
                             }
                         }
                         continue;
@@ -60,9 +82,14 @@ impl DeviceDriverScanner for ZmkScanner {
                         base_name: product.unwrap_or_else(|| ble.display_name.clone()),
                         vid,
                         pid,
-                        serial_port: None,
-                        ble_device_id: Some(ble.device_id),
-                        kind: DeviceKind::Zmk,
+                        driver_id: "zmk",
+                        protocol_label: "ZMK BLE",
+                        requires_layout_file: false,
+                        spec: ConnectionSpec::Zmk {
+                            vid,
+                            pid,
+                            transport: ZmkTransportConfig::Ble(ble.device_id),
+                        },
                     });
                     ctx.claim(vid, pid);
                 }

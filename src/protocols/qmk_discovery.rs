@@ -3,8 +3,9 @@
 use std::collections::HashSet;
 
 use crate::device_discovery::{
-    DeviceDriverScanner, DeviceKind, DiscoveredDevice, DiscoveryContext, HidDeviceInfo,
+    DeviceDriverScanner, DiscoveredDevice, DiscoveryContext, HidDeviceInfo,
 };
+use crate::protocols::ConnectionSpec;
 
 /// Standard VIA RAW HID usage page (0xff60).
 pub const VIA_USAGE_PAGE: u16 = 0xff60;
@@ -32,19 +33,35 @@ impl DeviceDriverScanner for QmkScanner {
                 .product
                 .clone()
                 .unwrap_or_else(|| format!("{:04X}:{:04X}", dev.vendor_id, dev.product_id));
-            let kind = if is_vial_device(dev) {
-                DeviceKind::Vial
+            let (driver_id, protocol_label, requires_layout_file, spec) = if is_vial_device(dev) {
+                (
+                    "vial",
+                    "Vial",
+                    false,
+                    ConnectionSpec::Vial {
+                        vid: dev.vendor_id,
+                        pid: dev.product_id,
+                    },
+                )
             } else {
-                DeviceKind::Qmk
+                (
+                    "via",
+                    "QMK",
+                    true,
+                    ConnectionSpec::Via {
+                        json_path: String::new(),
+                    },
+                )
             };
 
             devices.push(DiscoveredDevice {
                 base_name,
                 vid: dev.vendor_id,
                 pid: dev.product_id,
-                serial_port: None,
-                ble_device_id: None,
-                kind,
+                driver_id,
+                protocol_label,
+                requires_layout_file,
+                spec,
             });
         }
 
@@ -120,7 +137,7 @@ mod tests {
 
         assert_eq!(devices.len(), 1);
         assert_eq!(devices[0].vid, 0x3333);
-        assert_eq!(devices[0].pid, 0x4444);
-        assert_eq!(devices[0].kind, DeviceKind::Qmk);
+        assert_eq!(devices[0].protocol_label, "QMK");
+        assert!(devices[0].requires_layout_file);
     }
 }
