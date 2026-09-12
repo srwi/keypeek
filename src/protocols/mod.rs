@@ -1,27 +1,39 @@
-pub mod kle_parser;
-pub mod layout_geometry;
-pub mod mock;
-pub mod qmk_codec;
-pub mod qmk_common;
-pub mod qmk_discovery;
-pub mod qmk_json_parser;
-pub(crate) mod qmk_keycode_labels;
-pub mod via;
-pub mod vial;
-pub mod zmk;
-pub mod zmk_codec;
-pub mod zmk_discovery;
-pub(crate) mod zmk_keycode_labels;
-pub mod zmk_rpc;
+#[allow(unused_imports)]
+pub use crate::firmware::qmk::kle_parser;
+#[allow(unused_imports)]
+pub use crate::layout::geometry as layout_geometry;
+#[allow(unused_imports)]
+pub use crate::firmware::mock;
+#[allow(unused_imports)]
+pub use crate::firmware::qmk::codec as qmk_codec;
+#[allow(unused_imports)]
+pub use crate::firmware::qmk::common as qmk_common;
+#[allow(unused_imports)]
+pub use crate::firmware::qmk::discovery as qmk_discovery;
+#[allow(unused_imports)]
+pub use crate::firmware::qmk::json_parser as qmk_json_parser;
+#[allow(unused_imports)]
+pub(crate) use crate::firmware::qmk::keycode_labels as qmk_keycode_labels;
+#[allow(unused_imports)]
+pub use crate::firmware::qmk::via;
+#[allow(unused_imports)]
+pub use crate::firmware::qmk::vial;
+#[allow(unused_imports)]
+pub use crate::firmware::zmk::codec as zmk_codec;
+#[allow(unused_imports)]
+pub use crate::firmware::zmk::discovery as zmk_discovery;
+#[allow(unused_imports)]
+pub use crate::firmware::zmk::driver as zmk;
+#[allow(unused_imports)]
+pub(crate) use crate::firmware::zmk::keycode_labels as zmk_keycode_labels;
+#[allow(unused_imports)]
+pub use crate::firmware::zmk::rpc as zmk_rpc;
 
 use std::error::Error;
 use std::fmt;
 use std::sync::{mpsc, Arc};
 
-use self::mock::MockProtocol;
-use self::via::ViaProtocol;
-use self::vial::VialProtocol;
-use self::zmk::ZmkProtocol;
+
 
 /// Unified domain error for keyboard communication, configuration, and driver operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -167,58 +179,7 @@ where
 
 pub type ActionFilter = Arc<dyn Fn(&crate::key_spec::KeySpec) -> bool + Send + Sync>;
 
-pub type Row = usize;
-pub type Column = usize;
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Key {
-    pub row: Row,
-    pub col: Column,
-    pub x: f32,
-    pub y: f32,
-    pub w: f32,
-    pub h: f32,
-    /// Rotation angle in degrees, clockwise around the key's center.
-    #[serde(default)]
-    pub r: f32,
-}
-
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
-pub struct KeyboardLayout {
-    pub name: String,
-    pub keys: Vec<Key>,
-}
-
-impl KeyboardLayout {
-    pub fn get_dimensions(&self) -> (f32, f32) {
-        let max_x = self.keys.iter().map(|k| k.x + k.w).fold(0.0, f32::max);
-        let max_y = self.keys.iter().map(|k| k.y + k.h).fold(0.0, f32::max);
-        (max_x, max_y)
-    }
-}
-
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
-pub struct KeyboardDefinition {
-    pub vid: u16,
-    pub pid: u16,
-    pub rows: usize,
-    pub cols: usize,
-    pub layouts: Vec<KeyboardLayout>,
-}
-
-impl KeyboardDefinition {
-    pub fn get_layout_names(&self) -> Vec<String> {
-        self.layouts.iter().map(|l| l.name.clone()).collect()
-    }
-
-    pub fn get_layout(&self, layout_name: &str) -> Result<KeyboardLayout, String> {
-        self.layouts
-            .iter()
-            .find(|l| l.name == layout_name)
-            .cloned()
-            .ok_or_else(|| format!("Layout '{}' not found.", layout_name))
-    }
-}
+pub use crate::layout::{Key, KeyboardDefinition, KeyboardLayout};
 
 /// How a protocol persists keymap writes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -313,38 +274,8 @@ pub enum ConnectionSpec {
     Mock,
 }
 
-pub fn connect_protocol(spec: &ConnectionSpec) -> Result<Box<dyn KeyboardProtocol>, DeviceError> {
-    match spec {
-        ConnectionSpec::Via { json_path } => {
-            let protocol = ViaProtocol::connect(json_path)?;
-            Ok(Box::new(protocol))
-        }
-        ConnectionSpec::Vial { vid, pid } => {
-            let protocol = VialProtocol::connect(*vid, *pid)?;
-            Ok(Box::new(protocol))
-        }
-        ConnectionSpec::Zmk {
-            vid,
-            pid,
-            transport,
-        } => {
-            let zmk_transport = match transport {
-                ZmkTransportConfig::Serial(port_name) => {
-                    zmk_rpc::ZmkTransport::SerialPort(port_name.clone())
-                }
-                ZmkTransportConfig::Ble(device_id) => {
-                    zmk_rpc::ZmkTransport::BleDevice(device_id.clone())
-                }
-            };
-            let protocol = ZmkProtocol::connect_live(*vid, *pid, &zmk_transport)?;
-            Ok(Box::new(protocol))
-        }
-        ConnectionSpec::Mock => {
-            let protocol = MockProtocol::connect()?;
-            Ok(Box::new(protocol))
-        }
-    }
-}
+#[allow(unused_imports)]
+pub use crate::firmware::connect_protocol;
 
 #[cfg(test)]
 mod tests {

@@ -1,5 +1,5 @@
-use super::layout_geometry::flattened_top_left_after_center_rotation;
-use super::{Key, KeyboardDefinition, KeyboardLayout};
+use crate::layout::geometry::flattened_top_left_after_center_rotation;
+use crate::layout::{Key, KeyboardDefinition, KeyboardLayout};
 use serde_json::Value;
 use std::error::Error;
 use std::fs::File;

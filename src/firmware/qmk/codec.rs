@@ -97,7 +97,7 @@ pub fn qmk_to_keyspec(code: u16) -> KeySpec {
             }
 
             // Fallback for quantum or custom keycodes
-            let name = super::qmk_keycode_labels::try_resolve_qmk_key(code).map(|lk| lk.tap.full);
+            let name = super::keycode_labels::try_resolve_qmk_key(code).map(|lk| lk.tap.full);
             KeySpec::Custom(CustomBinding {
                 kind: CustomKind::Raw,
                 id: code as u32,
@@ -905,7 +905,7 @@ mod tests {
         use crate::key_presenter::KeyPresenter;
         let presenter = crate::key_presenter::QmkKeyPresenter;
         for code in test_codes {
-            let legacy_layout = super::super::qmk_keycode_labels::qmk_to_layout_key(code);
+            let legacy_layout = super::super::keycode_labels::qmk_to_layout_key(code);
             let spec = qmk_to_keyspec(code);
             let spec_layout = presenter.present_key(&spec, &empty_layer_names);
             if code == Keycode::QK_UNDERGLOW_TOGGLE as u16 {

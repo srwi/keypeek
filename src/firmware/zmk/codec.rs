@@ -628,7 +628,7 @@ mod tests {
                 continue;
             }
             let legacy_layout =
-                super::super::zmk_keycode_labels::behavior_to_layout_key(b, &layer_names);
+                super::super::keycode_labels::behavior_to_layout_key(b, &layer_names);
             let spec = zmk_to_keyspec(b);
             use crate::key_presenter::KeyPresenter;
             let presenter = crate::key_presenter::ZmkKeyPresenter;

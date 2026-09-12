@@ -1,6 +1,7 @@
+use super::common::{QmkFeatures, QmkProtocol};
 use super::kle_parser;
-use super::qmk_common::{QmkFeatures, QmkProtocol};
-use super::{DeviceError, KeyboardDefinition};
+use crate::layout::KeyboardDefinition;
+use crate::protocols::DeviceError;
 use qmk_via_api::api::KeyboardApi;
 use std::error::Error;
 

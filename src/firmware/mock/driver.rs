@@ -4,7 +4,7 @@
 //! so layer-change rendering can be exercised. The mock device is only registered
 //! during discovery in debug builds (`cfg!(debug_assertions)` in `device_discovery`).
 
-use super::{ConnectionSpec, DeviceError, DeviceEvent, KeyboardDefinition, KeyboardProtocol, WriteSupport};
+use crate::protocols::{ConnectionSpec, DeviceError, DeviceEvent, KeyboardDefinition, KeyboardProtocol, WriteSupport};
 use crate::key_spec::{KeySpec, KeymapSnapshot, LayerInfo};
 use qmk_via_api::keycodes::Keycode;
 use qmk_via_api::QmkLayerOp;
@@ -14,7 +14,7 @@ use std::sync::OnceLock;
 use std::thread;
 use std::time::Duration;
 
-const FIXTURE: &str = include_str!("../../resources/mock_keyboard.json");
+const FIXTURE: &str = include_str!("../../../resources/mock_keyboard.json");
 
 /// How long each layer in the cycle is held.
 const TICK_INTERVAL: Duration = Duration::from_millis(1500);
@@ -106,7 +106,7 @@ impl KeyboardProtocol for MockProtocol {
             for (i, &keycode) in codes.iter().enumerate() {
                 let (row, col) = (i / cols, i % cols);
                 if row < rows {
-                    actions[layer][row][col] = Some(super::qmk_codec::qmk_to_keyspec(keycode));
+                    actions[layer][row][col] = Some(crate::protocols::qmk_codec::qmk_to_keyspec(keycode));
                 }
             }
         }
@@ -157,7 +157,7 @@ impl KeyboardProtocol for MockProtocol {
         col: usize,
         spec: &KeySpec,
     ) -> Result<(), DeviceError> {
-        let keycode = super::qmk_codec::keyspec_to_qmk(spec)?;
+        let keycode = crate::protocols::qmk_codec::keyspec_to_qmk(spec)?;
 
         let Some(layer) = self.layers.get_mut(layer_index) else {
             return Err(DeviceError::Protocol(format!(

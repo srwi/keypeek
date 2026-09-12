@@ -1,13 +1,13 @@
-use super::qmk_common::{QmkFeatures, QmkProtocol};
-use super::qmk_json_parser;
-use super::DeviceError;
+use super::common::{QmkFeatures, QmkProtocol};
+use super::json_parser;
+use crate::protocols::DeviceError;
 use qmk_via_api::api::KeyboardApi;
 
 pub struct ViaProtocol;
 
 impl ViaProtocol {
     pub fn connect(json_path: &str) -> Result<QmkProtocol, DeviceError> {
-        let definition = qmk_json_parser::parse_qmk_json(json_path)
+        let definition = json_parser::parse_qmk_json(json_path)
             .map_err(|e| DeviceError::Protocol(e.to_string()))?;
         let api = Self::get_api(definition.vid, definition.pid)?;
         let features = QmkFeatures::probe(&api);

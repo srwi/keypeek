@@ -1,7 +1,5 @@
 use crate::keyboard::{Keyboard, OverlayConfig};
-use crate::protocols::{
-    connect_protocol, ConnectionSpec, DeviceError, KeyboardProtocol, Reopener,
-};
+use crate::protocols::{ConnectionSpec, DeviceError, KeyboardProtocol, Reopener};
 use crate::ui_wake::UiWake;
 use std::sync::mpsc::{self, TryRecvError};
 use std::sync::Arc;
@@ -17,7 +15,7 @@ impl ConnectionRequest {
     fn open_protocol(&self) -> Result<Box<dyn KeyboardProtocol>, String> {
         let result = match &self.reopen {
             Some(reopener) => reopener.reopen(),
-            None => connect_protocol(&self.spec),
+            None => crate::firmware::connect_protocol(&self.spec),
         };
         result.map_err(|e| format_connect_error(&self.spec, &e))
     }

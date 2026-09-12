@@ -1,3 +1,5 @@
+//! Geometry calculation helpers for rotated key layouts.
+
 pub fn flattened_top_left_after_center_rotation(
     x: f32,
     y: f32,

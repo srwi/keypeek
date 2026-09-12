@@ -1,8 +1,9 @@
 use crate::key_spec::{KeySpec, KeymapSnapshot, LayerInfo};
-use crate::protocols::qmk_codec;
+use crate::layout::KeyboardDefinition;
 use crate::protocols::{
-    pump_hid_reader, DeviceError, DeviceEvent, KeyboardDefinition, KeyboardProtocol, WriteSupport,
+    pump_hid_reader, ActionFilter, DeviceError, DeviceEvent, KeyboardProtocol, WriteSupport,
 };
+use super::codec as qmk_codec;
 use qmk_via_api::api::KeyboardApi;
 pub use qmk_via_api::QmkFeatures;
 use std::error::Error;
@@ -160,7 +161,7 @@ impl KeyboardProtocol for QmkProtocol {
 }
 
 /// Returns an action filter that disables keycodes not supported by the keyboard's features.
-pub fn qmk_action_filter(features: QmkFeatures) -> Option<super::ActionFilter> {
+pub fn qmk_action_filter(features: QmkFeatures) -> Option<ActionFilter> {
     Some(Arc::new(move |spec| {
         qmk_codec::keyspec_to_qmk(spec)
             .map(|code| features.is_keycode_supported(code))
@@ -171,7 +172,7 @@ pub fn qmk_action_filter(features: QmkFeatures) -> Option<super::ActionFilter> {
 /// Reads a complete keymap snapshot across all dynamic layers from a QMK/VIA/VIAL keyboard.
 pub fn qmk_read_snapshot(
     api: &KeyboardApi,
-    definition: &super::KeyboardDefinition,
+    definition: &KeyboardDefinition,
 ) -> Result<KeymapSnapshot, DeviceError> {
     let layer_count = api
         .get_layer_count()
