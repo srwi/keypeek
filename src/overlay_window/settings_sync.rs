@@ -14,15 +14,12 @@ impl OverlayApp {
         }
     }
 
-    pub(super) fn apply_live_visual_settings(&mut self) {
-        if self.settings.draft == self.settings.active {
-            return;
-        }
-
-        self.settings.active = self.settings.draft.clone();
-
-        if let Some(keyboard) = self.connection_mgr.connected_keyboard() {
-            keyboard.set_config(self.overlay_config());
+    /// Commits modified draft settings to active settings and updates connected keyboard config.
+    pub(super) fn sync_visual_settings(&mut self) {
+        if self.settings.commit_draft() {
+            if let Some(keyboard) = self.connection_mgr.connected_keyboard() {
+                keyboard.set_config(self.overlay_config());
+            }
         }
     }
 

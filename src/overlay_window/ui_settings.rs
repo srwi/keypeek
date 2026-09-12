@@ -392,6 +392,8 @@ impl OverlayApp {
                 });
             });
 
+        self.sync_visual_settings();
+
         if self.ui.settings_visible && !open {
             self.ui.settings_visible = false;
             self.persist_settings();

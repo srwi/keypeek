@@ -43,10 +43,7 @@ impl OverlayApp {
                 mouse_passthrough: None,
                 file_dialog: egui_file_dialog::FileDialog::new(),
             },
-            settings: SettingsState {
-                active: base_settings.clone(),
-                draft: base_settings,
-            },
+            settings: SettingsState::new(base_settings),
             connection_mgr: DeviceConnectionManager::new(available_devices, ui_wake),
             editor: crate::keymap_editor::EditorState::new(),
         }
@@ -163,7 +160,9 @@ impl OverlayApp {
         crate::key_paint::KeyPaintStyle::from_settings(&self.settings.active).with_unit(unit)
     }
 
-    pub fn ui(&mut self, ctx: &egui::Context, host: &mut dyn OverlayHost) {
+    /// Update phase: processes requests, background task completions, dialog updates,
+    /// and window passthrough state before any UI rendering occurs.
+    fn update(&mut self, ctx: &egui::Context, host: &mut dyn OverlayHost) {
         if self.settings_requested.swap(false, Ordering::Relaxed) {
             self.ui.settings_visible = true;
         }
@@ -184,7 +183,6 @@ impl OverlayApp {
             }
         }
 
-        self.apply_live_visual_settings();
         self.ui.file_dialog.update(ctx);
 
         if let Some(path) = self.ui.file_dialog.take_picked() {
@@ -193,6 +191,10 @@ impl OverlayApp {
         }
 
         self.sync_mouse_passthrough(host);
+    }
+
+    /// Render phase: paints visible overlay, editor, settings, and modal dialogs.
+    fn render(&mut self, ctx: &egui::Context, host: &mut dyn OverlayHost) {
         if let Some((keyboard, profile)) = self.connection_mgr.connected_pair() {
             // Clone the shared keyboard so drawing can mutate app state (the
             // editor) without holding a borrow on `self.connection_mgr`.
@@ -213,7 +215,11 @@ impl OverlayApp {
 
         Self::message_window(ctx, "Error", &mut self.ui.settings_error);
         Self::message_window(ctx, "Notice", &mut self.ui.settings_warning);
+    }
 
+    pub fn ui(&mut self, ctx: &egui::Context, host: &mut dyn OverlayHost) {
+        self.update(ctx, host);
+        self.render(ctx, host);
         self.schedule_overlay_repaint(ctx);
     }
 }
