@@ -1,14 +1,14 @@
 //! "Edit key" window. Displays and updates the key selected on the overlay.
 
-mod catalog;
-mod draft;
+pub mod catalog;
+pub(crate) mod draft;
 mod editor;
-mod picker;
+pub(crate) mod picker;
 pub mod profile;
 
 pub use draft::KeyDraft;
 pub use picker::KEY_UNIT;
-pub use profile::{EditorProfile, QmkEditorProfile, SidebarSection, ZmkEditorProfile};
+pub use profile::{EditorProfile, SidebarSection};
 
 use crate::key_spec::KeySpec;
 use crate::keyboard::Keyboard;

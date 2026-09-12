@@ -1,0 +1,50 @@
+pub mod mock;
+pub mod qmk;
+pub mod zmk;
+
+use std::sync::Arc;
+
+use crate::device_discovery::DeviceDriverScanner;
+use crate::key_presenter::KeyPresenter;
+use crate::keymap_editor::EditorProfile;
+use crate::protocols::ConnectionSpec;
+
+/// Cohesive bundle providing discovery scanners, visual presenter, and editor profile
+/// for a firmware family.
+pub trait FirmwareBundle: Send + Sync {
+    fn driver_id(&self) -> &'static str;
+    fn create_presenter(&self) -> Arc<dyn KeyPresenter>;
+    fn create_profile(&self) -> Arc<dyn EditorProfile>;
+    fn scanners(&self) -> Vec<Box<dyn DeviceDriverScanner>>;
+}
+
+pub static QMK_BUNDLE: qmk::QmkBundle = qmk::QmkBundle;
+pub static ZMK_BUNDLE: zmk::ZmkBundle = zmk::ZmkBundle;
+pub static MOCK_BUNDLE: mock::MockBundle = mock::MockBundle;
+
+/// Looks up a registered firmware bundle by driver ID.
+#[allow(dead_code)]
+pub fn bundle_for_driver(driver_id: &str) -> Option<&'static dyn FirmwareBundle> {
+    all_bundles().iter().copied().find(|b| b.driver_id() == driver_id)
+}
+
+/// Resolves the appropriate firmware bundle for a connection specification.
+pub fn bundle_for_spec(spec: &ConnectionSpec) -> &'static dyn FirmwareBundle {
+    match spec {
+        ConnectionSpec::Via { .. } | ConnectionSpec::Vial { .. } => &QMK_BUNDLE,
+        ConnectionSpec::Zmk { .. } => &ZMK_BUNDLE,
+        ConnectionSpec::Mock => &MOCK_BUNDLE,
+    }
+}
+
+pub static ALL_BUNDLES: [&'static dyn FirmwareBundle; 3] = [&QMK_BUNDLE, &ZMK_BUNDLE, &MOCK_BUNDLE];
+
+/// Returns all registered firmware bundles.
+pub fn all_bundles() -> &'static [&'static dyn FirmwareBundle] {
+    &ALL_BUNDLES
+}
+
+/// Aggregates hardware scanners from all registered firmware bundles.
+pub fn default_scanners() -> Vec<Box<dyn DeviceDriverScanner>> {
+    all_bundles().iter().flat_map(|b| b.scanners()).collect()
+}

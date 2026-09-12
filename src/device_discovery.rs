@@ -96,18 +96,9 @@ pub trait DeviceDriverScanner: Send + Sync {
     fn scan(&self, ctx: &mut DiscoveryContext) -> Vec<DiscoveredDevice>;
 }
 
-/// Returns the standard list of registered device scanners.
+/// Returns the standard list of registered device scanners from all firmware bundles.
 pub fn default_scanners() -> Vec<Box<dyn DeviceDriverScanner>> {
-    let mut scanners: Vec<Box<dyn DeviceDriverScanner>> = vec![
-        Box::new(crate::protocols::zmk_discovery::ZmkScanner),
-        Box::new(crate::protocols::qmk_discovery::QmkScanner),
-    ];
-
-    if cfg!(debug_assertions) {
-        scanners.push(Box::new(crate::protocols::mock::MockScanner));
-    }
-
-    scanners
+    crate::firmware::default_scanners()
 }
 
 /// Runs discovery over the specified scanners and context.
