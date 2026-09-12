@@ -95,7 +95,7 @@ impl EditorState {
                     self.draw_backlight_page(ui, keyboard, profile, target, &search_query, style);
                 }
                 EditorSection::RawHex => {
-                    self.draw_raw_hex_page(ui, keyboard, target);
+                    self.draw_raw_hex_page(ui, keyboard, profile, target);
                 }
                 _ => {
                     let groups = profile.section_groups(current_section);
@@ -123,8 +123,8 @@ impl EditorState {
         });
     }
 
-    fn commit_draft(&mut self, keyboard: &Keyboard, target: EditTarget) {
-        let staged = self.draft.staged_for(keyboard);
+    fn commit_draft(&mut self, keyboard: &Keyboard, profile: &dyn EditorProfile, target: EditTarget) {
+        let staged = self.draft.staged_for(profile);
         self.commit_staged(keyboard, target, staged);
     }
 
@@ -140,7 +140,7 @@ impl EditorState {
         titled_group(ui, "Modifiers", |ui| {
             modifier_toggle_grid(ui, "kb_mods", self.draft.modifiers, true, style, |mask| {
                 self.draft.modifiers ^= mask;
-                self.commit_draft(keyboard, target);
+                self.commit_draft(keyboard, profile, target);
             });
         });
 
@@ -163,7 +163,7 @@ impl EditorState {
             |_, candidate| {
                 if let KeySpec::KeyPress { key, .. } = &candidate.binding {
                     self.draft.tap_key = Some(*key);
-                    self.commit_draft(keyboard, target);
+                    self.commit_draft(keyboard, profile, target);
                 }
             },
         );
@@ -236,7 +236,7 @@ impl EditorState {
                     style,
                     |mask| {
                         self.draft.tap_modifiers ^= mask;
-                        self.commit_draft(keyboard, target);
+                        self.commit_draft(keyboard, profile, target);
                     },
                 );
             }
@@ -256,7 +256,7 @@ impl EditorState {
                 |_, candidate| {
                     if let KeySpec::KeyPress { key, .. } = &candidate.binding {
                         self.draft.tap_key = Some(*key);
-                        self.commit_draft(keyboard, target);
+                        self.commit_draft(keyboard, profile, target);
                     }
                 },
             );
@@ -282,7 +282,7 @@ impl EditorState {
                 style,
                 |mask| {
                     self.draft.modifiers ^= mask;
-                    self.commit_draft(keyboard, target);
+                    self.commit_draft(keyboard, profile, target);
                 },
             );
         });
@@ -302,7 +302,7 @@ impl EditorState {
             |_, candidate| {
                 if let KeySpec::KeyPress { key, .. } = &candidate.binding {
                     self.draft.tap_key = Some(*key);
-                    self.commit_draft(keyboard, target);
+                    self.commit_draft(keyboard, profile, target);
                 }
             },
         );
@@ -331,7 +331,7 @@ impl EditorState {
                 style,
                 |mask| {
                     self.draft.hold_mods ^= mask;
-                    self.commit_draft(keyboard, target);
+                    self.commit_draft(keyboard, profile, target);
                 },
             );
         });
@@ -405,7 +405,7 @@ impl EditorState {
                     if self.draft.tap_key.is_none() {
                         self.draft.tap_key = Some(HidKey::keyboard(0x2C));
                     }
-                    self.commit_draft(keyboard, target);
+                    self.commit_draft(keyboard, profile, target);
                 }
                 KeySpec::Layer { layer, activation } => {
                     self.draft.is_layer_tap = false;
@@ -460,7 +460,7 @@ impl EditorState {
                 style,
                 |mask| {
                     self.draft.modifiers ^= mask;
-                    self.commit_draft(keyboard, target);
+                    self.commit_draft(keyboard, profile, target);
                 },
             );
         });
@@ -496,7 +496,7 @@ impl EditorState {
                     } else {
                         self.draft.tap_key = Some(*key);
                     }
-                    self.commit_draft(keyboard, target);
+                    self.commit_draft(keyboard, profile, target);
                 }
             },
         );
@@ -553,7 +553,7 @@ impl EditorState {
                 style,
                 |mask| {
                     self.draft.modifiers ^= mask;
-                    self.commit_draft(keyboard, target);
+                    self.commit_draft(keyboard, profile, target);
                 },
             );
         });
@@ -587,7 +587,7 @@ impl EditorState {
             |_, candidate| {
                 if let KeySpec::KeyPress { key, .. } = &candidate.binding {
                     self.draft.tap_key = Some(*key);
-                    self.commit_draft(keyboard, target);
+                    self.commit_draft(keyboard, profile, target);
                 }
             },
         );
@@ -642,7 +642,7 @@ impl EditorState {
             |candidate| {
                 if let KeySpec::Layer { layer, .. } = &candidate.binding {
                     self.draft.target_layer = Some(*layer as usize);
-                    self.commit_draft(keyboard, target);
+                    self.commit_draft(keyboard, profile, target);
                 }
             },
         );
@@ -656,7 +656,7 @@ impl EditorState {
                 style,
                 |mask| {
                     self.draft.modifiers ^= mask;
-                    self.commit_draft(keyboard, target);
+                    self.commit_draft(keyboard, profile, target);
                 },
             );
         });
@@ -666,7 +666,13 @@ impl EditorState {
         }
     }
 
-    fn draw_raw_hex_page(&mut self, ui: &mut egui::Ui, keyboard: &Keyboard, target: EditTarget) {
+    fn draw_raw_hex_page(
+        &mut self,
+        ui: &mut egui::Ui,
+        keyboard: &Keyboard,
+        profile: &dyn EditorProfile,
+        target: EditTarget,
+    ) {
         titled_group(ui, "Keycode", |ui| {
             ui.horizontal(|ui| {
                 ui.label("0x");
@@ -679,7 +685,7 @@ impl EditorState {
                     self.draft.hex.retain(|c| c.is_ascii_hexdigit());
                 }
                 if response.lost_focus() || (response.changed() && self.draft.hex.len() == 4) {
-                    self.commit_draft(keyboard, target);
+                    self.commit_draft(keyboard, profile, target);
                 }
             });
             if u16::from_str_radix(&self.draft.hex, 16).is_err() {

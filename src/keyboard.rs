@@ -424,17 +424,6 @@ impl Keyboard {
         self.protocol.lock().unwrap().write_support()
     }
 
-    /// Whether the device accepts raw firmware keycodes as hex input.
-    pub fn supports_raw_keycode_entry(&self) -> bool {
-        self.protocol.lock().unwrap().supports_raw_keycode_entry()
-    }
-
-    /// Parses a raw firmware keycode into a domain [`KeySpec`]. Only meaningful
-    /// when [`Keyboard::supports_raw_keycode_entry`] is `true`.
-    pub fn parse_raw_keycode(&self, code: u16) -> Option<KeySpec> {
-        self.protocol.lock().unwrap().parse_raw_keycode(code)
-    }
-
     /// Whether the layout can be switched while connected.
     pub fn supports_live_layout_switching(&self) -> bool {
         self.protocol.lock().unwrap().supports_live_layout_switching()
@@ -550,34 +539,6 @@ impl Keyboard {
 mod tests {
     use super::ActiveLayers::{Base, Excluded, Selected};
     use super::*;
-
-    fn mock_keyboard() -> Keyboard {
-        let protocol = Box::new(crate::protocols::mock::MockProtocol::connect().unwrap());
-        let layout_name = protocol.get_layout_definition().layouts[0].name.clone();
-        Keyboard::new(
-            protocol,
-            layout_name,
-            CONFIG,
-            UiWake::new(Arc::new(|| ())),
-            Arc::new(crate::key_presenter::StandardKeyPresenter),
-        )
-        .unwrap()
-    }
-
-    /// Capability queries delegate live to the protocol instead of being
-    /// snapshotted at construction.
-    #[test]
-    fn keyboard_delegates_raw_keycode_capabilities() {
-        let keyboard = mock_keyboard();
-        assert!(keyboard.supports_raw_keycode_entry());
-        assert_eq!(
-            keyboard.parse_raw_keycode(0x0004),
-            Some(KeySpec::KeyPress {
-                key: crate::key_spec::HidKey::keyboard(0x04),
-                modifiers: Default::default(),
-            })
-        );
-    }
 
     const CONFIG: OverlayConfig = OverlayConfig {
         timeout_ms: 2000,

@@ -5,7 +5,7 @@
 
 use crate::hid_labels::Modifiers;
 use crate::key_spec::{BacklightAction, HidKey, KeySpec, LayerActivation, LightingAction};
-use crate::keyboard::Keyboard;
+use super::profile::EditorProfile;
 
 /// Unified sidebar sections for key categories.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
@@ -232,8 +232,8 @@ impl KeyDraft {
 
     /// Returns the staged [`KeySpec`] if all required parameters are valid.
     ///
-    /// Raw-hex staging additionally requires the keyboard's raw-keycode
-    /// parsing; use [`KeyDraft::staged_for`] when a keyboard is available.
+    /// Raw-hex staging additionally requires the profile's raw-keycode
+    /// parsing; use [`KeyDraft::staged_for`] when an editor profile is available.
     pub fn staged(&self) -> Option<KeySpec> {
         match self.section {
             EditorSection::RawHex => None,
@@ -242,13 +242,10 @@ impl KeyDraft {
     }
 
     /// Like [`KeyDraft::staged`], resolving raw hex entry through the
-    /// keyboard's protocol (see `Keyboard::parse_raw_keycode`).
-    pub fn staged_for(&self, keyboard: &Keyboard) -> Option<KeySpec> {
+    /// active editor profile (see [`EditorProfile::parse_raw_keycode`]).
+    pub fn staged_for(&self, profile: &dyn EditorProfile) -> Option<KeySpec> {
         match self.section {
-            EditorSection::RawHex => {
-                let code = u16::from_str_radix(&self.hex, 16).ok()?;
-                keyboard.parse_raw_keycode(code)
-            }
+            EditorSection::RawHex => profile.parse_raw_keycode(&self.hex),
             _ => self.staged_section(),
         }
     }
@@ -618,9 +615,20 @@ mod tests {
             ..Default::default()
         };
         assert!(draft.is_valid());
-        // Staging raw hex requires a keyboard whose protocol parses raw
-        // keycodes; without one nothing stages (see Keyboard::parse_raw_keycode).
+        // Staging raw hex requires an active profile that supports raw keycode parsing;
+        // without one nothing stages.
         assert_eq!(draft.staged(), None);
+        assert_eq!(
+            draft.staged_for(&crate::keymap_editor::profile::QmkEditorProfile),
+            Some(KeySpec::KeyPress {
+                key: HidKey::keyboard(0x04),
+                modifiers: Default::default(),
+            })
+        );
+        assert_eq!(
+            draft.staged_for(&crate::keymap_editor::profile::ZmkEditorProfile),
+            None
+        );
     }
 
     #[test]

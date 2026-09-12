@@ -281,20 +281,9 @@ pub trait KeyboardProtocol: Send {
         None
     }
 
-    /// Whether the device accepts raw firmware keycodes as hex input.
-    fn supports_raw_keycode_entry(&self) -> bool {
-        false
-    }
-
     /// Whether the layout can be switched while connected.
     fn supports_live_layout_switching(&self) -> bool {
         false
-    }
-
-    /// Parses a raw firmware keycode into a domain [`KeySpec`]. Only called
-    /// when [`KeyboardProtocol::supports_raw_keycode_entry`] is `true`.
-    fn parse_raw_keycode(&self, _code: u16) -> Option<crate::key_spec::KeySpec> {
-        None
     }
 }
 

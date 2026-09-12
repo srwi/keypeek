@@ -57,6 +57,12 @@ pub trait EditorProfile: KeyPresenter + Send + Sync {
         layer_names: &[String],
         tap_key: Option<HidKey>,
     ) -> Vec<CandidateGroup>;
+
+    /// Parses a raw firmware keycode string (e.g. hex input in the Any Keycode section)
+    /// into a domain [`KeySpec`].
+    fn parse_raw_keycode(&self, _raw: &str) -> Option<KeySpec> {
+        None
+    }
 }
 
 /// Checks if a device capability filter allows the given editor section on the connected keyboard.
@@ -135,7 +141,7 @@ fn is_device_section_supported(section: EditorSection, keyboard: &Keyboard) -> b
                 param2: None,
             },
         )),
-        EditorSection::RawHex => keyboard.supports_raw_keycode_entry(),
+        EditorSection::RawHex => true,
     }
 }
 
@@ -469,6 +475,11 @@ impl EditorProfile for QmkEditorProfile {
             &QMK_LAYER_OPS,
             |_| &[],
         )
+    }
+
+    fn parse_raw_keycode(&self, raw: &str) -> Option<KeySpec> {
+        let code = u16::from_str_radix(raw, 16).ok()?;
+        Some(crate::protocols::qmk_codec::qmk_to_keyspec(code))
     }
 }
 
@@ -1054,5 +1065,21 @@ mod tests {
         ))));
         // Audio is disabled on this device
         assert!(!filter(&KeySpec::Audio(crate::key_spec::AudioAction::Toggle)));
+    }
+
+    #[test]
+    fn raw_keycode_parsing_is_profile_specific() {
+        let qmk = QmkEditorProfile;
+        let zmk = ZmkEditorProfile;
+
+        assert_eq!(
+            qmk.parse_raw_keycode("0004"),
+            Some(KeySpec::KeyPress {
+                key: HidKey::keyboard(0x04),
+                modifiers: Default::default(),
+            })
+        );
+        assert_eq!(qmk.parse_raw_keycode("invalid"), None);
+        assert_eq!(zmk.parse_raw_keycode("0004"), None);
     }
 }
