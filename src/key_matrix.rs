@@ -109,4 +109,194 @@ impl KeyMatrix {
             }
         }
     }
+
+    /// Determines the effective layer for the key at `(row, col)` given current
+    /// momentary and default layer bitmasks, taking layer transparency into account.
+    pub fn effective_layer(
+        &self,
+        layer_state: u32,
+        default_layer_state: u32,
+        row: usize,
+        col: usize,
+    ) -> (u8, bool) {
+        let num_layers = self.get_num_layers().min(32);
+        let mut active_layer_above = false;
+
+        for i in (1..num_layers).rev() {
+            let layer_mask = 1u32 << (i as u32);
+            let is_active_default_layer = (default_layer_state & layer_mask) != 0;
+            let is_active_momentary_layer = (layer_state & layer_mask) != 0;
+            if (is_active_momentary_layer || is_active_default_layer)
+                && !self.is_transparent(i, row, col)
+            {
+                return (i as u8, is_active_default_layer && active_layer_above);
+            }
+            active_layer_above |= is_active_momentary_layer;
+        }
+
+        (0, active_layer_above)
+    }
+
+    /// `HELD_MOD_SHIFT`/`HELD_MOD_RALT` bits OR'd over every pressed key's
+    /// `mod_mask`.
+    pub fn held_mod_mask(
+        &self,
+        layout_keys: &[crate::protocols::Key],
+        layer_state: u32,
+        default_layer_state: u32,
+    ) -> u16 {
+        layout_keys.iter().fold(0u16, |acc, key| {
+            if !self.is_pressed(key.row, key.col) {
+                return acc;
+            }
+            let (effective_layer, _) = self.effective_layer(
+                layer_state,
+                default_layer_state,
+                key.row,
+                key.col,
+            );
+            let mask = self
+                .get_key(effective_layer as usize, key.row, key.col)
+                .and_then(|k| k.mod_mask)
+                .unwrap_or(0);
+            acc | mask
+        })
+    }
+
+    /// Updates a key binding and its rendered label in the matrix.
+    pub fn update_binding(
+        &mut self,
+        layer: usize,
+        row: usize,
+        col: usize,
+        action: KeySpec,
+        label: Option<LayoutKey>,
+    ) {
+        if let Some(cell) = self
+            .keys
+            .get_mut(layer)
+            .and_then(|l| l.get_mut(row))
+            .and_then(|r| r.get_mut(col))
+        {
+            *cell = Some(BoundKey { label, action });
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hid_labels::Modifiers;
+    use crate::key_spec::HidKey;
+    use crate::layout_key::{Label, LayoutKey, HELD_MOD_SHIFT};
+    use crate::protocols::Key;
+
+    #[test]
+    fn effective_layer_falls_through_transparent_keys() {
+        let mut matrix = KeyMatrix {
+            keys: vec![
+                // Layer 0: non-transparent key at (0, 0)
+                vec![vec![Some(BoundKey {
+                    action: KeySpec::KeyPress {
+                        key: HidKey::keyboard(0x04),
+                        modifiers: Modifiers::from_hid_mask(0),
+                    },
+                    label: Some(LayoutKey {
+                        tap: Label::new("A"),
+                        ..Default::default()
+                    }),
+                })]],
+                // Layer 1: transparent key at (0, 0)
+                vec![vec![Some(BoundKey {
+                    action: KeySpec::Transparent,
+                    label: None,
+                })]],
+            ],
+            layers: vec![
+                LayerInfo { id: 0, name: Some("Base".into()) },
+                LayerInfo { id: 1, name: Some("Fn".into()) },
+            ],
+            pressed: vec![vec![false]],
+        };
+
+        // Layer 0 active only -> resolves to layer 0
+        let (layer, shadow) = matrix.effective_layer(0, 1, 0, 0);
+        assert_eq!(layer, 0);
+        assert!(!shadow);
+
+        // Layer 1 active, but transparent -> falls through to layer 0
+        let (layer, _) = matrix.effective_layer(1 << 1, 1, 0, 0);
+        assert_eq!(layer, 0);
+
+        // Update layer 1 to be opaque
+        matrix.update_binding(
+            1,
+            0,
+            0,
+            KeySpec::KeyPress {
+                key: HidKey::keyboard(0x05),
+                modifiers: Modifiers::from_hid_mask(0),
+            },
+            Some(LayoutKey {
+                tap: Label::new("B"),
+                ..Default::default()
+            }),
+        );
+
+        // Now layer 1 resolves directly
+        let (layer, _) = matrix.effective_layer(1 << 1, 1, 0, 0);
+        assert_eq!(layer, 1);
+    }
+
+    #[test]
+    fn held_mod_mask_aggregates_pressed_key_modifiers() {
+        let matrix = KeyMatrix {
+            keys: vec![vec![vec![
+                Some(BoundKey {
+                    action: KeySpec::KeyPress {
+                        key: HidKey::keyboard(0xE1),
+                        modifiers: Modifiers::from_hid_mask(0),
+                    },
+                    label: Some(LayoutKey {
+                        tap: Label::new("Shift"),
+                        mod_mask: Some(HELD_MOD_SHIFT),
+                        ..Default::default()
+                    }),
+                }),
+                Some(BoundKey {
+                    action: KeySpec::KeyPress {
+                        key: HidKey::keyboard(0x04),
+                        modifiers: Modifiers::from_hid_mask(0),
+                    },
+                    label: Some(LayoutKey {
+                        tap: Label::new("A"),
+                        ..Default::default()
+                    }),
+                }),
+            ]]],
+            layers: vec![LayerInfo { id: 0, name: Some("Base".into()) }],
+            pressed: vec![vec![false, false]],
+        };
+
+        let layout_keys = vec![
+            Key { row: 0, col: 0, x: 0.0, y: 0.0, w: 1.0, h: 1.0, r: 0.0 },
+            Key { row: 0, col: 1, x: 1.0, y: 0.0, w: 1.0, h: 1.0, r: 0.0 },
+        ];
+
+        // Nothing pressed -> mask is 0
+        assert_eq!(matrix.held_mod_mask(&layout_keys, 0, 1), 0);
+
+        let mut matrix = matrix;
+        // Press Shift
+        matrix.set_pressed(0, 0, true);
+        assert_eq!(matrix.held_mod_mask(&layout_keys, 0, 1), HELD_MOD_SHIFT);
+
+        // Also press 'A' -> mask still has Shift
+        matrix.set_pressed(0, 1, true);
+        assert_eq!(matrix.held_mod_mask(&layout_keys, 0, 1), HELD_MOD_SHIFT);
+
+        // Release Shift -> mask becomes 0
+        matrix.set_pressed(0, 0, false);
+        assert_eq!(matrix.held_mod_mask(&layout_keys, 0, 1), 0);
+    }
 }

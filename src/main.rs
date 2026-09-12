@@ -13,10 +13,12 @@ mod os_layout;
 mod overlay_window;
 mod platform;
 mod protocols;
+mod session;
 mod settings;
 mod tray;
 mod ui_wake;
 mod ui_widgets;
+mod visibility;
 
 use device_discovery::discover_devices;
 use settings::Settings;
