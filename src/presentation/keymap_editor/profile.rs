@@ -3,7 +3,7 @@
 //! An [`EditorProfile`] defines firmware-specific editor structure, sidebar
 //! section organization, candidate presentation, and vocabulary.
 
-use crate::keyboard::Keyboard;
+use crate::application::Keyboard;
 use crate::key_presenter::KeyPresenter;
 use crate::key_spec::{HidKey, KeySpec, LayerInfo};
 use crate::keymap_editor::picker::CandidateGroup;
@@ -141,14 +141,11 @@ fn is_device_section_supported(section: EditorSection, keyboard: &Keyboard) -> b
     }
 }
 
-#[allow(unused_imports)]
-pub use crate::firmware::qmk::QmkEditorProfile;
-#[allow(unused_imports)]
-pub use crate::firmware::zmk::ZmkEditorProfile;
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::firmware::qmk::QmkEditorProfile;
+    use crate::firmware::zmk::ZmkEditorProfile;
 
     #[test]
     fn qmk_profile_exposes_qmk_native_sections_and_names() {
@@ -261,12 +258,12 @@ mod tests {
     #[test]
     fn profile_delegates_section_support() {
         let protocol: Box<dyn crate::protocols::KeyboardProtocol> =
-            Box::new(crate::protocols::mock::MockProtocol::connect().unwrap());
+            Box::new(crate::firmware::mock::MockProtocol::connect().unwrap());
         let layout_name = protocol.get_layout_definition().layouts[0].name.clone();
         let keyboard = Keyboard::new(
             protocol,
             layout_name,
-            crate::keyboard::OverlayConfig {
+            crate::domain::visibility::OverlayConfig {
                 timeout_ms: 2000,
                 activation_delay_ms: 300,
                 visible_layers: u32::MAX,
@@ -327,12 +324,12 @@ mod tests {
         // 1. Family constraints: ZMK profile does not offer RawHex section or candidates,
         //    even if the connected protocol were to accept raw hex.
         let protocol: Box<dyn crate::protocols::KeyboardProtocol> =
-            Box::new(crate::protocols::mock::MockProtocol::connect().unwrap());
+            Box::new(crate::firmware::mock::MockProtocol::connect().unwrap());
         let layout_name = protocol.get_layout_definition().layouts[0].name.clone();
         let keyboard = Keyboard::new(
             protocol,
             layout_name,
-            crate::keyboard::OverlayConfig {
+            crate::domain::visibility::OverlayConfig {
                 timeout_ms: 2000,
                 activation_delay_ms: 300,
                 visible_layers: u32::MAX,
@@ -398,13 +395,13 @@ mod tests {
         )));
 
         // 2. Device capability variation: QMK feature flags filter lighting/audio actions on protocol level
-        let qmk_features = crate::protocols::qmk_common::QmkFeatures {
+        let qmk_features = crate::firmware::qmk::common::QmkFeatures {
             has_backlight: true,
             has_rgblight: false,
             has_rgb_matrix: false,
             has_audio: false,
         };
-        let filter = crate::protocols::qmk_common::qmk_action_filter(qmk_features).unwrap();
+        let filter = crate::firmware::qmk::common::qmk_action_filter(qmk_features).unwrap();
         // Backlight is enabled
         assert!(filter(&KeySpec::Lighting(crate::key_spec::LightingAction::Backlight(
             crate::key_spec::BacklightAction::Toggle

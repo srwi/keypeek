@@ -1,34 +1,3 @@
-#[allow(unused_imports)]
-pub use crate::firmware::qmk::kle_parser;
-#[allow(unused_imports)]
-pub use crate::layout::geometry as layout_geometry;
-#[allow(unused_imports)]
-pub use crate::firmware::mock;
-#[allow(unused_imports)]
-pub use crate::firmware::qmk::codec as qmk_codec;
-#[allow(unused_imports)]
-pub use crate::firmware::qmk::common as qmk_common;
-#[allow(unused_imports)]
-pub use crate::firmware::qmk::discovery as qmk_discovery;
-#[allow(unused_imports)]
-pub use crate::firmware::qmk::json_parser as qmk_json_parser;
-#[allow(unused_imports)]
-pub(crate) use crate::firmware::qmk::keycode_labels as qmk_keycode_labels;
-#[allow(unused_imports)]
-pub use crate::firmware::qmk::via;
-#[allow(unused_imports)]
-pub use crate::firmware::qmk::vial;
-#[allow(unused_imports)]
-pub use crate::firmware::zmk::codec as zmk_codec;
-#[allow(unused_imports)]
-pub use crate::firmware::zmk::discovery as zmk_discovery;
-#[allow(unused_imports)]
-pub use crate::firmware::zmk::driver as zmk;
-#[allow(unused_imports)]
-pub(crate) use crate::firmware::zmk::keycode_labels as zmk_keycode_labels;
-#[allow(unused_imports)]
-pub use crate::firmware::zmk::rpc as zmk_rpc;
-
 use std::error::Error;
 use std::fmt;
 use std::sync::{mpsc, Arc};
@@ -179,7 +148,7 @@ where
 
 pub type ActionFilter = Arc<dyn Fn(&crate::key_spec::KeySpec) -> bool + Send + Sync>;
 
-pub use crate::layout::{Key, KeyboardDefinition, KeyboardLayout};
+use crate::layout::KeyboardDefinition;
 
 /// How a protocol persists keymap writes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -273,9 +242,6 @@ pub enum ConnectionSpec {
     },
     Mock,
 }
-
-#[allow(unused_imports)]
-pub use crate::firmware::connect_protocol;
 
 #[cfg(test)]
 mod tests {

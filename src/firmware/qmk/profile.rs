@@ -57,9 +57,9 @@ pub struct QmkEditorProfile;
 fn qmk_keyboard_group() -> &'static CandidateGroup {
     static GROUP: OnceLock<CandidateGroup> = OnceLock::new();
     GROUP.get_or_init(|| {
-        let usages = crate::protocols::qmk_codec::qmk_all_basic_usages();
+        let usages = super::codec::qmk_all_basic_usages();
         let candidates = common::build_keyboard_candidates(&QmkKeyPresenter, usages, |id| {
-            crate::protocols::qmk_codec::qmk_search_tokens_for_hid(0x07, id)
+            super::codec::qmk_search_tokens_for_hid(0x07, id)
         });
         CandidateGroup {
             name: "Keyboard",
@@ -71,9 +71,9 @@ fn qmk_keyboard_group() -> &'static CandidateGroup {
 fn qmk_media_group() -> &'static CandidateGroup {
     static GROUP: OnceLock<CandidateGroup> = OnceLock::new();
     GROUP.get_or_init(|| {
-        let usages = crate::protocols::qmk_codec::qmk_all_media_usages();
+        let usages = super::codec::qmk_all_media_usages();
         let candidates = common::build_media_candidates(&QmkKeyPresenter, usages, |id| {
-            crate::protocols::qmk_codec::qmk_search_tokens_for_hid(0x0C, id)
+            super::codec::qmk_search_tokens_for_hid(0x0C, id)
         });
         CandidateGroup {
             name: "Media",
@@ -353,6 +353,6 @@ impl EditorProfile for QmkEditorProfile {
 
     fn parse_raw_keycode(&self, raw: &str) -> Option<KeySpec> {
         let code = u16::from_str_radix(raw, 16).ok()?;
-        Some(crate::protocols::qmk_codec::qmk_to_keyspec(code))
+        Some(super::codec::qmk_to_keyspec(code))
     }
 }

@@ -4,7 +4,8 @@
 //! so layer-change rendering can be exercised. The mock device is only registered
 //! during discovery in debug builds (`cfg!(debug_assertions)` in `device_discovery`).
 
-use crate::protocols::{ConnectionSpec, DeviceError, DeviceEvent, KeyboardDefinition, KeyboardProtocol, WriteSupport};
+use crate::layout::KeyboardDefinition;
+use crate::protocols::{ConnectionSpec, DeviceError, DeviceEvent, KeyboardProtocol, WriteSupport};
 use crate::key_spec::{KeySpec, KeymapSnapshot, LayerInfo};
 use qmk_via_api::keycodes::Keycode;
 use qmk_via_api::QmkLayerOp;
@@ -106,7 +107,7 @@ impl KeyboardProtocol for MockProtocol {
             for (i, &keycode) in codes.iter().enumerate() {
                 let (row, col) = (i / cols, i % cols);
                 if row < rows {
-                    actions[layer][row][col] = Some(crate::protocols::qmk_codec::qmk_to_keyspec(keycode));
+                    actions[layer][row][col] = Some(crate::firmware::qmk::codec::qmk_to_keyspec(keycode));
                 }
             }
         }
@@ -157,7 +158,7 @@ impl KeyboardProtocol for MockProtocol {
         col: usize,
         spec: &KeySpec,
     ) -> Result<(), DeviceError> {
-        let keycode = crate::protocols::qmk_codec::keyspec_to_qmk(spec)?;
+        let keycode = crate::firmware::qmk::codec::keyspec_to_qmk(spec)?;
 
         let Some(layer) = self.layers.get_mut(layer_index) else {
             return Err(DeviceError::Protocol(format!(

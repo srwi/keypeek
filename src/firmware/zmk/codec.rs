@@ -631,7 +631,7 @@ mod tests {
                 super::super::keycode_labels::behavior_to_layout_key(b, &layer_names);
             let spec = zmk_to_keyspec(b);
             use crate::key_presenter::KeyPresenter;
-            let presenter = crate::key_presenter::ZmkKeyPresenter;
+            let presenter = crate::firmware::zmk::ZmkKeyPresenter;
             let spec_layout = presenter.present_key(&spec, &layer_names);
             assert_eq!(
                 legacy_layout, spec_layout,

@@ -1,5 +1,3 @@
-#[allow(unused_imports)]
-pub use qmk_via_api::ranges::*;
 pub use qmk_via_api::QmkModMask;
 
 #[allow(dead_code)]

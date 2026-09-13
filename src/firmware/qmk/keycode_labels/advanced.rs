@@ -10,7 +10,7 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             Some(crate::hid_labels::mod_combo_key(
                 0x07,
                 keycode as u16,
-                crate::protocols::qmk_codec::from_qmk_mask(mods),
+                crate::firmware::qmk::codec::from_qmk_mask(mods),
                 base,
             ))
         }

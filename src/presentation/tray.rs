@@ -26,21 +26,21 @@ fn icon_bytes() -> &'static [u8] {
         .map(|value| value != 0)
         .unwrap_or(false);
     if light_theme {
-        include_bytes!("../resources/tray-icon-black.png")
+        include_bytes!("../../resources/tray-icon-black.png")
     } else {
-        include_bytes!("../resources/tray-icon-white.png")
+        include_bytes!("../../resources/tray-icon-white.png")
     }
 }
 
 // Monochrome template image; macOS tints it to match the menu bar.
 #[cfg(target_os = "macos")]
 fn icon_bytes() -> &'static [u8] {
-    include_bytes!("../resources/tray-icon-template.png")
+    include_bytes!("../../resources/tray-icon-template.png")
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 fn icon_bytes() -> &'static [u8] {
-    include_bytes!("../resources/icon.ico")
+    include_bytes!("../../resources/icon.ico")
 }
 
 fn create_icon() -> Icon {

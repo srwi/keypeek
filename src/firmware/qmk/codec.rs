@@ -903,7 +903,7 @@ mod tests {
 
         let empty_layer_names: Vec<String> = vec![];
         use crate::key_presenter::KeyPresenter;
-        let presenter = crate::key_presenter::QmkKeyPresenter;
+        let presenter = crate::firmware::qmk::QmkKeyPresenter;
         for code in test_codes {
             let legacy_layout = super::super::keycode_labels::qmk_to_layout_key(code);
             let spec = qmk_to_keyspec(code);

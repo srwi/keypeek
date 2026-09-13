@@ -65,7 +65,6 @@ impl EditorState {
         }
 
         let current_section = self.draft.section;
-        let is_valid = self.draft.is_valid();
         let search_query = self.search_query.clone();
 
         super::editor_central_panel(ui, (target.layer_index, current_section), |ui| {
@@ -74,10 +73,10 @@ impl EditorState {
                     self.draw_keyboard_page(ui, keyboard, profile, target, &search_query, style);
                 }
                 EditorSection::KeyToggle => {
-                    self.draw_key_toggle_page(ui, keyboard, profile, target, &search_query, is_valid, style);
+                    self.draw_key_toggle_page(ui, keyboard, profile, target, &search_query, style);
                 }
                 EditorSection::Combo => {
-                    self.draw_combo_page(ui, keyboard, profile, target, &search_query, is_valid, style);
+                    self.draw_combo_page(ui, keyboard, profile, target, &search_query, style);
                 }
                 EditorSection::ModTap => {
                     self.draw_mod_tap_page(ui, keyboard, profile, target, &search_query, style);
@@ -86,10 +85,10 @@ impl EditorState {
                     self.draw_layers_page(ui, keyboard, profile, target, &search_query, style);
                 }
                 EditorSection::LayerMod => {
-                    self.draw_layer_mod_page(ui, keyboard, profile, target, &search_query, is_valid, style);
+                    self.draw_layer_mod_page(ui, keyboard, profile, target, &search_query, style);
                 }
                 EditorSection::OneShot => {
-                    self.draw_one_shot_page(ui, keyboard, profile, target, &search_query, is_valid, style);
+                    self.draw_one_shot_page(ui, keyboard, profile, target, &search_query, style);
                 }
                 EditorSection::Backlight => {
                     self.draw_backlight_page(ui, keyboard, profile, target, &search_query, style);
@@ -270,9 +269,9 @@ impl EditorState {
         profile: &dyn EditorProfile,
         target: EditTarget,
         search_query: &str,
-        is_valid: bool,
         style: &KeyPaintStyle,
     ) {
+        let is_valid = self.draft.is_valid();
         titled_group(ui, "Modifiers", |ui| {
             modifier_toggle_grid(
                 ui,
@@ -448,9 +447,9 @@ impl EditorState {
         profile: &dyn EditorProfile,
         target: EditTarget,
         search_query: &str,
-        is_valid: bool,
         style: &KeyPaintStyle,
     ) {
+        let is_valid = self.draft.is_valid();
         titled_group(ui, "Sticky Modifier", |ui| {
             modifier_toggle_grid(
                 ui,
@@ -541,9 +540,9 @@ impl EditorState {
         profile: &dyn EditorProfile,
         target: EditTarget,
         search_query: &str,
-        is_valid: bool,
         style: &KeyPaintStyle,
     ) {
+        let is_valid = self.draft.is_valid();
         titled_group(ui, "Modifiers", |ui| {
             modifier_toggle_grid(
                 ui,
@@ -600,9 +599,9 @@ impl EditorState {
         profile: &dyn EditorProfile,
         target: EditTarget,
         search_query: &str,
-        is_valid: bool,
         style: &KeyPaintStyle,
     ) {
+        let is_valid = self.draft.is_valid();
         let layer_infos = keyboard.layer_infos();
         let layer_count = layer_infos.len().min(16);
         let layer_names: Vec<String> = layer_infos

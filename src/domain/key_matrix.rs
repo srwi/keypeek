@@ -141,7 +141,7 @@ impl KeyMatrix {
     /// `mod_mask`.
     pub fn held_mod_mask(
         &self,
-        layout_keys: &[crate::protocols::Key],
+        layout_keys: &[crate::domain::layout::Key],
         layer_state: u32,
         default_layer_state: u32,
     ) -> u16 {
@@ -189,7 +189,7 @@ mod tests {
     use crate::hid_labels::Modifiers;
     use crate::key_spec::HidKey;
     use crate::layout_key::{Label, LayoutKey, HELD_MOD_SHIFT};
-    use crate::protocols::Key;
+    use crate::domain::layout::Key;
 
     #[test]
     fn effective_layer_falls_through_transparent_keys() {

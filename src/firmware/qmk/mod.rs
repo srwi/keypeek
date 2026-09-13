@@ -9,14 +9,8 @@ pub mod profile;
 pub mod via;
 pub mod vial;
 
-#[allow(unused_imports)]
-pub use common::QmkProtocol;
 pub use presenter::QmkKeyPresenter;
 pub use profile::QmkEditorProfile;
-#[allow(unused_imports)]
-pub use via::ViaProtocol;
-#[allow(unused_imports)]
-pub use vial::VialProtocol;
 
 use std::sync::Arc;
 use crate::device_discovery::DeviceDriverScanner;

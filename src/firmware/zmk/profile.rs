@@ -54,9 +54,9 @@ pub struct ZmkEditorProfile;
 fn zmk_keyboard_group() -> &'static CandidateGroup {
     static GROUP: OnceLock<CandidateGroup> = OnceLock::new();
     GROUP.get_or_init(|| {
-        let usages = crate::protocols::zmk_codec::zmk_all_keyboard_usages();
+        let usages = super::codec::zmk_all_keyboard_usages();
         let candidates = common::build_keyboard_candidates(&ZmkKeyPresenter, usages, |id| {
-            crate::protocols::zmk_codec::zmk_search_tokens_for_hid(0x07, id)
+            super::codec::zmk_search_tokens_for_hid(0x07, id)
         });
         CandidateGroup {
             name: "Keyboard",
@@ -68,9 +68,9 @@ fn zmk_keyboard_group() -> &'static CandidateGroup {
 fn zmk_media_group() -> &'static CandidateGroup {
     static GROUP: OnceLock<CandidateGroup> = OnceLock::new();
     GROUP.get_or_init(|| {
-        let usages = crate::protocols::zmk_codec::zmk_all_consumer_usages();
+        let usages = super::codec::zmk_all_consumer_usages();
         let candidates = common::build_media_candidates(&ZmkKeyPresenter, usages, |id| {
-            crate::protocols::zmk_codec::zmk_search_tokens_for_hid(0x0C, id)
+            super::codec::zmk_search_tokens_for_hid(0x0C, id)
         });
         CandidateGroup {
             name: "Media",

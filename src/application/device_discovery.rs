@@ -132,7 +132,7 @@ pub fn discover_devices() -> Vec<DiscoveredDevice> {
 /// Constructs a mock virtual keyboard descriptor.
 #[cfg(test)]
 pub fn mock_device() -> DiscoveredDevice {
-    crate::protocols::mock::mock_device()
+    crate::firmware::mock::mock_device()
 }
 
 #[cfg(test)]

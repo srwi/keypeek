@@ -1,7 +1,9 @@
 pub mod driver;
 
-#[allow(unused_imports)]
-pub use driver::{mock_device, MockProtocol, MockScanner};
+#[cfg(test)]
+pub use driver::mock_device;
+pub use driver::MockProtocol;
+use driver::MockScanner;
 
 use std::sync::Arc;
 

@@ -26,11 +26,6 @@ impl KeyPresenter for StandardKeyPresenter {
     }
 }
 
-#[allow(unused_imports)]
-pub use crate::firmware::qmk::QmkKeyPresenter;
-#[allow(unused_imports)]
-pub use crate::firmware::zmk::ZmkKeyPresenter;
-
 /// Baseline implementation of key presentation.
 pub fn present_standard_key(spec: &KeySpec, layer_names: &[String]) -> Option<LayoutKey> {
     match spec {

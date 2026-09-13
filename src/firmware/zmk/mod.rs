@@ -1,13 +1,12 @@
 pub mod codec;
 pub mod discovery;
 pub mod driver;
+#[cfg(test)]
 pub(crate) mod keycode_labels;
 pub mod presenter;
 pub mod profile;
 pub mod rpc;
 
-#[allow(unused_imports)]
-pub use driver::ZmkProtocol;
 pub use presenter::ZmkKeyPresenter;
 pub use profile::ZmkEditorProfile;
 

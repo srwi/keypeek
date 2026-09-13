@@ -1,6 +1,6 @@
 //! Device discovery scanner for ZMK keyboards (Serial and BLE).
 
-use crate::protocols::qmk_discovery::VIA_USAGE_PAGE;
+use crate::firmware::qmk::discovery::VIA_USAGE_PAGE;
 use super::rpc as zmk_rpc;
 use crate::device_discovery::{
     DeviceDriverScanner, DiscoveredDevice, DiscoveryContext, HidDeviceInfo,

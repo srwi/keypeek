@@ -619,14 +619,14 @@ mod tests {
         // without one nothing stages.
         assert_eq!(draft.staged(), None);
         assert_eq!(
-            draft.staged_for(&crate::keymap_editor::profile::QmkEditorProfile),
+            draft.staged_for(&crate::firmware::qmk::QmkEditorProfile),
             Some(KeySpec::KeyPress {
                 key: HidKey::keyboard(0x04),
                 modifiers: Default::default(),
             })
         );
         assert_eq!(
-            draft.staged_for(&crate::keymap_editor::profile::ZmkEditorProfile),
+            draft.staged_for(&crate::firmware::zmk::ZmkEditorProfile),
             None
         );
     }

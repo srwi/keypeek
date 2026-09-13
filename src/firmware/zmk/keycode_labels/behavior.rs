@@ -1,4 +1,3 @@
-use crate::hid_labels::Modifiers;
 use crate::layout_key::{behavior_names, BorderStyle, KeycodeKind, Label, LayoutKey};
 use zmk_studio_api::{
     BacklightCommand, Behavior, BehaviorParam, BluetoothCommand, ExternalPowerCommand, HidUsage,
@@ -304,7 +303,7 @@ pub fn behavior_to_layout_key(behavior: &Behavior, layer_names: &[String]) -> Op
 }
 
 fn mod_mask_to_glyphs(m: u8) -> Label {
-    crate::protocols::zmk_codec::from_zmk_mask(m).label()
+    crate::firmware::zmk::codec::from_zmk_mask(m).label()
 }
 
 fn layer_tap_layout_key(layer_id: u32, tap: HidUsage, behavior: Option<Label>) -> LayoutKey {
