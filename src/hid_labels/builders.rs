@@ -190,26 +190,22 @@ pub fn mod_combo_key(
         };
 
         if let Some(m) = text_modifier {
-            if let Some(text) = crate::os_layout::resolve(usage_id, m) {
-                return LayoutKey {
-                    tap: Label::new(text),
-                    ..Default::default()
-                };
-            }
+            let resolved = crate::os_layout::resolve(usage_id, m)
+                .or_else(|| match m {
+                    crate::os_layout::Modifier::Shift => {
+                        base_key.as_ref().and_then(|k| k.shifted.clone())
+                    }
+                    crate::os_layout::Modifier::RAlt => {
+                        base_key.as_ref().and_then(|k| k.ralt.clone())
+                    }
+                    crate::os_layout::Modifier::ShiftRAlt => {
+                        base_key.as_ref().and_then(|k| k.ralt_shifted.clone())
+                    }
+                    _ => None,
+                })
+                .filter(|t| !t.trim().is_empty());
 
-            // Fallback when active OS layout resolution is unavailable:
-            let fallback = match m {
-                crate::os_layout::Modifier::Shift => {
-                    base_key.as_ref().and_then(|k| k.shifted.clone())
-                }
-                crate::os_layout::Modifier::RAlt => base_key.as_ref().and_then(|k| k.ralt.clone()),
-                crate::os_layout::Modifier::ShiftRAlt => {
-                    base_key.as_ref().and_then(|k| k.ralt_shifted.clone())
-                }
-                _ => None,
-            };
-
-            if let Some(text) = fallback {
+            if let Some(text) = resolved {
                 return LayoutKey {
                     tap: Label::new(text),
                     ..Default::default()

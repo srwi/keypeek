@@ -4,8 +4,9 @@
 //! section organization, candidate presentation, and vocabulary.
 
 use crate::application::Keyboard;
+use crate::hid_labels::Modifiers;
 use crate::key_presenter::KeyPresenter;
-use crate::key_spec::{HidKey, KeySpec, LayerInfo};
+use crate::key_spec::{HidKey, KeySpec};
 use crate::keymap_editor::picker::CandidateGroup;
 use super::draft::EditorSection;
 
@@ -14,6 +15,13 @@ use super::draft::EditorSection;
 pub struct SidebarSection<T: 'static> {
     pub title: &'static str,
     pub items: &'static [T],
+}
+
+/// Target tap key and modifier configuration for Layer-Tap candidates.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LayerTapTarget {
+    pub key: Option<HidKey>,
+    pub modifiers: Modifiers,
 }
 
 /// Defines firmware-native editor structure, candidate presentation, and sidebar layout.
@@ -49,9 +57,8 @@ pub trait EditorProfile: KeyPresenter + Send + Sync {
     fn layer_groups(
         &self,
         layer_count: usize,
-        layer_infos: &[LayerInfo],
         layer_names: &[String],
-        tap_key: Option<HidKey>,
+        tap: LayerTapTarget,
     ) -> Vec<CandidateGroup>;
 
     /// Parses a raw firmware keycode string (e.g. hex input in the Any Keycode section)
@@ -362,14 +369,41 @@ mod tests {
         assert!(qmk_mouse.iter().any(|g| g.name == "Mouse Acceleration"));
 
         // ZMK layer operations omit Default and TapToggle
-        let zmk_layers = zmk.layer_groups(4, &[], &[], None);
+        let zmk_layers = zmk.layer_groups(4, &[], LayerTapTarget::default());
         assert!(!zmk_layers.iter().any(|g| g.name == "Set Default Layer"));
         assert!(!zmk_layers.iter().any(|g| g.name == "Tap Toggle"));
 
         // QMK layer operations include Default and TapToggle
-        let qmk_layers = qmk.layer_groups(4, &[], &[], None);
+        let qmk_layers = qmk.layer_groups(4, &[], LayerTapTarget::default());
         assert!(qmk_layers.iter().any(|g| g.name == "Set Default Layer"));
         assert!(qmk_layers.iter().any(|g| g.name == "Tap Toggle"));
+
+        // Layer tap candidates include modifiers and display them in argument (bottom strip)
+        let mods = Modifiers {
+            shift: true,
+            ..Default::default()
+        };
+        let zmk_lt = zmk.layer_groups(
+            4,
+            &[],
+            LayerTapTarget {
+                key: Some(HidKey::keyboard(0x2C)),
+                modifiers: mods,
+            },
+        );
+        let lt_group = zmk_lt.iter().find(|g| g.name == "Layer Tap").unwrap();
+        assert_eq!(lt_group.candidates.len(), 4);
+        for cand in &lt_group.candidates {
+            if let KeySpec::LayerTap { tap_modifiers, .. } = &cand.binding {
+                assert_eq!(*tap_modifiers, mods);
+            } else {
+                panic!("expected LayerTap candidate");
+            }
+            assert!(
+                cand.key.argument.is_some(),
+                "Layer tap candidate should reflect the modifier in argument (bottom strip)"
+            );
+        }
 
         // Boot & Power family separation:
         // QMK boot & power includes Clear EEPROM, omits Soft Off

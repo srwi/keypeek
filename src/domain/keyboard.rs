@@ -105,6 +105,13 @@ impl KeyboardDomain {
         self.matrix.lock().unwrap().layer_infos().to_vec()
     }
 
+    pub fn layer_names(&self) -> Vec<String> {
+        self.layer_infos()
+            .iter()
+            .map(|l| l.name.clone().unwrap_or_default())
+            .collect()
+    }
+
     pub fn get_action(&self, layer: usize, row: usize, col: usize) -> Option<KeySpec> {
         self.matrix
             .lock()

@@ -2,7 +2,7 @@ use std::sync::OnceLock;
 
 use crate::firmware::zmk::ZmkKeyPresenter;
 use crate::key_presenter::KeyPresenter;
-use crate::key_spec::{HidKey, KeySpec, LayerInfo};
+use crate::key_spec::KeySpec;
 use crate::keymap_editor::catalog::common;
 use crate::keymap_editor::draft::EditorSection;
 use crate::keymap_editor::picker::CandidateGroup;
@@ -307,16 +307,14 @@ impl EditorProfile for ZmkEditorProfile {
     fn layer_groups(
         &self,
         layer_count: usize,
-        layer_infos: &[LayerInfo],
         layer_names: &[String],
-        tap_key: Option<HidKey>,
+        tap: crate::keymap_editor::LayerTapTarget,
     ) -> Vec<CandidateGroup> {
         common::build_layer_groups(
             &ZmkKeyPresenter,
             layer_count,
-            layer_infos,
             layer_names,
-            tap_key,
+            tap,
             &ZMK_LAYER_OPS,
             |act| {
                 use crate::key_spec::LayerActivation;

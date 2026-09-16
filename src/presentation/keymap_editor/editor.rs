@@ -373,16 +373,11 @@ impl EditorState {
         search_query: &str,
         style: &KeyPaintStyle,
     ) {
-        let layer_infos = keyboard.layer_infos();
-        let layer_names: Vec<String> = layer_infos
-            .iter()
-            .map(|l| l.name.clone().unwrap_or_default())
-            .collect();
+        let layer_names = keyboard.layer_names();
         let groups = profile.layer_groups(
-            layer_infos.len(),
-            &layer_infos,
+            layer_names.len(),
             &layer_names,
-            self.draft.tap_key,
+            self.draft.layer_tap_target(),
         );
 
         let current_action = target.action(keyboard);
@@ -602,12 +597,8 @@ impl EditorState {
         style: &KeyPaintStyle,
     ) {
         let is_valid = self.draft.is_valid();
-        let layer_infos = keyboard.layer_infos();
-        let layer_count = layer_infos.len().min(16);
-        let layer_names: Vec<String> = layer_infos
-            .iter()
-            .map(|l| l.name.clone().unwrap_or_default())
-            .collect();
+        let layer_names = keyboard.layer_names();
+        let layer_count = layer_names.len().min(16);
 
         let candidates: Vec<super::picker::Candidate> = (0..layer_count)
             .map(|layer| {

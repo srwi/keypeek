@@ -134,6 +134,10 @@ impl Keyboard {
         self.domain.layer_infos()
     }
 
+    pub fn layer_names(&self) -> Vec<String> {
+        self.domain.layer_names()
+    }
+
     pub fn get_action(&self, layer: usize, row: usize, col: usize) -> Option<KeySpec> {
         self.domain.get_action(layer, row, col)
     }

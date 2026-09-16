@@ -8,7 +8,7 @@ use crate::hid_labels::Modifiers;
 use crate::key_presenter::KeyPresenter;
 use crate::key_spec::{
     AudioAction, BacklightAction, BluetoothAction, CustomBinding, CustomKind, HidKey, KeySpec,
-    LayerActivation, LayerInfo, LightingAction, MouseAction, MouseButton, OutputTarget,
+    LayerActivation, LightingAction, MouseAction, MouseButton, OutputTarget,
     PowerAction, RgbAction, RgbMatrixAction,
 };
 use crate::keymap_editor::picker::{Candidate, CandidateGroup};
@@ -608,13 +608,12 @@ pub fn build_custom_groups(presenter: &dyn KeyPresenter) -> Vec<CandidateGroup> 
 pub fn build_layer_groups(
     presenter: &dyn KeyPresenter,
     layer_count: usize,
-    layer_infos: &[LayerInfo],
     layer_names: &[String],
-    tap_key: Option<HidKey>,
+    tap: crate::keymap_editor::LayerTapTarget,
     ops: &[(&'static str, LayerActivation, &'static [&'static str])],
     extra_tokens_fn: impl Fn(LayerActivation) -> &'static [&'static str],
 ) -> Vec<CandidateGroup> {
-    let count = layer_count.min(layer_infos.len().max(layer_count)).min(32);
+    let count = layer_count.min(32);
 
     let mut groups: Vec<CandidateGroup> = ops
         .iter()
@@ -644,14 +643,14 @@ pub fn build_layer_groups(
         })
         .collect();
 
-    let tap = tap_key.unwrap_or_else(|| HidKey::keyboard(0x2C));
+    let tap_key = tap.key.unwrap_or_else(|| HidKey::keyboard(0x2C));
     let lt_candidates = (0..count)
         .map(|layer| {
             let mut cand = Candidate::from_action(
                 KeySpec::LayerTap {
                     layer: layer as u8,
-                    tap,
-                    tap_modifiers: Modifiers::default(),
+                    tap: tap_key,
+                    tap_modifiers: tap.modifiers,
                 },
                 presenter,
                 layer_names,

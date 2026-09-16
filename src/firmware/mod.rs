@@ -47,3 +47,23 @@ pub fn default_scanners() -> Vec<Box<dyn DeviceDriverScanner>> {
 pub fn connect_protocol(spec: &ConnectionSpec) -> Result<Box<dyn KeyboardProtocol>, DeviceError> {
     bundle_for_spec(spec).connect(spec)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bundle_order_prioritizes_zmk_over_qmk() {
+        let bundles = all_bundles();
+        let zmk_idx = bundles
+            .iter()
+            .position(|b| b.create_profile().name() == "ZMK");
+        let qmk_idx = bundles
+            .iter()
+            .position(|b| b.create_profile().name() == "QMK");
+        assert!(
+            matches!((zmk_idx, qmk_idx), (Some(z), Some(q)) if z < q),
+            "ZMK scanner must precede QMK scanner to prevent double-detection"
+        );
+    }
+}

@@ -8,7 +8,7 @@ pub mod profile;
 
 pub use draft::KeyDraft;
 pub use picker::KEY_UNIT;
-pub use profile::{EditorProfile, SidebarSection};
+pub use profile::{EditorProfile, LayerTapTarget, SidebarSection};
 
 use crate::key_spec::KeySpec;
 use crate::application::Keyboard;

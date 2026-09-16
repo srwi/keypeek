@@ -5,7 +5,7 @@
 
 use crate::hid_labels::Modifiers;
 use crate::key_spec::{BacklightAction, HidKey, KeySpec, LayerActivation, LightingAction};
-use super::profile::EditorProfile;
+use super::profile::{EditorProfile, LayerTapTarget};
 
 /// Unified sidebar sections for key categories.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
@@ -209,6 +209,7 @@ impl KeyDraft {
                 return Self {
                     section,
                     tap_key: draft.tap_key,
+                    tap_modifiers: draft.tap_modifiers,
                     is_layer_tap: false,
                     ..Default::default()
                 };
@@ -227,6 +228,18 @@ impl KeyDraft {
         Self {
             section,
             ..Default::default()
+        }
+    }
+
+    /// Extracts the active tap key and modifier target for Layer-Tap candidates.
+    pub fn layer_tap_target(&self) -> LayerTapTarget {
+        LayerTapTarget {
+            key: self.tap_key,
+            modifiers: if self.is_layer_tap {
+                modifiers_from_u8(self.tap_modifiers)
+            } else {
+                Modifiers::default()
+            },
         }
     }
 
