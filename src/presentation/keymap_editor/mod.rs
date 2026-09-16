@@ -11,7 +11,7 @@ pub use picker::KEY_UNIT;
 pub use profile::{EditorProfile, SidebarSection};
 
 use crate::key_spec::KeySpec;
-use crate::keyboard::Keyboard;
+use crate::application::Keyboard;
 use crate::protocols::WriteSupport;
 use egui::Window;
 use std::sync::mpsc;

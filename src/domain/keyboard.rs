@@ -137,11 +137,6 @@ impl KeyboardDomain {
         self.visibility.lock().unwrap().set_config(config);
     }
 
-    #[allow(dead_code)]
-    pub fn layout_definition(&self) -> &KeyboardDefinition {
-        &self.definition
-    }
-
     pub fn layout_names(&self) -> Vec<String> {
         self.definition.get_layout_names()
     }

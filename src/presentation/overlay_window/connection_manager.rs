@@ -1,6 +1,7 @@
 use crate::connection::{ConnectionRequest, ConnectionTask};
 use crate::device_discovery::DiscoveredDevice;
-use crate::keyboard::{Keyboard, OverlayConfig};
+use crate::application::Keyboard;
+use crate::domain::visibility::OverlayConfig;
 use crate::keymap_editor::EditorProfile;
 use crate::protocols::{ConnectionSpec, Reopener};
 use crate::ui_wake::UiWake;
@@ -107,21 +108,11 @@ impl DeviceConnectionManager {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn layout_file_path(&self) -> &str {
-        &self.layout_file_path
-    }
-
     pub fn set_layout_file_path(&mut self, path: String) {
         self.layout_file_path = path;
     }
 
-    #[allow(dead_code)]
-    pub fn status(&self) -> &ConnectionStatus {
-        &self.status
-    }
-
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn is_disconnected(&self) -> bool {
         self.status.is_disconnected()
     }
@@ -162,7 +153,7 @@ impl DeviceConnectionManager {
         self.ever_connected
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn preferred_layout_name(&self) -> Option<&str> {
         self.preferred_layout_name.as_deref()
     }

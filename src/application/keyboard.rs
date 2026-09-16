@@ -8,7 +8,7 @@ use crate::application::session::KeyboardSession;
 use crate::domain::keyboard::KeyboardDomain;
 use crate::domain::key_matrix::KeyMatrix;
 use crate::domain::key_spec::{KeySpec, LayerInfo};
-use crate::domain::layout::{KeyboardDefinition, KeyboardLayout};
+use crate::domain::layout::KeyboardLayout;
 use crate::domain::visibility::OverlayConfig;
 use crate::key_presenter::KeyPresenter;
 use crate::layout_key::LayoutKey;
@@ -70,16 +70,6 @@ impl Keyboard {
         )?;
 
         Ok(Keyboard { domain, session })
-    }
-
-    #[allow(dead_code)]
-    pub fn domain(&self) -> &KeyboardDomain {
-        &self.domain
-    }
-
-    #[allow(dead_code)]
-    pub fn session(&self) -> &KeyboardSession {
-        &self.session
     }
 
     // --- Session delegations ---
@@ -158,11 +148,6 @@ impl Keyboard {
 
     pub fn is_ralt_held(&self) -> bool {
         self.domain.is_ralt_held()
-    }
-
-    #[allow(dead_code)]
-    pub fn layout_definition(&self) -> &KeyboardDefinition {
-        self.domain.layout_definition()
     }
 
     pub fn layout_names(&self) -> Vec<String> {

@@ -1,6 +1,6 @@
 use crate::key_presenter::KeyPresenter;
 use crate::key_spec::KeySpec;
-use crate::keyboard::KeyboardDomain;
+use crate::domain::KeyboardDomain;
 use crate::protocols::{ActionFilter, DeviceEvent, KeyboardProtocol, WriteSupport};
 use crate::ui_wake::UiWake;
 use std::sync::atomic::{AtomicBool, Ordering};

@@ -22,10 +22,6 @@ use crate::protocols::{ConnectionSpec, DeviceError, KeyboardProtocol};
 pub struct QmkBundle;
 
 impl FirmwareBundle for QmkBundle {
-    fn driver_id(&self) -> &'static str {
-        "qmk"
-    }
-
     fn create_presenter(&self) -> Arc<dyn KeyPresenter> {
         Arc::new(QmkKeyPresenter)
     }

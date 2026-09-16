@@ -17,10 +17,6 @@ use crate::protocols::{ConnectionSpec, DeviceError, KeyboardProtocol};
 pub struct MockBundle;
 
 impl FirmwareBundle for MockBundle {
-    fn driver_id(&self) -> &'static str {
-        "mock"
-    }
-
     fn create_presenter(&self) -> Arc<dyn KeyPresenter> {
         Arc::new(QmkKeyPresenter)
     }

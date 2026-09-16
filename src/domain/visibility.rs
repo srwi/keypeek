@@ -126,11 +126,6 @@ impl VisibilityStateMachine {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn config(&self) -> OverlayConfig {
-        self.config
-    }
-
     pub fn set_config(&mut self, config: OverlayConfig) {
         self.config = config;
     }

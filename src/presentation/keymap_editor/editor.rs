@@ -12,7 +12,7 @@ use super::{EditTarget, EditorProfile, EditorState};
 use crate::hid_labels::Modifiers;
 use crate::key_paint::KeyPaintStyle;
 use crate::key_spec::{HidKey, KeySpec, LayerActivation};
-use crate::keyboard::Keyboard;
+use crate::application::Keyboard;
 use crate::ui_widgets::titled_group;
 
 struct TapPickerOpts<'a> {

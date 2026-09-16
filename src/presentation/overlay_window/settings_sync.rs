@@ -1,5 +1,5 @@
 use super::OverlayApp;
-use crate::keyboard::OverlayConfig;
+use crate::domain::visibility::OverlayConfig;
 use crate::settings::WindowPosition;
 use egui::Align2;
 use std::time::Instant;

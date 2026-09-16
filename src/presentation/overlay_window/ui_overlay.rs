@@ -1,6 +1,6 @@
 use super::OverlayApp;
 use crate::key_paint::{self, KeyDisplay};
-use crate::keyboard::Keyboard;
+use crate::application::Keyboard;
 use crate::layout_key::KeycodeKind;
 use crate::settings::LegendMode;
 use egui::Window;

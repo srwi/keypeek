@@ -1,7 +1,7 @@
 use crate::layout_key::{Label, LayoutKey};
 use zmk_studio_api::Keycode;
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn keycode_to_layout_key(keycode: &Keycode) -> LayoutKey {
     let mut key = super::hid_usage::hid_usage_to_layout_key(
         zmk_studio_api::HidUsage::from_encoded(*keycode as u32),

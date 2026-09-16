@@ -1,16 +1,5 @@
 pub use qmk_via_api::QmkModMask;
 
-#[allow(dead_code)]
-pub const MOD_LCTL: u16 = QmkModMask::LCTL as u16;
-#[allow(dead_code)]
-pub const MOD_LSFT: u16 = QmkModMask::LSFT as u16;
-#[allow(dead_code)]
-pub const MOD_LALT: u16 = QmkModMask::LALT as u16;
-#[allow(dead_code)]
-pub const MOD_LGUI: u16 = QmkModMask::LGUI as u16;
-/// QMK's "right-hand variant" bit, e.g. `MOD_LALT | MOD_RIGHT_FLAG` is RAlt.
-#[allow(dead_code)]
-pub const MOD_RIGHT_FLAG: u16 = QmkModMask::RIGHT_HAND as u16;
 
 /// Translate a QMK mod mask into the protocol-agnostic
 /// `HELD_MOD_SHIFT`/`HELD_MOD_RALT` flags `LayoutKey::mod_mask` uses.

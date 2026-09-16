@@ -93,11 +93,6 @@ impl Modifiers {
             && !self.right_gui
     }
 
-    #[allow(dead_code)]
-    pub fn has_right(&self) -> bool {
-        self.right_ctrl || self.right_shift || self.right_alt || self.right_gui
-    }
-
     pub fn label(&self) -> Label {
         crate::layout_key::modifier_symbols::glyphs(
             self.ctrl || self.right_ctrl,

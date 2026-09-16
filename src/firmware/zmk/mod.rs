@@ -20,10 +20,6 @@ use crate::protocols::{ConnectionSpec, DeviceError, KeyboardProtocol, ZmkTranspo
 pub struct ZmkBundle;
 
 impl FirmwareBundle for ZmkBundle {
-    fn driver_id(&self) -> &'static str {
-        "zmk"
-    }
-
     fn create_presenter(&self) -> Arc<dyn KeyPresenter> {
         Arc::new(ZmkKeyPresenter)
     }

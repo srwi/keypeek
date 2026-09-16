@@ -1,4 +1,5 @@
-use crate::keyboard::{Keyboard, OverlayConfig};
+use crate::application::Keyboard;
+use crate::domain::visibility::OverlayConfig;
 use crate::protocols::{ConnectionSpec, DeviceError, KeyboardProtocol, Reopener};
 use crate::ui_wake::UiWake;
 use std::sync::mpsc::{self, TryRecvError};

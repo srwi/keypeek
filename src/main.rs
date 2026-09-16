@@ -9,12 +9,6 @@ mod os_layout;
 mod platform;
 mod protocols;
 
-pub mod keyboard {
-    pub use crate::application::keyboard::Keyboard;
-    pub use crate::domain::keyboard::KeyboardDomain;
-    pub use crate::domain::visibility::OverlayConfig;
-}
-
 pub use application::{connection, device_discovery, session};
 pub use domain::{key_matrix, key_spec, layout, visibility};
 pub use presentation::{
