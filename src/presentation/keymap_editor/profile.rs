@@ -61,6 +61,18 @@ pub trait EditorProfile: KeyPresenter + Send + Sync {
         tap: LayerTapTarget,
     ) -> Vec<CandidateGroup>;
 
+    /// Returns whether this firmware profile supports modifier combinations on tap keys (e.g. Mod-Tap or Layer-Tap).
+    fn supports_tap_modifiers(&self) -> bool {
+        false
+    }
+
+    /// Returns whether this firmware profile supports one-shot/sticky keys with a base key (e.g. `&sk A`).
+    ///
+    /// When false, only one-shot modifiers (`OSM`) are supported.
+    fn supports_oneshot_keys(&self) -> bool {
+        false
+    }
+
     /// Parses a raw firmware keycode string (e.g. hex input in the Any Keycode section)
     /// into a domain [`KeySpec`].
     fn parse_raw_keycode(&self, _raw: &str) -> Option<KeySpec> {
@@ -378,7 +390,15 @@ mod tests {
         assert!(qmk_layers.iter().any(|g| g.name == "Set Default Layer"));
         assert!(qmk_layers.iter().any(|g| g.name == "Tap Toggle"));
 
-        // Layer tap candidates include modifiers and display them in argument (bottom strip)
+        // Tap modifier capabilities: ZMK supports modifiers on tap keys, QMK does not
+        assert!(zmk.supports_tap_modifiers());
+        assert!(!qmk.supports_tap_modifiers());
+
+        // One-shot key capabilities: ZMK supports sticky keys, QMK supports only sticky modifiers
+        assert!(zmk.supports_oneshot_keys());
+        assert!(!qmk.supports_oneshot_keys());
+
+        // ZMK layer tap candidates include modifiers and display them in argument (bottom strip)
         let mods = Modifiers {
             shift: true,
             ..Default::default()

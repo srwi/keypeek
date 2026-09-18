@@ -837,6 +837,36 @@ mod tests {
     }
 
     #[test]
+    fn test_qmk_tap_with_modifiers_rejected() {
+        let mods = Modifiers {
+            shift: true,
+            ..Default::default()
+        };
+        let lt = KeySpec::LayerTap {
+            layer: 2,
+            tap: HidKey::keyboard(0x2C),
+            tap_modifiers: mods,
+        };
+        assert!(matches!(
+            keyspec_to_qmk(&lt),
+            Err(DeviceError::Unsupported(_))
+        ));
+
+        let mt = KeySpec::ModTap {
+            hold: Modifiers {
+                ctrl: true,
+                ..Default::default()
+            },
+            tap: HidKey::keyboard(0x28),
+            tap_modifiers: mods,
+        };
+        assert!(matches!(
+            keyspec_to_qmk(&mt),
+            Err(DeviceError::Unsupported(_))
+        ));
+    }
+
+    #[test]
     fn test_qmk_display_fidelity_parity() {
         let test_codes = [
             Keycode::KC_TRANSPARENT as u16,

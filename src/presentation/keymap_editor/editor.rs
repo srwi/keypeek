@@ -10,16 +10,9 @@ use super::picker::{
 };
 use super::{EditTarget, EditorProfile, EditorState};
 use crate::application::Keyboard;
-use crate::hid_labels::Modifiers;
 use crate::key_paint::KeyPaintStyle;
 use crate::key_spec::{HidKey, KeySpec, LayerActivation};
 use crate::ui_widgets::titled_group;
-
-struct TapPickerOpts<'a> {
-    id_salt: &'static str,
-    supports_tap_mods: bool,
-    search_query: &'a str,
-}
 
 impl EditorState {
     /// Draws the unified keymap editor body (sidebar + central panel).
@@ -226,15 +219,15 @@ impl EditorState {
         keyboard: &Keyboard,
         profile: &dyn EditorProfile,
         target: EditTarget,
-        opts: TapPickerOpts<'_>,
+        search_query: &str,
         style: &KeyPaintStyle,
     ) {
         let is_valid = self.draft.is_valid();
         titled_group(ui, "Tap key", |ui| {
-            if opts.supports_tap_mods {
+            if profile.supports_tap_modifiers() {
                 modifier_toggle_grid(
                     ui,
-                    opts.id_salt,
+                    "tap_mods",
                     self.draft.tap_modifiers,
                     is_valid,
                     style,
@@ -251,7 +244,7 @@ impl EditorState {
             multi_candidate_groups(
                 ui,
                 profile.tap_categories(),
-                opts.search_query,
+                search_query,
                 |c| keyboard.is_action_supported(&c.binding),
                 selected,
                 style,
@@ -336,27 +329,12 @@ impl EditorState {
             );
         });
 
-        let supports_tap_mods = keyboard.is_action_supported(&KeySpec::ModTap {
-            hold: Modifiers {
-                shift: true,
-                ..Default::default()
-            },
-            tap: HidKey::keyboard(0x04),
-            tap_modifiers: Modifiers {
-                shift: true,
-                ..Default::default()
-            },
-        });
         self.draw_tap_key_picker(
             ui,
             keyboard,
             profile,
             target,
-            TapPickerOpts {
-                id_salt: "mt_tap_mods",
-                supports_tap_mods,
-                search_query,
-            },
+            search_query,
             style,
         );
 
@@ -413,24 +391,12 @@ impl EditorState {
         );
 
         if self.draft.is_layer_tap {
-            let supports_tap_mods = keyboard.is_action_supported(&KeySpec::LayerTap {
-                layer: 0,
-                tap: HidKey::keyboard(0x04),
-                tap_modifiers: Modifiers {
-                    shift: true,
-                    ..Default::default()
-                },
-            });
             self.draw_tap_key_picker(
                 ui,
                 keyboard,
                 profile,
                 target,
-                TapPickerOpts {
-                    id_salt: "lt_tap_mods",
-                    supports_tap_mods,
-                    search_query,
-                },
+                search_query,
                 style,
             );
         }
@@ -459,39 +425,31 @@ impl EditorState {
                 },
             );
 
-            let tap_spec = self.draft.tap_key_spec();
-            let selected = tap_spec.as_ref().map(|s| SelectedKey::new(s, is_valid));
+            if profile.supports_oneshot_keys() {
+                let tap_spec = self.draft.tap_key_spec();
+                let selected = tap_spec.as_ref().map(|s| SelectedKey::new(s, is_valid));
 
-            let candidate_filter = |c: &super::picker::Candidate| {
-                if let KeySpec::KeyPress { key, .. } = &c.binding {
-                    let sample = KeySpec::StickyKey {
-                        key: Some(*key),
-                        modifiers: Modifiers::default(),
-                    };
-                    keyboard.is_action_supported(&sample)
-                } else {
-                    false
-                }
-            };
-
-            multi_candidate_groups(
-                ui,
-                profile.tap_categories(),
-                search_query,
-                candidate_filter,
-                selected,
-                style,
-                |_, candidate| {
-                    if let KeySpec::KeyPress { key, .. } = &candidate.binding {
-                        if self.draft.tap_key == Some(*key) {
-                            self.draft.tap_key = None;
-                        } else {
-                            self.draft.tap_key = Some(*key);
+                multi_candidate_groups(
+                    ui,
+                    profile.tap_categories(),
+                    search_query,
+                    |c| keyboard.is_action_supported(&c.binding),
+                    selected,
+                    style,
+                    |_, candidate| {
+                        if let KeySpec::KeyPress { key, .. } = &candidate.binding {
+                            if self.draft.tap_key == Some(*key) {
+                                self.draft.tap_key = None;
+                            } else {
+                                self.draft.tap_key = Some(*key);
+                            }
+                            self.commit_draft(keyboard, profile, target);
                         }
-                        self.commit_draft(keyboard, profile, target);
-                    }
-                },
-            );
+                    },
+                );
+            } else if self.draft.modifiers == 0 {
+                ui.weak("Select at least one modifier.");
+            }
         });
     }
 
@@ -559,21 +517,11 @@ impl EditorState {
                     .filter(|a| matches!(a, KeySpec::KeyToggle { .. })))
                 .map(SelectedKey::valid);
 
-            let candidate_filter = |c: &super::picker::Candidate| match &c.binding {
-                KeySpec::KeyPress { key, modifiers } => {
-                    keyboard.is_action_supported(&KeySpec::KeyToggle {
-                        key: *key,
-                        modifiers: *modifiers,
-                    })
-                }
-                _ => false,
-            };
-
             multi_candidate_groups(
                 ui,
                 profile.tap_categories(),
                 search_query,
-                candidate_filter,
+                |c| keyboard.is_action_supported(&c.binding),
                 selected,
                 style,
                 |_, candidate| {

@@ -328,4 +328,12 @@ impl EditorProfile for ZmkEditorProfile {
             },
         )
     }
+
+    fn supports_tap_modifiers(&self) -> bool {
+        true
+    }
+
+    fn supports_oneshot_keys(&self) -> bool {
+        true
+    }
 }
