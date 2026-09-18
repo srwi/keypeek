@@ -101,13 +101,13 @@ impl KeyDraft {
         match spec {
             KeySpec::KeyPress { key, modifiers } => {
                 draft.section = EditorSection::Keyboard;
-                draft.modifiers = u8_from_modifiers(*modifiers);
+                draft.modifiers = modifiers.to_hid_mask();
                 draft.tap_key = Some(*key);
             }
             KeySpec::KeyToggle { key, modifiers } => {
                 draft.section = EditorSection::KeyToggle;
                 draft.tap_key = Some(*key);
-                draft.modifiers = u8_from_modifiers(*modifiers);
+                draft.modifiers = modifiers.to_hid_mask();
             }
             KeySpec::ModTap {
                 hold,
@@ -115,9 +115,9 @@ impl KeyDraft {
                 tap_modifiers,
             } => {
                 draft.section = EditorSection::ModTap;
-                draft.hold_mods = u8_from_modifiers(*hold);
+                draft.hold_mods = hold.to_hid_mask();
                 draft.tap_key = Some(*tap);
-                draft.tap_modifiers = u8_from_modifiers(*tap_modifiers);
+                draft.tap_modifiers = tap_modifiers.to_hid_mask();
             }
             KeySpec::LayerTap {
                 layer,
@@ -127,7 +127,7 @@ impl KeyDraft {
                 draft.section = EditorSection::Layers;
                 draft.target_layer = Some(*layer as usize);
                 draft.tap_key = Some(*tap);
-                draft.tap_modifiers = u8_from_modifiers(*tap_modifiers);
+                draft.tap_modifiers = tap_modifiers.to_hid_mask();
                 draft.is_layer_tap = true;
                 draft.layer_activation = None;
             }
@@ -135,7 +135,7 @@ impl KeyDraft {
                 if let LayerActivation::LayerMod(mods) = activation {
                     draft.section = EditorSection::LayerMod;
                     draft.target_layer = Some(*layer as usize);
-                    draft.modifiers = u8_from_modifiers(*mods);
+                    draft.modifiers = mods.to_hid_mask();
                 } else {
                     draft.section = EditorSection::Layers;
                     draft.target_layer = Some(*layer as usize);
@@ -146,7 +146,7 @@ impl KeyDraft {
             KeySpec::StickyKey { key, modifiers } => {
                 draft.section = EditorSection::OneShot;
                 draft.tap_key = *key;
-                draft.modifiers = u8_from_modifiers(*modifiers);
+                draft.modifiers = modifiers.to_hid_mask();
             }
             KeySpec::Bluetooth(_) => {
                 draft.section = EditorSection::Bluetooth;
@@ -218,7 +218,7 @@ impl KeyDraft {
         LayerTapTarget {
             key: self.tap_key,
             modifiers: if self.is_layer_tap {
-                modifiers_from_u8(self.tap_modifiers)
+                Modifiers::from_hid_mask(self.tap_modifiers)
             } else {
                 Modifiers::default()
             },
@@ -251,7 +251,7 @@ impl KeyDraft {
                 let tap = self.tap_key?;
                 Some(KeySpec::KeyPress {
                     key: tap,
-                    modifiers: modifiers_from_u8(self.modifiers),
+                    modifiers: Modifiers::from_hid_mask(self.modifiers),
                 })
             }
             EditorSection::Combo => {
@@ -261,14 +261,14 @@ impl KeyDraft {
                 }
                 Some(KeySpec::KeyPress {
                     key: tap,
-                    modifiers: modifiers_from_u8(self.modifiers),
+                    modifiers: Modifiers::from_hid_mask(self.modifiers),
                 })
             }
             EditorSection::KeyToggle => {
                 let tap = self.tap_key?;
                 Some(KeySpec::KeyToggle {
                     key: tap,
-                    modifiers: modifiers_from_u8(self.modifiers),
+                    modifiers: Modifiers::from_hid_mask(self.modifiers),
                 })
             }
             EditorSection::ModTap => {
@@ -277,9 +277,9 @@ impl KeyDraft {
                     return None;
                 }
                 Some(KeySpec::ModTap {
-                    hold: modifiers_from_u8(self.hold_mods),
+                    hold: Modifiers::from_hid_mask(self.hold_mods),
                     tap,
-                    tap_modifiers: modifiers_from_u8(self.tap_modifiers),
+                    tap_modifiers: Modifiers::from_hid_mask(self.tap_modifiers),
                 })
             }
             EditorSection::Layers => {
@@ -289,7 +289,7 @@ impl KeyDraft {
                     Some(KeySpec::LayerTap {
                         layer,
                         tap,
-                        tap_modifiers: modifiers_from_u8(self.tap_modifiers),
+                        tap_modifiers: Modifiers::from_hid_mask(self.tap_modifiers),
                     })
                 } else if let Some(layer) = self.target_layer {
                     let activation = self.layer_activation.unwrap_or(LayerActivation::Momentary);
@@ -308,7 +308,7 @@ impl KeyDraft {
                 }
                 Some(KeySpec::Layer {
                     layer,
-                    activation: LayerActivation::LayerMod(modifiers_from_u8(self.modifiers)),
+                    activation: LayerActivation::LayerMod(Modifiers::from_hid_mask(self.modifiers)),
                 })
             }
             EditorSection::OneShot => {
@@ -317,7 +317,7 @@ impl KeyDraft {
                 }
                 Some(KeySpec::StickyKey {
                     key: self.tap_key,
-                    modifiers: modifiers_from_u8(self.modifiers),
+                    modifiers: Modifiers::from_hid_mask(self.modifiers),
                 })
             }
             _ => None,
@@ -345,16 +345,6 @@ impl KeyDraft {
             modifiers: Modifiers::default(),
         })
     }
-}
-
-/// Converts a `Modifiers` struct to an 8-bit mask (bits 0..3 Left, 4..7 Right).
-pub fn u8_from_modifiers(mods: Modifiers) -> u8 {
-    mods.to_hid_mask()
-}
-
-/// Converts an 8-bit modifier mask to a `Modifiers` struct.
-pub fn modifiers_from_u8(mask: u8) -> Modifiers {
-    Modifiers::from_hid_mask(mask)
 }
 
 #[cfg(test)]
@@ -835,9 +825,9 @@ mod tests {
             right_alt: true,
             right_gui: true,
         };
-        let mask = u8_from_modifiers(mods);
+        let mask = mods.to_hid_mask();
         assert_eq!(mask, 0xFF);
-        let round_trip = modifiers_from_u8(mask);
+        let round_trip = Modifiers::from_hid_mask(mask);
         assert_eq!(mods, round_trip);
     }
 }

@@ -91,7 +91,7 @@ struct WaylandApp {
 
     egui_ctx: egui::Context,
     app: OverlayApp,
-    _tray: crate::tray::Tray,
+    _tray: super::tray::Tray,
     input: InputState,
 
     egl: Option<EglState>,
@@ -168,7 +168,7 @@ pub fn run(
 
     let ui_wake = UiWake::new(Arc::new(move || ping.ping()));
     let settings_requested = Arc::new(AtomicBool::new(false));
-    let tray_icon = crate::tray::create_tray_icon({
+    let tray_icon = super::tray::create_tray_icon({
         let settings_requested = settings_requested.clone();
         let ui_wake = ui_wake.clone();
         Arc::new(move || {

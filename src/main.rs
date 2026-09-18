@@ -12,7 +12,7 @@ mod protocols;
 pub use application::{connection, device_discovery, session};
 pub use domain::{key_matrix, key_spec, layout, visibility};
 pub use presentation::{
-    key_paint, key_presenter, keymap_editor, layout_key, overlay_window, settings, tray, ui_wake,
+    key_paint, key_presenter, keymap_editor, layout_key, overlay_window, settings, ui_wake,
     ui_widgets,
 };
 

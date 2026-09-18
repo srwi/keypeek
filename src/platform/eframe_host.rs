@@ -23,7 +23,7 @@ impl OverlayHost for EframeHost<'_> {
 
 struct EframeApp {
     app: OverlayApp,
-    _tray: crate::tray::Tray,
+    _tray: super::tray::Tray,
     // Undecorated transparent windows don't reliably honor `with_maximized`, so we
     // size to the monitor explicitly once known. Linux never WM-maximizes at all,
     // since Mutter drops always-on-top on a maximized window.
@@ -199,7 +199,7 @@ fn run_inner(
 
             let ui_wake = UiWake::from_ctx(&cc.egui_ctx);
             let settings_requested = Arc::new(AtomicBool::new(false));
-            let tray_icon = crate::tray::create_tray_icon({
+            let tray_icon = super::tray::create_tray_icon({
                 let settings_requested = settings_requested.clone();
                 let ui_wake = ui_wake.clone();
                 Arc::new(move || {
