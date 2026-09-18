@@ -1,9 +1,9 @@
 use super::connection::{ConnectionRequest, ConnectionTask};
 use super::device_discovery::DiscoveredDevice;
 use super::keyboard::Keyboard;
+use super::ui_wake::UiWake;
 use crate::domain::visibility::OverlayConfig;
 use crate::presentation::keymap_editor::EditorProfile;
-use crate::presentation::ui_wake::UiWake;
 use crate::protocols::{ConnectionSpec, Reopener};
 
 use std::sync::Arc;

@@ -6,11 +6,9 @@ pub mod keymap_editor;
 pub mod layout_key;
 pub mod overlay_window;
 pub mod settings;
-pub mod ui_wake;
 pub mod ui_widgets;
 
 pub use key_presenter::{KeyPresenter, StandardKeyPresenter};
 pub use layout_key::{Label, LayoutKey};
 pub use overlay_window::OverlayApp;
 pub use settings::Settings;
-pub use ui_wake::UiWake;

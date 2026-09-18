@@ -5,6 +5,7 @@ pub mod connection_manager;
 pub mod device_discovery;
 pub mod keyboard;
 pub mod session;
+pub mod ui_wake;
 
 pub use connection::{ConnectionRequest, ConnectionTask};
 pub use connection_manager::{
@@ -15,3 +16,4 @@ pub use device_discovery::{
 };
 pub use keyboard::Keyboard;
 pub use session::{KeyboardSession, KeymapCommand};
+pub use ui_wake::UiWake;

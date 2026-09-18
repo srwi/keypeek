@@ -9,11 +9,10 @@ mod platform;
 pub mod presentation;
 mod protocols;
 
-pub use application::{connection, device_discovery, session};
+pub use application::{connection, device_discovery, session, ui_wake};
 pub use domain::{key_matrix, key_spec, layout, visibility};
 pub use presentation::{
-    key_paint, key_presenter, keymap_editor, layout_key, overlay_window, settings, ui_wake,
-    ui_widgets,
+    key_paint, key_presenter, keymap_editor, layout_key, overlay_window, settings, ui_widgets,
 };
 
 use application::device_discovery::discover_devices;

@@ -197,7 +197,8 @@ fn run_inner(
 
             egui_extras::install_image_loaders(&cc.egui_ctx);
 
-            let ui_wake = UiWake::from_ctx(&cc.egui_ctx);
+            let ctx = cc.egui_ctx.clone();
+            let ui_wake = UiWake::new(Arc::new(move || ctx.request_repaint()));
             let settings_requested = Arc::new(AtomicBool::new(false));
             let tray_icon = super::tray::create_tray_icon({
                 let settings_requested = settings_requested.clone();
