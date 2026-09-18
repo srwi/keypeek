@@ -9,10 +9,10 @@ use super::picker::{
     CandidateGroup, SelectedKey,
 };
 use super::{EditTarget, EditorProfile, EditorState};
+use crate::application::Keyboard;
 use crate::hid_labels::Modifiers;
 use crate::key_paint::KeyPaintStyle;
 use crate::key_spec::{HidKey, KeySpec, LayerActivation};
-use crate::application::Keyboard;
 use crate::ui_widgets::titled_group;
 
 struct TapPickerOpts<'a> {
@@ -122,7 +122,12 @@ impl EditorState {
         });
     }
 
-    fn commit_draft(&mut self, keyboard: &Keyboard, profile: &dyn EditorProfile, target: EditTarget) {
+    fn commit_draft(
+        &mut self,
+        keyboard: &Keyboard,
+        profile: &dyn EditorProfile,
+        target: EditTarget,
+    ) {
         let staged = self.draft.staged_for(profile);
         self.commit_staged(keyboard, target, staged);
     }
@@ -136,36 +141,36 @@ impl EditorState {
         search_query: &str,
         style: &KeyPaintStyle,
     ) {
-        titled_group(ui, "Modifiers", |ui| {
+        titled_group(ui, profile.section_label(EditorSection::Keyboard), |ui| {
             modifier_toggle_grid(ui, "kb_mods", self.draft.modifiers, true, style, |mask| {
                 self.draft.modifiers ^= mask;
                 self.commit_draft(keyboard, profile, target);
             });
-        });
 
-        let tap_spec = self.draft.tap_key_spec();
-        let action = target.action(keyboard);
-        let selected = tap_spec
-            .as_ref()
-            .or(action
+            let tap_spec = self.draft.tap_key_spec();
+            let action = target.action(keyboard);
+            let selected = tap_spec
                 .as_ref()
-                .filter(|a| matches!(a, KeySpec::KeyPress { .. })))
-            .map(SelectedKey::valid);
+                .or(action
+                    .as_ref()
+                    .filter(|a| matches!(a, KeySpec::KeyPress { .. })))
+                .map(SelectedKey::valid);
 
-        multi_candidate_groups(
-            ui,
-            profile.tap_categories(),
-            search_query,
-            |c| keyboard.is_action_supported(&c.binding),
-            selected,
-            style,
-            |_, candidate| {
-                if let KeySpec::KeyPress { key, .. } = &candidate.binding {
-                    self.draft.tap_key = Some(*key);
-                    self.commit_draft(keyboard, profile, target);
-                }
-            },
-        );
+            multi_candidate_groups(
+                ui,
+                profile.tap_categories(),
+                search_query,
+                |c| keyboard.is_action_supported(&c.binding),
+                selected,
+                style,
+                |_, candidate| {
+                    if let KeySpec::KeyPress { key, .. } = &candidate.binding {
+                        self.draft.tap_key = Some(*key);
+                        self.commit_draft(keyboard, profile, target);
+                    }
+                },
+            );
+        });
     }
 
     fn draw_single_group_page(
@@ -241,9 +246,7 @@ impl EditorState {
             }
 
             let tap_spec = self.draft.tap_key_spec();
-            let selected = tap_spec
-                .as_ref()
-                .map(|s| SelectedKey::new(s, is_valid));
+            let selected = tap_spec.as_ref().map(|s| SelectedKey::new(s, is_valid));
 
             multi_candidate_groups(
                 ui,
@@ -272,7 +275,7 @@ impl EditorState {
         style: &KeyPaintStyle,
     ) {
         let is_valid = self.draft.is_valid();
-        titled_group(ui, "Modifiers", |ui| {
+        titled_group(ui, profile.section_label(EditorSection::Combo), |ui| {
             modifier_toggle_grid(
                 ui,
                 "combo_mods",
@@ -284,31 +287,29 @@ impl EditorState {
                     self.commit_draft(keyboard, profile, target);
                 },
             );
+
+            let tap_spec = self.draft.tap_key_spec();
+            let selected = tap_spec.as_ref().map(|s| SelectedKey::new(s, is_valid));
+
+            multi_candidate_groups(
+                ui,
+                profile.tap_categories(),
+                search_query,
+                |c| keyboard.is_action_supported(&c.binding),
+                selected,
+                style,
+                |_, candidate| {
+                    if let KeySpec::KeyPress { key, .. } = &candidate.binding {
+                        self.draft.tap_key = Some(*key);
+                        self.commit_draft(keyboard, profile, target);
+                    }
+                },
+            );
+
+            if self.draft.modifiers == 0 {
+                ui.weak("Select at least one modifier.");
+            }
         });
-
-        let tap_spec = self.draft.tap_key_spec();
-        let selected = tap_spec
-            .as_ref()
-            .map(|s| SelectedKey::new(s, is_valid));
-
-        multi_candidate_groups(
-            ui,
-            profile.tap_categories(),
-            search_query,
-            |c| keyboard.is_action_supported(&c.binding),
-            selected,
-            style,
-            |_, candidate| {
-                if let KeySpec::KeyPress { key, .. } = &candidate.binding {
-                    self.draft.tap_key = Some(*key);
-                    self.commit_draft(keyboard, profile, target);
-                }
-            },
-        );
-
-        if self.draft.modifiers == 0 {
-            ui.weak("Select at least one modifier.");
-        }
     }
 
     fn draw_mod_tap_page(
@@ -445,7 +446,7 @@ impl EditorState {
         style: &KeyPaintStyle,
     ) {
         let is_valid = self.draft.is_valid();
-        titled_group(ui, "Sticky Modifier", |ui| {
+        titled_group(ui, profile.section_label(EditorSection::OneShot), |ui| {
             modifier_toggle_grid(
                 ui,
                 "oneshot_mods",
@@ -457,43 +458,41 @@ impl EditorState {
                     self.commit_draft(keyboard, profile, target);
                 },
             );
-        });
 
-        let tap_spec = self.draft.tap_key_spec();
-        let selected = tap_spec
-            .as_ref()
-            .map(|s| SelectedKey::new(s, is_valid));
+            let tap_spec = self.draft.tap_key_spec();
+            let selected = tap_spec.as_ref().map(|s| SelectedKey::new(s, is_valid));
 
-        let candidate_filter = |c: &super::picker::Candidate| {
-            if let KeySpec::KeyPress { key, .. } = &c.binding {
-                let sample = KeySpec::StickyKey {
-                    key: Some(*key),
-                    modifiers: Modifiers::default(),
-                };
-                keyboard.is_action_supported(&sample)
-            } else {
-                false
-            }
-        };
-
-        multi_candidate_groups(
-            ui,
-            profile.tap_categories(),
-            search_query,
-            candidate_filter,
-            selected,
-            style,
-            |_, candidate| {
-                if let KeySpec::KeyPress { key, .. } = &candidate.binding {
-                    if self.draft.tap_key == Some(*key) {
-                        self.draft.tap_key = None;
-                    } else {
-                        self.draft.tap_key = Some(*key);
-                    }
-                    self.commit_draft(keyboard, profile, target);
+            let candidate_filter = |c: &super::picker::Candidate| {
+                if let KeySpec::KeyPress { key, .. } = &c.binding {
+                    let sample = KeySpec::StickyKey {
+                        key: Some(*key),
+                        modifiers: Modifiers::default(),
+                    };
+                    keyboard.is_action_supported(&sample)
+                } else {
+                    false
                 }
-            },
-        );
+            };
+
+            multi_candidate_groups(
+                ui,
+                profile.tap_categories(),
+                search_query,
+                candidate_filter,
+                selected,
+                style,
+                |_, candidate| {
+                    if let KeySpec::KeyPress { key, .. } = &candidate.binding {
+                        if self.draft.tap_key == Some(*key) {
+                            self.draft.tap_key = None;
+                        } else {
+                            self.draft.tap_key = Some(*key);
+                        }
+                        self.commit_draft(keyboard, profile, target);
+                    }
+                },
+            );
+        });
     }
 
     fn draw_backlight_page(
@@ -538,7 +537,7 @@ impl EditorState {
         style: &KeyPaintStyle,
     ) {
         let is_valid = self.draft.is_valid();
-        titled_group(ui, "Modifiers", |ui| {
+        titled_group(ui, profile.section_label(EditorSection::KeyToggle), |ui| {
             modifier_toggle_grid(
                 ui,
                 "toggle_mods",
@@ -550,41 +549,41 @@ impl EditorState {
                     self.commit_draft(keyboard, profile, target);
                 },
             );
-        });
 
-        let tap_spec = self.draft.tap_key_spec();
-        let action = target.action(keyboard);
-        let selected = tap_spec
-            .as_ref()
-            .or(action
+            let tap_spec = self.draft.tap_key_spec();
+            let action = target.action(keyboard);
+            let selected = tap_spec
                 .as_ref()
-                .filter(|a| matches!(a, KeySpec::KeyToggle { .. })))
-            .map(SelectedKey::valid);
+                .or(action
+                    .as_ref()
+                    .filter(|a| matches!(a, KeySpec::KeyToggle { .. })))
+                .map(SelectedKey::valid);
 
-        let candidate_filter = |c: &super::picker::Candidate| match &c.binding {
-            KeySpec::KeyPress { key, modifiers } => {
-                keyboard.is_action_supported(&KeySpec::KeyToggle {
-                    key: *key,
-                    modifiers: *modifiers,
-                })
-            }
-            _ => false,
-        };
-
-        multi_candidate_groups(
-            ui,
-            profile.tap_categories(),
-            search_query,
-            candidate_filter,
-            selected,
-            style,
-            |_, candidate| {
-                if let KeySpec::KeyPress { key, .. } = &candidate.binding {
-                    self.draft.tap_key = Some(*key);
-                    self.commit_draft(keyboard, profile, target);
+            let candidate_filter = |c: &super::picker::Candidate| match &c.binding {
+                KeySpec::KeyPress { key, modifiers } => {
+                    keyboard.is_action_supported(&KeySpec::KeyToggle {
+                        key: *key,
+                        modifiers: *modifiers,
+                    })
                 }
-            },
-        );
+                _ => false,
+            };
+
+            multi_candidate_groups(
+                ui,
+                profile.tap_categories(),
+                search_query,
+                candidate_filter,
+                selected,
+                style,
+                |_, candidate| {
+                    if let KeySpec::KeyPress { key, .. } = &candidate.binding {
+                        self.draft.tap_key = Some(*key);
+                        self.commit_draft(keyboard, profile, target);
+                    }
+                },
+            );
+        });
     }
 
     fn draw_layer_mod_page(
