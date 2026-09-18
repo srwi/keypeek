@@ -25,6 +25,21 @@ pub struct EditTarget {
 }
 
 impl EditTarget {
+    pub const fn new(layer_index: usize, row: usize, col: usize) -> Self {
+        Self {
+            layer_index,
+            row,
+            col,
+        }
+    }
+
+    pub const fn with_layer(self, layer_index: usize) -> Self {
+        Self {
+            layer_index,
+            ..self
+        }
+    }
+
     /// Returns the current key action at this target position.
     pub fn action(self, keyboard: &Keyboard) -> Option<KeySpec> {
         keyboard.get_action(self.layer_index, self.row, self.col)
@@ -176,15 +191,39 @@ impl EditorState {
         }
     }
 
+    /// Returns `true` if the editor window is currently open (targeting a key).
+    pub fn is_open(&self) -> bool {
+        self.target.is_some()
+    }
+
+    /// Layer index of the currently targeted key, if any.
+    pub fn pinned_layer(&self) -> Option<usize> {
+        self.target.as_ref().map(|t| t.layer_index)
+    }
+
     /// Sets the target key and loads its current binding into the draft.
+    ///
+    /// When opening the editor (no active target), the section containing the key's
+    /// current action is selected. When the editor is already open, the active view
+    /// (section and search query) stays unchanged.
     pub fn retarget(&mut self, keyboard: &Keyboard, target: EditTarget) {
+        if self.closing {
+            return;
+        }
+
+        let is_already_open = self.is_open();
         self.target = Some(target);
         self.error = None;
-        self.search_query.clear();
+        if !is_already_open {
+            self.search_query.clear();
+        }
         if self.lock_state == EditLockState::Failed {
             self.lock_state = EditLockState::Idle;
         }
-        if let Some(action) = target.action(keyboard) {
+        let action = target.action(keyboard);
+        if is_already_open {
+            self.draft = KeyDraft::for_section(self.draft.section, action.as_ref());
+        } else if let Some(action) = action {
             self.draft = KeyDraft::from_spec(&action);
         } else {
             self.draft = Default::default();
@@ -397,17 +436,11 @@ impl EditorState {
             });
         });
 
-        if !self.closing {
-            if let Some(new_layer) = selected_layer {
-                if new_layer != target.layer_index {
-                    let new_target = EditTarget {
-                        layer_index: new_layer,
-                        row: target.row,
-                        col: target.col,
-                    };
-                    self.retarget(keyboard, new_target);
-                    return new_target;
-                }
+        if let Some(new_layer) = selected_layer {
+            if new_layer != target.layer_index {
+                let new_target = target.with_layer(new_layer);
+                self.retarget(keyboard, new_target);
+                return new_target;
             }
         }
 
@@ -543,4 +576,144 @@ fn layer_button(
         );
     }
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::firmware::mock::MockProtocol;
+    use crate::firmware::qmk::QmkEditorProfile;
+    use crate::keymap_editor::draft::EditorSection;
+    use crate::protocols::KeyboardProtocol;
+
+    fn create_test_keyboard() -> Keyboard {
+        let protocol: Box<dyn KeyboardProtocol> = Box::new(MockProtocol::connect().unwrap());
+        let layout_name = protocol.get_layout_definition().layouts[0].name.clone();
+        Keyboard::new(
+            protocol,
+            layout_name,
+            crate::domain::visibility::OverlayConfig {
+                timeout_ms: 2000,
+                activation_delay_ms: 300,
+                visible_layers: u32::MAX,
+            },
+            crate::ui_wake::UiWake::new(std::sync::Arc::new(|| ())),
+            std::sync::Arc::new(QmkEditorProfile),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn retarget_on_closed_editor_selects_keycode_section() {
+        let keyboard = create_test_keyboard();
+        let mut editor = EditorState::new();
+        assert!(!editor.is_open());
+
+        // Target key is 'KC_Q' (KeyPress) -> Keyboard section
+        let key_press_target = EditTarget {
+            layer_index: 0,
+            row: 0,
+            col: 1,
+        };
+        editor.retarget(&keyboard, key_press_target);
+        assert!(editor.is_open());
+        assert_eq!(editor.draft.section, EditorSection::Keyboard);
+
+        // Close editor
+        editor.request_close();
+        assert!(!editor.is_open());
+
+        // Target key is 'MO(1)' (Layer activation) -> Layers section
+        let layer_target = EditTarget {
+            layer_index: 0,
+            row: 3,
+            col: 3,
+        };
+        editor.retarget(&keyboard, layer_target);
+        assert!(editor.is_open());
+        assert_eq!(editor.draft.section, EditorSection::Layers);
+    }
+
+    #[test]
+    fn retarget_on_open_editor_preserves_active_section_and_search_query() {
+        let keyboard = create_test_keyboard();
+        let mut editor = EditorState::new();
+
+        // 1. Initially closed: open on keypress key (selects Keyboard section)
+        let key_press_target = EditTarget {
+            layer_index: 0,
+            row: 0,
+            col: 1,
+        };
+        editor.retarget(&keyboard, key_press_target);
+        assert_eq!(editor.draft.section, EditorSection::Keyboard);
+
+        // Set a search query
+        editor.search_query = "play".to_string();
+
+        // 2. Editor is open: retarget to a layer key 'MO(1)'
+        let layer_target = EditTarget {
+            layer_index: 0,
+            row: 3,
+            col: 3,
+        };
+        editor.retarget(&keyboard, layer_target);
+        // Active section should remain Keyboard, NOT switch to Layers
+        assert_eq!(editor.draft.section, EditorSection::Keyboard);
+        // Search query should be preserved
+        assert_eq!(editor.search_query, "play");
+
+        // 3. User manually navigates to Audio section
+        editor.draft.section = EditorSection::Audio;
+        editor.search_query = "mute".to_string();
+
+        // Retarget back to a keypress key
+        editor.retarget(&keyboard, key_press_target);
+        // Active section should remain Audio
+        assert_eq!(editor.draft.section, EditorSection::Audio);
+        assert_eq!(editor.search_query, "mute");
+
+        // 4. Closing the editor and reopening on layer_target selects Layers
+        assert!(editor.request_close());
+        assert!(!editor.is_open());
+        editor.retarget(&keyboard, layer_target);
+        assert_eq!(editor.draft.section, EditorSection::Layers);
+        assert!(editor.search_query.is_empty());
+    }
+
+    #[test]
+    fn retarget_while_closing_is_ignored() {
+        let keyboard = create_test_keyboard();
+        let mut editor = EditorState::new();
+        let target1 = EditTarget::new(0, 0, 1);
+        editor.retarget(&keyboard, target1);
+        assert_eq!(editor.target, Some(target1));
+
+        editor.closing = true;
+        let target2 = EditTarget::new(0, 3, 3);
+        editor.retarget(&keyboard, target2);
+        assert_eq!(editor.target, Some(target1));
+    }
+
+    #[test]
+    fn test_pinned_layer() {
+        let mut editor = EditorState::new();
+        assert_eq!(editor.pinned_layer(), None);
+
+        editor.target = Some(EditTarget::new(2, 1, 3));
+        assert_eq!(editor.pinned_layer(), Some(2));
+    }
+
+    #[test]
+    fn test_edit_target_helpers() {
+        let target = EditTarget::new(0, 1, 2);
+        assert_eq!(target.layer_index, 0);
+        assert_eq!(target.row, 1);
+        assert_eq!(target.col, 2);
+
+        let new_target = target.with_layer(3);
+        assert_eq!(new_target.layer_index, 3);
+        assert_eq!(new_target.row, 1);
+        assert_eq!(new_target.col, 2);
+    }
 }

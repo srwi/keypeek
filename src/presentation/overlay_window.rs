@@ -50,7 +50,7 @@ impl OverlayApp {
     }
 
     pub(crate) fn is_any_window_open(&self) -> bool {
-        self.ui.settings_visible || self.editor.target.is_some()
+        self.ui.settings_visible || self.editor.is_open()
     }
 
     fn sync_mouse_passthrough(&mut self, host: &mut dyn OverlayHost) {
@@ -199,11 +199,11 @@ impl OverlayApp {
             // Clone the shared keyboard so drawing can mutate app state (the
             // editor) without holding a borrow on `self.connection_mgr`.
             self.draw_overlay_window(ctx, &keyboard, self.overlay_visible());
-            if self.editor.target.is_some() {
+            if self.editor.is_open() {
                 let style = self.paint_style(crate::keymap_editor::KEY_UNIT);
                 self.editor.draw_window(ctx, &keyboard, profile.as_ref(), &style);
             }
-        } else if self.editor.target.is_some() {
+        } else if self.editor.is_open() {
             // The connection dropped; close the editor. Unsaved ZMK changes
             // died with the connection, so the dirty flag goes too.
             self.close_editor();

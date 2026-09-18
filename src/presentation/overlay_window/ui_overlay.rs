@@ -16,7 +16,7 @@ impl OverlayApp {
         let mut window_open = visible;
         let size = self.settings.active.size as f32;
         // Pinned while the editor is targeting a specific layer; otherwise automatic (active).
-        let pinned = self.editor.target.as_ref().map(|t| t.layer_index);
+        let pinned = self.editor.pinned_layer();
         // Keys can be clicked whenever either window is open (window is not clickthrough).
         let hit_test_enabled = self.is_any_window_open();
 
@@ -153,22 +153,13 @@ impl OverlayApp {
 
         // Handle a click after the closure so editor state can be mutated.
         if hit_test_enabled {
-            if let Some(response) = overlay_response.as_ref() {
-                if let Some((hovered, clicked)) = response.inner {
-                    // A closing editor is saving; it must not be retargeted.
-                    if clicked && !self.editor.closing {
-                        if let Some((row, col, target_layer)) = hovered {
-                            self.editor.retarget(
-                                keyboard,
-                                crate::keymap_editor::EditTarget {
-                                    layer_index: target_layer,
-                                    row,
-                                    col,
-                                },
-                            );
-                        }
-                    }
-                }
+            if let Some((Some((row, col, target_layer)), true)) =
+                overlay_response.as_ref().and_then(|r| r.inner)
+            {
+                self.editor.retarget(
+                    keyboard,
+                    crate::keymap_editor::EditTarget::new(target_layer, row, col),
+                );
             }
         }
     }
