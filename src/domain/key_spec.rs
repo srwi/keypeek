@@ -317,10 +317,7 @@ mod tests {
 
     #[test]
     fn test_layer_info_short_name() {
-        let unnamed = LayerInfo {
-            id: 1,
-            name: None,
-        };
+        let unnamed = LayerInfo { id: 1, name: None };
         assert_eq!(unnamed.short_name(1), "L1");
 
         let named = LayerInfo {

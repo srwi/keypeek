@@ -10,12 +10,12 @@ pub mod rpc;
 pub use presenter::ZmkKeyPresenter;
 pub use profile::ZmkEditorProfile;
 
-use std::sync::Arc;
 use crate::device_discovery::DeviceDriverScanner;
 use crate::firmware::FirmwareBundle;
 use crate::key_presenter::KeyPresenter;
 use crate::keymap_editor::EditorProfile;
 use crate::protocols::{ConnectionSpec, DeviceError, KeyboardProtocol, ZmkTransportConfig};
+use std::sync::Arc;
 
 pub struct ZmkBundle;
 
@@ -50,7 +50,9 @@ impl FirmwareBundle for ZmkBundle {
                 let protocol = driver::ZmkProtocol::connect_live(*vid, *pid, &zmk_transport)?;
                 Ok(Box::new(protocol))
             }
-            _ => Err(DeviceError::Unsupported("Unsupported spec for ZMK bundle".to_string())),
+            _ => Err(DeviceError::Unsupported(
+                "Unsupported spec for ZMK bundle".to_string(),
+            )),
         }
     }
 }

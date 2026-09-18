@@ -130,8 +130,8 @@ pub fn present_standard_key(spec: &KeySpec, layer_names: &[String]) -> Option<La
 
         KeySpec::StickyKey { key, modifiers } => match key {
             Some(k) => {
-                let mut layout = crate::hid_labels::hid_usage_to_layout_key(k.page, k.id)
-                    .unwrap_or_default();
+                let mut layout =
+                    crate::hid_labels::hid_usage_to_layout_key(k.page, k.id).unwrap_or_default();
                 layout.behavior = Some(behavior_names::STICKY_KEY.label());
                 layout.kind = KeycodeKind::Modifier;
                 Some(layout)
@@ -173,9 +173,7 @@ pub fn present_standard_key(spec: &KeySpec, layer_names: &[String]) -> Option<La
                 BluetoothAction::Disconnect(n) => {
                     Label::with_short(format!("BT Disc {n}"), format!("BTD{n}"))
                 }
-                BluetoothAction::Other { command, value: 0 } => {
-                    Label::new(format!("BT {command}"))
-                }
+                BluetoothAction::Other { command, value: 0 } => Label::new(format!("BT {command}")),
                 BluetoothAction::Other { command, value } => {
                     Label::new(format!("BT {command} {value}"))
                 }
@@ -209,9 +207,7 @@ pub fn present_standard_key(spec: &KeySpec, layer_names: &[String]) -> Option<La
                 PowerAction::Reset => Label::with_short("Reset", "Rst"),
                 PowerAction::Bootloader => Label::with_short("Bootloader", "Boot"),
                 PowerAction::UnlockKeymap => Label::with_short("Studio Unlock", "Unlock"),
-                PowerAction::Other(n) => {
-                    Label::with_short(format!("ExtPwr {n}"), format!("EP{n}"))
-                }
+                PowerAction::Other(n) => Label::with_short(format!("ExtPwr {n}"), format!("EP{n}")),
             };
             Some(LayoutKey {
                 tap: label,
@@ -255,9 +251,7 @@ pub fn present_standard_key(spec: &KeySpec, layer_names: &[String]) -> Option<La
                     RgbAction::EffectDec => Label::with_short("Effect -", "Eff-"),
                     RgbAction::EffectSet => Label::with_short("Effect Set", "EffS"),
                     RgbAction::Color => Label::with_short("RGB Color", "Color"),
-                    RgbAction::Other { command, value: 0 } => {
-                        Label::new(format!("RGB {command}"))
-                    }
+                    RgbAction::Other { command, value: 0 } => Label::new(format!("RGB {command}")),
                     RgbAction::Other { command, value } => {
                         Label::new(format!("RGB {command} {value}"))
                     }
@@ -307,9 +301,7 @@ pub fn present_standard_key(spec: &KeySpec, layer_names: &[String]) -> Option<La
                 AudioAction::MusicModeNext => Label::with_short("Music Mode", "MusicMd"),
                 AudioAction::VoiceNext => Label::with_short("Voice Next", "Voice+"),
                 AudioAction::VoicePrev => Label::with_short("Voice Prev", "Voice-"),
-                AudioAction::Other(n) => {
-                    Label::with_short(format!("Audio {n}"), format!("Aud{n}"))
-                }
+                AudioAction::Other(n) => Label::with_short(format!("Audio {n}"), format!("Aud{n}")),
             };
             Some(LayoutKey {
                 tap: label,

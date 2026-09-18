@@ -1,6 +1,6 @@
 use super::OverlayApp;
-use crate::key_paint::{self, KeyDisplay};
 use crate::application::Keyboard;
+use crate::key_paint::{self, KeyDisplay};
 use crate::layout_key::KeycodeKind;
 use crate::settings::LegendMode;
 use egui::Window;
@@ -83,11 +83,7 @@ impl OverlayApp {
                         .map(|k| k.kind)
                         .unwrap_or(KeycodeKind::Basic);
 
-                    let is_selected_for_edit = self
-                        .editor
-                        .target
-                        .as_ref()
-                        .is_some_and(|t| t.row == key.row && t.col == key.col);
+                    let is_selected_for_edit = self.editor.is_key_targeted(key.row, key.col);
                     let pressed = keyboard.is_key_pressed(key.row, key.col) || is_selected_for_edit;
                     let mut colors = style.colors_for(
                         layout_key.layer_ref.unwrap_or(effective_layer),

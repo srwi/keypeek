@@ -1,11 +1,11 @@
+use super::codec as zmk_codec;
+use super::rpc::{self as zmk_rpc, ZmkData, ZmkStudioSession, ZmkTransport};
+use crate::key_spec::{KeySpec, KeymapSnapshot, LayerInfo};
 use crate::layout::geometry::flattened_top_left_after_center_rotation;
 use crate::layout::{Key, KeyboardDefinition, KeyboardLayout};
 use crate::protocols::{
     pump_hid_reader, DeviceError, DeviceEvent, KeyboardProtocol, Reopener, WriteSupport,
 };
-use super::codec as zmk_codec;
-use super::rpc::{self as zmk_rpc, ZmkData, ZmkStudioSession, ZmkTransport};
-use crate::key_spec::{KeySpec, KeymapSnapshot, LayerInfo};
 use hidapi::{HidApi, HidDevice};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;

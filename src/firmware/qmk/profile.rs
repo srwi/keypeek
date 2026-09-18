@@ -90,19 +90,28 @@ fn qmk_tap_categories() -> &'static [CandidateGroup] {
 fn qmk_system_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
-        vec![common::build_system_group(&QmkKeyPresenter, |id| match id {
-            0x81 => &["KC_SYSTEM_POWER"][..],
-            0x82 => &["KC_SYSTEM_SLEEP"][..],
-            0x83 => &["KC_SYSTEM_WAKE"][..],
-            _ => &[][..],
-        })]
+        vec![common::build_system_group(
+            &QmkKeyPresenter,
+            |id| match id {
+                0x81 => &["KC_SYSTEM_POWER"][..],
+                0x82 => &["KC_SYSTEM_SLEEP"][..],
+                0x83 => &["KC_SYSTEM_WAKE"][..],
+                _ => &[][..],
+            },
+        )]
     })
 }
 
 const QMK_BOOT_POWER_ACTIONS: [(crate::key_spec::PowerAction, &[&str]); 3] = [
     (crate::key_spec::PowerAction::Reset, &["reset", "reboot"]),
-    (crate::key_spec::PowerAction::Bootloader, &["bootloader", "dfu", "flash", "boot"]),
-    (crate::key_spec::PowerAction::Other(0xEE), &["clear eeprom", "eeprom reset"]),
+    (
+        crate::key_spec::PowerAction::Bootloader,
+        &["bootloader", "dfu", "flash", "boot"],
+    ),
+    (
+        crate::key_spec::PowerAction::Other(0xEE),
+        &["clear eeprom", "eeprom reset"],
+    ),
 ];
 
 fn qmk_boot_power_groups() -> &'static [CandidateGroup] {
@@ -128,18 +137,23 @@ fn qmk_backlight_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
         use crate::key_spec::BacklightAction;
-        vec![common::build_backlight_group(&QmkKeyPresenter, |act| -> &'static [&'static str] {
-            match act {
-                BacklightAction::Toggle => &["BL_TOGG", "QK_BACKLIGHT_TOGGLE"],
-                BacklightAction::On => &["BL_ON", "QK_BACKLIGHT_ON"],
-                BacklightAction::Off => &["BL_OFF", "QK_BACKLIGHT_OFF"],
-                BacklightAction::Inc => &["BL_UP", "QK_BACKLIGHT_UP"],
-                BacklightAction::Dec => &["BL_DOWN", "QK_BACKLIGHT_DOWN"],
-                BacklightAction::Cycle => &["BL_STEP", "QK_BACKLIGHT_STEP"],
-                BacklightAction::BreathingToggle => &["BL_BRTG", "QK_BACKLIGHT_TOGGLE_BREATHING"],
-                _ => &[],
-            }
-        })]
+        vec![common::build_backlight_group(
+            &QmkKeyPresenter,
+            |act| -> &'static [&'static str] {
+                match act {
+                    BacklightAction::Toggle => &["BL_TOGG", "QK_BACKLIGHT_TOGGLE"],
+                    BacklightAction::On => &["BL_ON", "QK_BACKLIGHT_ON"],
+                    BacklightAction::Off => &["BL_OFF", "QK_BACKLIGHT_OFF"],
+                    BacklightAction::Inc => &["BL_UP", "QK_BACKLIGHT_UP"],
+                    BacklightAction::Dec => &["BL_DOWN", "QK_BACKLIGHT_DOWN"],
+                    BacklightAction::Cycle => &["BL_STEP", "QK_BACKLIGHT_STEP"],
+                    BacklightAction::BreathingToggle => {
+                        &["BL_BRTG", "QK_BACKLIGHT_TOGGLE_BREATHING"]
+                    }
+                    _ => &[],
+                }
+            },
+        )]
     })
 }
 
@@ -147,24 +161,27 @@ fn qmk_rgb_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
         use crate::key_spec::RgbAction;
-        vec![common::build_rgb_underglow_group(&QmkKeyPresenter, |act| -> &'static [&'static str] {
-            match act {
-                RgbAction::Toggle => &["RGB_TOG", "QK_UNDERGLOW_TOGGLE"],
-                RgbAction::On => &["RGB_ON"],
-                RgbAction::Off => &["RGB_OFF"],
-                RgbAction::EffectInc => &["RGB_MOD", "QK_UNDERGLOW_MODE_NEXT"],
-                RgbAction::EffectDec => &["RGB_RMOD", "QK_UNDERGLOW_MODE_PREVIOUS"],
-                RgbAction::HueInc => &["RGB_HUI", "QK_UNDERGLOW_HUE_UP"],
-                RgbAction::HueDec => &["RGB_HUD", "QK_UNDERGLOW_HUE_DOWN"],
-                RgbAction::SatInc => &["RGB_SAI", "QK_UNDERGLOW_SATURATION_UP"],
-                RgbAction::SatDec => &["RGB_SAD", "QK_UNDERGLOW_SATURATION_DOWN"],
-                RgbAction::BrightInc => &["RGB_VAI", "QK_UNDERGLOW_VALUE_UP"],
-                RgbAction::BrightDec => &["RGB_VAD", "QK_UNDERGLOW_VALUE_DOWN"],
-                RgbAction::SpeedInc => &["RGB_SPI", "QK_UNDERGLOW_SPEED_UP"],
-                RgbAction::SpeedDec => &["RGB_SPD", "QK_UNDERGLOW_SPEED_DOWN"],
-                _ => &[],
-            }
-        })]
+        vec![common::build_rgb_underglow_group(
+            &QmkKeyPresenter,
+            |act| -> &'static [&'static str] {
+                match act {
+                    RgbAction::Toggle => &["RGB_TOG", "QK_UNDERGLOW_TOGGLE"],
+                    RgbAction::On => &["RGB_ON"],
+                    RgbAction::Off => &["RGB_OFF"],
+                    RgbAction::EffectInc => &["RGB_MOD", "QK_UNDERGLOW_MODE_NEXT"],
+                    RgbAction::EffectDec => &["RGB_RMOD", "QK_UNDERGLOW_MODE_PREVIOUS"],
+                    RgbAction::HueInc => &["RGB_HUI", "QK_UNDERGLOW_HUE_UP"],
+                    RgbAction::HueDec => &["RGB_HUD", "QK_UNDERGLOW_HUE_DOWN"],
+                    RgbAction::SatInc => &["RGB_SAI", "QK_UNDERGLOW_SATURATION_UP"],
+                    RgbAction::SatDec => &["RGB_SAD", "QK_UNDERGLOW_SATURATION_DOWN"],
+                    RgbAction::BrightInc => &["RGB_VAI", "QK_UNDERGLOW_VALUE_UP"],
+                    RgbAction::BrightDec => &["RGB_VAD", "QK_UNDERGLOW_VALUE_DOWN"],
+                    RgbAction::SpeedInc => &["RGB_SPI", "QK_UNDERGLOW_SPEED_UP"],
+                    RgbAction::SpeedDec => &["RGB_SPD", "QK_UNDERGLOW_SPEED_DOWN"],
+                    _ => &[],
+                }
+            },
+        )]
     })
 }
 
@@ -172,24 +189,27 @@ fn qmk_rgb_matrix_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
         use crate::key_spec::RgbMatrixAction;
-        vec![common::build_rgb_matrix_group(&QmkKeyPresenter, |act| -> &'static [&'static str] {
-            match act {
-                RgbMatrixAction::Toggle => &["RGB_MATRIX_TOGGLE"],
-                RgbMatrixAction::On => &["RGB_MATRIX_ON"],
-                RgbMatrixAction::Off => &["RGB_MATRIX_OFF"],
-                RgbMatrixAction::ModeNext => &["RGB_MATRIX_MODE_NEXT"],
-                RgbMatrixAction::ModePrev => &["RGB_MATRIX_MODE_PREVIOUS"],
-                RgbMatrixAction::HueInc => &["RGB_MATRIX_HUE_UP"],
-                RgbMatrixAction::HueDec => &["RGB_MATRIX_HUE_DOWN"],
-                RgbMatrixAction::SatInc => &["RGB_MATRIX_SATURATION_UP"],
-                RgbMatrixAction::SatDec => &["RGB_MATRIX_SATURATION_DOWN"],
-                RgbMatrixAction::BrightInc => &["RGB_MATRIX_VALUE_UP"],
-                RgbMatrixAction::BrightDec => &["RGB_MATRIX_VALUE_DOWN"],
-                RgbMatrixAction::SpeedInc => &["RGB_MATRIX_SPEED_UP"],
-                RgbMatrixAction::SpeedDec => &["RGB_MATRIX_SPEED_DOWN"],
-                _ => &[],
-            }
-        })]
+        vec![common::build_rgb_matrix_group(
+            &QmkKeyPresenter,
+            |act| -> &'static [&'static str] {
+                match act {
+                    RgbMatrixAction::Toggle => &["RGB_MATRIX_TOGGLE"],
+                    RgbMatrixAction::On => &["RGB_MATRIX_ON"],
+                    RgbMatrixAction::Off => &["RGB_MATRIX_OFF"],
+                    RgbMatrixAction::ModeNext => &["RGB_MATRIX_MODE_NEXT"],
+                    RgbMatrixAction::ModePrev => &["RGB_MATRIX_MODE_PREVIOUS"],
+                    RgbMatrixAction::HueInc => &["RGB_MATRIX_HUE_UP"],
+                    RgbMatrixAction::HueDec => &["RGB_MATRIX_HUE_DOWN"],
+                    RgbMatrixAction::SatInc => &["RGB_MATRIX_SATURATION_UP"],
+                    RgbMatrixAction::SatDec => &["RGB_MATRIX_SATURATION_DOWN"],
+                    RgbMatrixAction::BrightInc => &["RGB_MATRIX_VALUE_UP"],
+                    RgbMatrixAction::BrightDec => &["RGB_MATRIX_VALUE_DOWN"],
+                    RgbMatrixAction::SpeedInc => &["RGB_MATRIX_SPEED_UP"],
+                    RgbMatrixAction::SpeedDec => &["RGB_MATRIX_SPEED_DOWN"],
+                    _ => &[],
+                }
+            },
+        )]
     })
 }
 
@@ -197,26 +217,29 @@ fn qmk_audio_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
         use crate::key_spec::AudioAction;
-        vec![common::build_audio_group(&QmkKeyPresenter, |act| -> &'static [&'static str] {
-            match act {
-                AudioAction::On => &["QK_AUDIO_ON"],
-                AudioAction::Off => &["QK_AUDIO_OFF"],
-                AudioAction::Toggle => &["QK_AUDIO_TOGGLE"],
-                AudioAction::ClickyToggle => &["QK_AUDIO_CLICKY_TOGGLE"],
-                AudioAction::ClickyOn => &["QK_AUDIO_CLICKY_ON"],
-                AudioAction::ClickyOff => &["QK_AUDIO_CLICKY_OFF"],
-                AudioAction::ClickyUp => &["QK_AUDIO_CLICKY_UP"],
-                AudioAction::ClickyDown => &["QK_AUDIO_CLICKY_DOWN"],
-                AudioAction::ClickyReset => &["QK_AUDIO_CLICKY_RESET"],
-                AudioAction::MusicOn => &["QK_MUSIC_ON"],
-                AudioAction::MusicOff => &["QK_MUSIC_OFF"],
-                AudioAction::MusicToggle => &["QK_MUSIC_TOGGLE"],
-                AudioAction::MusicModeNext => &["QK_MUSIC_MODE_NEXT"],
-                AudioAction::VoiceNext => &["QK_AUDIO_VOICE_NEXT"],
-                AudioAction::VoicePrev => &["QK_AUDIO_VOICE_PREVIOUS"],
-                _ => &[],
-            }
-        })]
+        vec![common::build_audio_group(
+            &QmkKeyPresenter,
+            |act| -> &'static [&'static str] {
+                match act {
+                    AudioAction::On => &["QK_AUDIO_ON"],
+                    AudioAction::Off => &["QK_AUDIO_OFF"],
+                    AudioAction::Toggle => &["QK_AUDIO_TOGGLE"],
+                    AudioAction::ClickyToggle => &["QK_AUDIO_CLICKY_TOGGLE"],
+                    AudioAction::ClickyOn => &["QK_AUDIO_CLICKY_ON"],
+                    AudioAction::ClickyOff => &["QK_AUDIO_CLICKY_OFF"],
+                    AudioAction::ClickyUp => &["QK_AUDIO_CLICKY_UP"],
+                    AudioAction::ClickyDown => &["QK_AUDIO_CLICKY_DOWN"],
+                    AudioAction::ClickyReset => &["QK_AUDIO_CLICKY_RESET"],
+                    AudioAction::MusicOn => &["QK_MUSIC_ON"],
+                    AudioAction::MusicOff => &["QK_MUSIC_OFF"],
+                    AudioAction::MusicToggle => &["QK_MUSIC_TOGGLE"],
+                    AudioAction::MusicModeNext => &["QK_MUSIC_MODE_NEXT"],
+                    AudioAction::VoiceNext => &["QK_AUDIO_VOICE_NEXT"],
+                    AudioAction::VoicePrev => &["QK_AUDIO_VOICE_PREVIOUS"],
+                    _ => &[],
+                }
+            },
+        )]
     })
 }
 
@@ -252,16 +275,19 @@ fn qmk_mouse_groups() -> &'static [CandidateGroup] {
 fn qmk_special_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
-        vec![common::build_special_group(&QmkKeyPresenter, |spec| -> &'static [&'static str] {
-            match spec {
-                KeySpec::Transparent => &["KC_TRNS"],
-                KeySpec::None => &["KC_NO"],
-                KeySpec::CapsWord => &["QK_CAPS_WORD_TOGGLE"],
-                KeySpec::KeyRepeat => &["QK_KEY_REPEAT"],
-                KeySpec::GraveEscape => &["QK_GRAVE_ESCAPE"],
-                _ => &[],
-            }
-        })]
+        vec![common::build_special_group(
+            &QmkKeyPresenter,
+            |spec| -> &'static [&'static str] {
+                match spec {
+                    KeySpec::Transparent => &["KC_TRNS"],
+                    KeySpec::None => &["KC_NO"],
+                    KeySpec::CapsWord => &["QK_CAPS_WORD_TOGGLE"],
+                    KeySpec::KeyRepeat => &["QK_KEY_REPEAT"],
+                    KeySpec::GraveEscape => &["QK_GRAVE_ESCAPE"],
+                    _ => &[],
+                }
+            },
+        )]
     })
 }
 
@@ -271,12 +297,36 @@ fn qmk_custom_groups() -> &'static [CandidateGroup] {
 }
 
 const QMK_LAYER_OPS: [(&str, crate::key_spec::LayerActivation, &[&str]); 6] = [
-    ("Momentary", crate::key_spec::LayerActivation::Momentary, &["mo", "momentary"]),
-    ("Toggle", crate::key_spec::LayerActivation::Toggle, &["tg", "toggle"]),
-    ("Switch To Layer", crate::key_spec::LayerActivation::To, &["to", "switch"]),
-    ("Sticky Layer", crate::key_spec::LayerActivation::Sticky, &["sl", "sticky", "oneshot"]),
-    ("Set Default Layer", crate::key_spec::LayerActivation::Default, &["df", "default"]),
-    ("Tap Toggle", crate::key_spec::LayerActivation::TapToggle, &["tt", "tap toggle"]),
+    (
+        "Momentary",
+        crate::key_spec::LayerActivation::Momentary,
+        &["mo", "momentary"],
+    ),
+    (
+        "Toggle",
+        crate::key_spec::LayerActivation::Toggle,
+        &["tg", "toggle"],
+    ),
+    (
+        "Switch To Layer",
+        crate::key_spec::LayerActivation::To,
+        &["to", "switch"],
+    ),
+    (
+        "Sticky Layer",
+        crate::key_spec::LayerActivation::Sticky,
+        &["sl", "sticky", "oneshot"],
+    ),
+    (
+        "Set Default Layer",
+        crate::key_spec::LayerActivation::Default,
+        &["df", "default"],
+    ),
+    (
+        "Tap Toggle",
+        crate::key_spec::LayerActivation::TapToggle,
+        &["tt", "tap toggle"],
+    ),
 ];
 
 impl KeyPresenter for QmkEditorProfile {

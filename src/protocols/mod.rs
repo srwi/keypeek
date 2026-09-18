@@ -2,8 +2,6 @@ use std::error::Error;
 use std::fmt;
 use std::sync::{mpsc, Arc};
 
-
-
 /// Unified domain error for keyboard communication, configuration, and driver operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeviceError {

@@ -41,10 +41,7 @@ const ZMK_SIDEBAR_SECTIONS: [SidebarSection<EditorSection>; 7] = [
     },
     SidebarSection {
         title: "Other",
-        items: &[
-            EditorSection::Special,
-            EditorSection::Custom,
-        ],
+        items: &[EditorSection::Special, EditorSection::Custom],
     },
 ];
 
@@ -88,17 +85,20 @@ fn zmk_bluetooth_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
         use crate::key_spec::BluetoothAction;
-        vec![common::build_bluetooth_group(&ZmkKeyPresenter, |act| -> &'static [&'static str] {
-            match act {
-                BluetoothAction::Clear => &["&bt BT_CLR", "bt_clr"],
-                BluetoothAction::Next => &["&bt BT_NXT", "bt_nxt"],
-                BluetoothAction::Prev => &["&bt BT_PRV", "bt_prv"],
-                BluetoothAction::ClearAll => &["&bt BT_CLR_ALL", "bt_clr_all"],
-                BluetoothAction::Select(_) => &["&bt BT_SEL", "bt_sel"],
-                BluetoothAction::Disconnect(_) => &["&bt BT_DISC", "bt_disc"],
-                _ => &[],
-            }
-        })]
+        vec![common::build_bluetooth_group(
+            &ZmkKeyPresenter,
+            |act| -> &'static [&'static str] {
+                match act {
+                    BluetoothAction::Clear => &["&bt BT_CLR", "bt_clr"],
+                    BluetoothAction::Next => &["&bt BT_NXT", "bt_nxt"],
+                    BluetoothAction::Prev => &["&bt BT_PRV", "bt_prv"],
+                    BluetoothAction::ClearAll => &["&bt BT_CLR_ALL", "bt_clr_all"],
+                    BluetoothAction::Select(_) => &["&bt BT_SEL", "bt_sel"],
+                    BluetoothAction::Disconnect(_) => &["&bt BT_DISC", "bt_disc"],
+                    _ => &[],
+                }
+            },
+        )]
     })
 }
 
@@ -106,15 +106,18 @@ fn zmk_output_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
         use crate::key_spec::OutputTarget;
-        vec![common::build_output_group(&ZmkKeyPresenter, |target| -> &'static [&'static str] {
-            match target {
-                OutputTarget::Toggle => &["&out OUT_TOG", "out_tog"],
-                OutputTarget::Usb => &["&out OUT_USB", "out_usb"],
-                OutputTarget::Ble => &["&out OUT_BLE", "out_ble"],
-                OutputTarget::None => &["&out OUT_NONE", "out_none"],
-                _ => &[],
-            }
-        })]
+        vec![common::build_output_group(
+            &ZmkKeyPresenter,
+            |target| -> &'static [&'static str] {
+                match target {
+                    OutputTarget::Toggle => &["&out OUT_TOG", "out_tog"],
+                    OutputTarget::Usb => &["&out OUT_USB", "out_usb"],
+                    OutputTarget::Ble => &["&out OUT_BLE", "out_ble"],
+                    OutputTarget::None => &["&out OUT_NONE", "out_none"],
+                    _ => &[],
+                }
+            },
+        )]
     })
 }
 
@@ -124,13 +127,34 @@ fn zmk_system_groups() -> &'static [CandidateGroup] {
 }
 
 const ZMK_BOOT_POWER_ACTIONS: [(crate::key_spec::PowerAction, &[&str]); 7] = [
-    (crate::key_spec::PowerAction::Reset, &["reset", "reboot", "sys_reset"]),
-    (crate::key_spec::PowerAction::Bootloader, &["bootloader", "dfu", "flash", "boot"]),
-    (crate::key_spec::PowerAction::SoftOff, &["soft off", "power off", "shutdown"]),
-    (crate::key_spec::PowerAction::UnlockKeymap, &["unlock", "keymap unlock", "studio unlock"]),
-    (crate::key_spec::PowerAction::Toggle, &["ext pwr tog", "power toggle"]),
-    (crate::key_spec::PowerAction::On, &["ext pwr on", "power on"]),
-    (crate::key_spec::PowerAction::Off, &["ext pwr off", "power off"]),
+    (
+        crate::key_spec::PowerAction::Reset,
+        &["reset", "reboot", "sys_reset"],
+    ),
+    (
+        crate::key_spec::PowerAction::Bootloader,
+        &["bootloader", "dfu", "flash", "boot"],
+    ),
+    (
+        crate::key_spec::PowerAction::SoftOff,
+        &["soft off", "power off", "shutdown"],
+    ),
+    (
+        crate::key_spec::PowerAction::UnlockKeymap,
+        &["unlock", "keymap unlock", "studio unlock"],
+    ),
+    (
+        crate::key_spec::PowerAction::Toggle,
+        &["ext pwr tog", "power toggle"],
+    ),
+    (
+        crate::key_spec::PowerAction::On,
+        &["ext pwr on", "power on"],
+    ),
+    (
+        crate::key_spec::PowerAction::Off,
+        &["ext pwr off", "power off"],
+    ),
 ];
 
 fn zmk_boot_power_groups() -> &'static [CandidateGroup] {
@@ -160,17 +184,20 @@ fn zmk_backlight_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
         use crate::key_spec::BacklightAction;
-        vec![common::build_backlight_group(&ZmkKeyPresenter, |act| -> &'static [&'static str] {
-            match act {
-                BacklightAction::Toggle => &["&bl BL_TOG"],
-                BacklightAction::On => &["&bl BL_ON"],
-                BacklightAction::Off => &["&bl BL_OFF"],
-                BacklightAction::Inc => &["&bl BL_INC"],
-                BacklightAction::Dec => &["&bl BL_DEC"],
-                BacklightAction::Cycle => &["&bl BL_CYCLE"],
-                _ => &[],
-            }
-        })]
+        vec![common::build_backlight_group(
+            &ZmkKeyPresenter,
+            |act| -> &'static [&'static str] {
+                match act {
+                    BacklightAction::Toggle => &["&bl BL_TOG"],
+                    BacklightAction::On => &["&bl BL_ON"],
+                    BacklightAction::Off => &["&bl BL_OFF"],
+                    BacklightAction::Inc => &["&bl BL_INC"],
+                    BacklightAction::Dec => &["&bl BL_DEC"],
+                    BacklightAction::Cycle => &["&bl BL_CYCLE"],
+                    _ => &[],
+                }
+            },
+        )]
     })
 }
 
@@ -178,24 +205,27 @@ fn zmk_rgb_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
         use crate::key_spec::RgbAction;
-        vec![common::build_rgb_underglow_group(&ZmkKeyPresenter, |act| -> &'static [&'static str] {
-            match act {
-                RgbAction::Toggle => &["&rgb_ug RGB_TOG"],
-                RgbAction::On => &["&rgb_ug RGB_ON"],
-                RgbAction::Off => &["&rgb_ug RGB_OFF"],
-                RgbAction::EffectInc => &["&rgb_ug RGB_EFF"],
-                RgbAction::EffectDec => &["&rgb_ug RGB_EFR"],
-                RgbAction::HueInc => &["&rgb_ug RGB_HUI"],
-                RgbAction::HueDec => &["&rgb_ug RGB_HUD"],
-                RgbAction::SatInc => &["&rgb_ug RGB_SAI"],
-                RgbAction::SatDec => &["&rgb_ug RGB_SAD"],
-                RgbAction::BrightInc => &["&rgb_ug RGB_BRI"],
-                RgbAction::BrightDec => &["&rgb_ug RGB_BRD"],
-                RgbAction::SpeedInc => &["&rgb_ug RGB_SPI"],
-                RgbAction::SpeedDec => &["&rgb_ug RGB_SPD"],
-                _ => &[],
-            }
-        })]
+        vec![common::build_rgb_underglow_group(
+            &ZmkKeyPresenter,
+            |act| -> &'static [&'static str] {
+                match act {
+                    RgbAction::Toggle => &["&rgb_ug RGB_TOG"],
+                    RgbAction::On => &["&rgb_ug RGB_ON"],
+                    RgbAction::Off => &["&rgb_ug RGB_OFF"],
+                    RgbAction::EffectInc => &["&rgb_ug RGB_EFF"],
+                    RgbAction::EffectDec => &["&rgb_ug RGB_EFR"],
+                    RgbAction::HueInc => &["&rgb_ug RGB_HUI"],
+                    RgbAction::HueDec => &["&rgb_ug RGB_HUD"],
+                    RgbAction::SatInc => &["&rgb_ug RGB_SAI"],
+                    RgbAction::SatDec => &["&rgb_ug RGB_SAD"],
+                    RgbAction::BrightInc => &["&rgb_ug RGB_BRI"],
+                    RgbAction::BrightDec => &["&rgb_ug RGB_BRD"],
+                    RgbAction::SpeedInc => &["&rgb_ug RGB_SPI"],
+                    RgbAction::SpeedDec => &["&rgb_ug RGB_SPD"],
+                    _ => &[],
+                }
+            },
+        )]
     })
 }
 
@@ -225,16 +255,19 @@ fn zmk_mouse_groups() -> &'static [CandidateGroup] {
 fn zmk_special_groups() -> &'static [CandidateGroup] {
     static GROUPS: OnceLock<Vec<CandidateGroup>> = OnceLock::new();
     GROUPS.get_or_init(|| {
-        vec![common::build_special_group(&ZmkKeyPresenter, |spec| -> &'static [&'static str] {
-            match spec {
-                KeySpec::Transparent => &["&trans"],
-                KeySpec::None => &["&none"],
-                KeySpec::CapsWord => &["&caps_word"],
-                KeySpec::KeyRepeat => &["&key_repeat"],
-                KeySpec::GraveEscape => &["&gresc", "gresc"],
-                _ => &[],
-            }
-        })]
+        vec![common::build_special_group(
+            &ZmkKeyPresenter,
+            |spec| -> &'static [&'static str] {
+                match spec {
+                    KeySpec::Transparent => &["&trans"],
+                    KeySpec::None => &["&none"],
+                    KeySpec::CapsWord => &["&caps_word"],
+                    KeySpec::KeyRepeat => &["&key_repeat"],
+                    KeySpec::GraveEscape => &["&gresc", "gresc"],
+                    _ => &[],
+                }
+            },
+        )]
     })
 }
 
@@ -244,10 +277,26 @@ fn zmk_custom_groups() -> &'static [CandidateGroup] {
 }
 
 const ZMK_LAYER_OPS: [(&str, crate::key_spec::LayerActivation, &[&str]); 4] = [
-    ("Momentary", crate::key_spec::LayerActivation::Momentary, &["mo", "momentary"]),
-    ("Toggle", crate::key_spec::LayerActivation::Toggle, &["tg", "toggle"]),
-    ("Switch To Layer", crate::key_spec::LayerActivation::To, &["to", "switch"]),
-    ("Sticky Layer", crate::key_spec::LayerActivation::Sticky, &["sl", "sticky", "oneshot"]),
+    (
+        "Momentary",
+        crate::key_spec::LayerActivation::Momentary,
+        &["mo", "momentary"],
+    ),
+    (
+        "Toggle",
+        crate::key_spec::LayerActivation::Toggle,
+        &["tg", "toggle"],
+    ),
+    (
+        "Switch To Layer",
+        crate::key_spec::LayerActivation::To,
+        &["to", "switch"],
+    ),
+    (
+        "Sticky Layer",
+        crate::key_spec::LayerActivation::Sticky,
+        &["sl", "sticky", "oneshot"],
+    ),
 ];
 
 impl KeyPresenter for ZmkEditorProfile {
@@ -267,13 +316,6 @@ impl EditorProfile for ZmkEditorProfile {
 
     fn sidebar_sections(&self) -> &[SidebarSection<EditorSection>] {
         &ZMK_SIDEBAR_SECTIONS
-    }
-
-    fn section_label(&self, section: EditorSection) -> &'static str {
-        match section {
-            EditorSection::OneShot => "Sticky Key",
-            _ => section.label(),
-        }
     }
 
     fn tap_categories(&self) -> &'static [CandidateGroup] {

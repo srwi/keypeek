@@ -12,12 +12,12 @@ pub mod vial;
 pub use presenter::QmkKeyPresenter;
 pub use profile::QmkEditorProfile;
 
-use std::sync::Arc;
 use crate::device_discovery::DeviceDriverScanner;
 use crate::firmware::FirmwareBundle;
 use crate::key_presenter::KeyPresenter;
 use crate::keymap_editor::EditorProfile;
 use crate::protocols::{ConnectionSpec, DeviceError, KeyboardProtocol};
+use std::sync::Arc;
 
 pub struct QmkBundle;
 
@@ -44,7 +44,9 @@ impl FirmwareBundle for QmkBundle {
                 let protocol = vial::VialProtocol::connect(*vid, *pid)?;
                 Ok(Box::new(protocol))
             }
-            _ => Err(DeviceError::Unsupported("Unsupported spec for QMK bundle".to_string())),
+            _ => Err(DeviceError::Unsupported(
+                "Unsupported spec for QMK bundle".to_string(),
+            )),
         }
     }
 }

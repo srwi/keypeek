@@ -10,8 +10,8 @@ pub use draft::KeyDraft;
 pub use picker::KEY_UNIT;
 pub use profile::{EditorProfile, LayerTapTarget, SidebarSection};
 
-use crate::key_spec::KeySpec;
 use crate::application::Keyboard;
+use crate::key_spec::KeySpec;
 use crate::protocols::WriteSupport;
 use egui::Window;
 use std::sync::mpsc;
@@ -201,6 +201,13 @@ impl EditorState {
         self.target.as_ref().map(|t| t.layer_index)
     }
 
+    /// Returns `true` if the currently targeted key matches the given matrix position.
+    pub fn is_key_targeted(&self, row: usize, col: usize) -> bool {
+        self.target
+            .as_ref()
+            .is_some_and(|t| t.row == row && t.col == col)
+    }
+
     /// Sets the target key and loads its current binding into the draft.
     ///
     /// When opening the editor (no active target), the section containing the key's
@@ -229,100 +236,6 @@ impl EditorState {
             self.draft = Default::default();
         }
     }
-}
-
-/// Width of the left category panel in pixels.
-const SIDEBAR_WIDTH: f32 = 110.0;
-/// Right margin to prevent scrollbar overlap with group borders.
-const SCROLLBAR_GUTTER: f32 = 8.0;
-
-/// Draws the left category panel with sectioned items and a search bar pinned to the bottom.
-pub(super) fn editor_left_panel(
-    ui: &mut egui::Ui,
-    left_id: &str,
-    keyboard: &Keyboard,
-    profile: &dyn EditorProfile,
-    current: draft::EditorSection,
-    sections: &[SidebarSection<draft::EditorSection>],
-    search_query: &mut String,
-) -> Option<draft::EditorSection> {
-    let mut selected = None;
-    let left_id = egui::Id::new(left_id);
-    egui::Panel::left(left_id)
-        .resizable(false)
-        .exact_size(SIDEBAR_WIDTH)
-        .show_separator_line(false)
-        .frame(egui::Frame::NONE.inner_margin(egui::Margin {
-            left: 0,
-            right: 8,
-            top: 0,
-            bottom: 0,
-        }))
-        .show(ui, |ui| {
-            ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                ui.add_space(2.0);
-                picker::search_bar(ui, search_query);
-                ui.add_space(6.0);
-                ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
-                            for section in sections {
-                                let supported: Vec<draft::EditorSection> = section
-                                    .items
-                                    .iter()
-                                    .copied()
-                                    .filter(|item| profile.is_section_supported(*item, keyboard))
-                                    .collect();
-                                if supported.is_empty() {
-                                    continue;
-                                }
-                                ui.weak(section.title);
-                                for item in supported {
-                                    if ui
-                                        .selectable_label(
-                                            current == item,
-                                            profile.section_label(item),
-                                        )
-                                        .clicked()
-                                    {
-                                        selected = Some(item);
-                                    }
-                                }
-                                ui.add_space(4.0);
-                            }
-                        });
-                    });
-                });
-            });
-        });
-    selected
-}
-
-/// The editor's scrolling central panel.
-pub(super) fn editor_central_panel(
-    ui: &mut egui::Ui,
-    id_salt: impl std::hash::Hash + std::fmt::Debug,
-    content: impl FnOnce(&mut egui::Ui),
-) {
-    egui::CentralPanel::default()
-        .frame(egui::Frame::NONE.inner_margin(egui::Margin {
-            left: 4,
-            right: 0,
-            top: 0,
-            bottom: 0,
-        }))
-        .show(ui, |ui| {
-            ui.push_id(&id_salt, |ui| {
-                egui::ScrollArea::vertical()
-                    .id_salt(&id_salt)
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        let content_width = (ui.available_width() - SCROLLBAR_GUTTER).max(100.0);
-                        ui.set_max_width(content_width);
-                        content(ui);
-                    });
-            });
-        });
 }
 
 impl EditorState {
@@ -394,6 +307,18 @@ impl EditorState {
         }
     }
 
+    /// Applies an action if it is different from the target's current binding.
+    pub(super) fn commit_action(
+        &mut self,
+        keyboard: &Keyboard,
+        target: EditTarget,
+        action: KeySpec,
+    ) {
+        if target.action(keyboard).as_ref() != Some(&action) {
+            self.apply_write(keyboard, target, action);
+        }
+    }
+
     /// Applies a staged binding if it is complete and different from the current key.
     pub(super) fn commit_staged(
         &mut self,
@@ -402,9 +327,7 @@ impl EditorState {
         staged: Option<KeySpec>,
     ) {
         if let Some(action) = staged {
-            if target.action(keyboard).as_ref() != Some(&action) {
-                self.apply_write(keyboard, target, action);
-            }
+            self.commit_action(keyboard, target, action);
         }
     }
 
@@ -702,6 +625,17 @@ mod tests {
 
         editor.target = Some(EditTarget::new(2, 1, 3));
         assert_eq!(editor.pinned_layer(), Some(2));
+    }
+
+    #[test]
+    fn test_is_key_targeted() {
+        let mut editor = EditorState::new();
+        assert!(!editor.is_key_targeted(1, 3));
+
+        editor.target = Some(EditTarget::new(2, 1, 3));
+        assert!(editor.is_key_targeted(1, 3));
+        assert!(!editor.is_key_targeted(1, 4));
+        assert!(!editor.is_key_targeted(2, 3));
     }
 
     #[test]

@@ -3,12 +3,12 @@
 //! An [`EditorProfile`] defines firmware-specific editor structure, sidebar
 //! section organization, candidate presentation, and vocabulary.
 
+use super::draft::EditorSection;
 use crate::application::Keyboard;
 use crate::hid_labels::Modifiers;
 use crate::key_presenter::KeyPresenter;
 use crate::key_spec::{HidKey, KeySpec};
 use crate::keymap_editor::picker::CandidateGroup;
-use super::draft::EditorSection;
 
 /// A section group for the editor's left sidebar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,11 +37,17 @@ pub trait EditorProfile: KeyPresenter + Send + Sync {
     fn sidebar_sections(&self) -> &[SidebarSection<EditorSection>];
 
     /// Firmware-native label for a section.
-    fn section_label(&self, section: EditorSection) -> &'static str;
+    fn section_label(&self, section: EditorSection) -> &'static str {
+        section.label()
+    }
 
     /// Checks if a section is supported on this profile for the given keyboard.
     fn is_section_supported(&self, section: EditorSection, keyboard: &Keyboard) -> bool {
-        if !self.sidebar_sections().iter().any(|s| s.items.contains(&section)) {
+        if !self
+            .sidebar_sections()
+            .iter()
+            .any(|s| s.items.contains(&section))
+        {
             return false;
         }
         is_device_section_supported(section, keyboard)
@@ -112,15 +118,15 @@ fn is_device_section_supported(section: EditorSection, keyboard: &Keyboard) -> b
         EditorSection::Mouse => keyboard.is_action_supported(&KeySpec::Mouse(
             crate::key_spec::MouseAction::Press(crate::key_spec::MouseButton::Left),
         )),
-        EditorSection::Custom => keyboard.is_action_supported(&KeySpec::Custom(
-            crate::key_spec::CustomBinding {
+        EditorSection::Custom => {
+            keyboard.is_action_supported(&KeySpec::Custom(crate::key_spec::CustomBinding {
                 kind: crate::key_spec::CustomKind::Macro,
                 id: 0,
                 name: None,
                 param1: None,
                 param2: None,
-            },
-        )),
+            }))
+        }
     }
 }
 
@@ -134,7 +140,10 @@ mod tests {
     fn qmk_profile_exposes_qmk_native_sections_and_names() {
         let profile = QmkEditorProfile;
         assert_eq!(profile.name(), "QMK");
-        assert_eq!(profile.section_label(EditorSection::OneShot), "One-Shot Mod");
+        assert_eq!(
+            profile.section_label(EditorSection::OneShot),
+            "One-Shot Mod"
+        );
         assert_eq!(profile.section_label(EditorSection::Keyboard), "Key Press");
         assert_eq!(profile.section_label(EditorSection::RawHex), "Any Keycode");
 
@@ -211,16 +220,10 @@ mod tests {
             &[EditorSection::Keyboard, EditorSection::KeyToggle]
         );
 
-        let qmk_has_wireless = qmk
-            .sidebar_sections()
-            .iter()
-            .any(|s| s.title == "Wireless");
+        let qmk_has_wireless = qmk.sidebar_sections().iter().any(|s| s.title == "Wireless");
         assert!(!qmk_has_wireless, "QMK should not have Wireless section");
 
-        let zmk_has_wireless = zmk
-            .sidebar_sections()
-            .iter()
-            .any(|s| s.title == "Wireless");
+        let zmk_has_wireless = zmk.sidebar_sections().iter().any(|s| s.title == "Wireless");
         assert!(zmk_has_wireless, "ZMK should have Wireless section");
 
         let qmk_other = qmk
@@ -275,15 +278,27 @@ mod tests {
     fn qmk_attaches_qmk_aliases_only() {
         let qmk = QmkEditorProfile;
         let boot = qmk.section_groups(EditorSection::BootPower);
-        let qk_boot = boot[0].candidates.iter().find(|c| c.matches_query("QK_BOOT"));
-        assert!(qk_boot.is_some(), "QMK profile should contain QK_BOOT token");
+        let qk_boot = boot[0]
+            .candidates
+            .iter()
+            .find(|c| c.matches_query("QK_BOOT"));
+        assert!(
+            qk_boot.is_some(),
+            "QMK profile should contain QK_BOOT token"
+        );
 
         let zmk = ZmkEditorProfile;
         let zmk_boot = zmk.section_groups(EditorSection::BootPower);
-        let zmk_has_qk = zmk_boot[0].candidates.iter().any(|c| c.matches_query("QK_BOOT"));
+        let zmk_has_qk = zmk_boot[0]
+            .candidates
+            .iter()
+            .any(|c| c.matches_query("QK_BOOT"));
         assert!(!zmk_has_qk, "ZMK profile should NOT contain QK_BOOT token");
 
-        let zmk_has_reset = zmk_boot[0].candidates.iter().any(|c| c.matches_query("&sys_reset"));
+        let zmk_has_reset = zmk_boot[0]
+            .candidates
+            .iter()
+            .any(|c| c.matches_query("&sys_reset"));
         assert!(zmk_has_reset, "ZMK profile should contain &sys_reset token");
     }
 
@@ -421,15 +436,17 @@ mod tests {
         };
         let filter = crate::firmware::qmk::common::qmk_action_filter(qmk_features).unwrap();
         // Backlight is enabled
-        assert!(filter(&KeySpec::Lighting(crate::key_spec::LightingAction::Backlight(
-            crate::key_spec::BacklightAction::Toggle
-        ))));
+        assert!(filter(&KeySpec::Lighting(
+            crate::key_spec::LightingAction::Backlight(crate::key_spec::BacklightAction::Toggle)
+        )));
         // RGBLight is disabled on this device
-        assert!(!filter(&KeySpec::Lighting(crate::key_spec::LightingAction::Rgb(
-            crate::key_spec::RgbAction::Toggle
-        ))));
+        assert!(!filter(&KeySpec::Lighting(
+            crate::key_spec::LightingAction::Rgb(crate::key_spec::RgbAction::Toggle)
+        )));
         // Audio is disabled on this device
-        assert!(!filter(&KeySpec::Audio(crate::key_spec::AudioAction::Toggle)));
+        assert!(!filter(&KeySpec::Audio(
+            crate::key_spec::AudioAction::Toggle
+        )));
     }
 
     #[test]

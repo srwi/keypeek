@@ -8,22 +8,18 @@ use crate::hid_labels::Modifiers;
 use crate::key_presenter::KeyPresenter;
 use crate::key_spec::{
     AudioAction, BacklightAction, BluetoothAction, CustomBinding, CustomKind, HidKey, KeySpec,
-    LayerActivation, LightingAction, MouseAction, MouseButton, OutputTarget,
-    PowerAction, RgbAction, RgbMatrixAction,
+    LayerActivation, LightingAction, MouseAction, MouseButton, OutputTarget, PowerAction,
+    RgbAction, RgbMatrixAction,
 };
 use crate::keymap_editor::picker::{Candidate, CandidateGroup};
 
 /// Creates a candidate from a [`KeySpec`] and attaches search tokens.
 pub fn action_candidate(spec: KeySpec, names: &[&str], presenter: &dyn KeyPresenter) -> Candidate {
-    let mut cand = Candidate::from_action(spec, presenter, &[]);
-    for name in names {
-        cand = cand.with_search_token(*name);
-    }
-    cand
+    Candidate::from_action(spec, presenter, &[]).with_search_tokens(names.iter().copied())
 }
 
 /// Attaches standard friendly aliases (e.g. "enter", "ctrl", "esc") to keyboard usages.
-pub fn attach_friendly_keyboard_aliases(mut cand: Candidate, id: u16) -> Candidate {
+pub fn attach_friendly_keyboard_aliases(cand: Candidate, id: u16) -> Candidate {
     let aliases: &[&str] = match id {
         0x28 => &["enter", "return"],
         0x29 => &["esc", "escape"],
@@ -61,14 +57,11 @@ pub fn attach_friendly_keyboard_aliases(mut cand: Candidate, id: u16) -> Candida
         0xE3 | 0xE7 => &["gui", "win", "cmd", "super"],
         _ => &[],
     };
-    for &alias in aliases {
-        cand = cand.with_search_token(alias);
-    }
-    cand
+    cand.with_search_tokens(aliases.iter().copied())
 }
 
 /// Attaches standard friendly aliases (e.g. "mute", "volup", "play") to consumer usages.
-pub fn attach_friendly_media_aliases(mut cand: Candidate, id: u16) -> Candidate {
+pub fn attach_friendly_media_aliases(cand: Candidate, id: u16) -> Candidate {
     let aliases: &[&str] = match id {
         0xE2 => &["mute", "audio"],
         0xE9 => &["volume", "volup"],
@@ -90,10 +83,7 @@ pub fn attach_friendly_media_aliases(mut cand: Candidate, id: u16) -> Candidate 
         0x70 => &["brightness", "bridn"],
         _ => &[],
     };
-    for &alias in aliases {
-        cand = cand.with_search_token(alias);
-    }
-    cand
+    cand.with_search_tokens(aliases.iter().copied())
 }
 
 /// Builds candidates for keyboard usages (USB HID Page 0x07).
@@ -113,10 +103,7 @@ pub fn build_keyboard_candidates(
             if cand.key.symbol.is_none() && cand.key.tap.is_empty() {
                 cand.key.symbol = Some(format!("0x{:02X}", id));
             }
-            cand = cand.with_search_token(format!("{:04x}", id));
-            for token in token_fn(id) {
-                cand = cand.with_search_token(token);
-            }
+            cand = cand.with_search_tokens(token_fn(id));
             attach_friendly_keyboard_aliases(cand, id)
         })
         .collect()
@@ -139,10 +126,7 @@ pub fn build_media_candidates(
             if cand.key.symbol.is_none() && cand.key.tap.is_empty() {
                 cand.key.symbol = Some(format!("0x{:04X}", id));
             }
-            cand = cand.with_search_token(format!("{:04x}", id));
-            for token in token_fn(id) {
-                cand = cand.with_search_token(token);
-            }
+            cand = cand.with_search_tokens(token_fn(id));
             attach_friendly_media_aliases(cand, id)
         })
         .collect()
@@ -154,10 +138,16 @@ pub fn build_bluetooth_group(
     extra_tokens_fn: impl Fn(BluetoothAction) -> &'static [&'static str],
 ) -> CandidateGroup {
     let mut actions = vec![
-        (BluetoothAction::Clear, &["bt clear", "bt clr", "disconnect"][..]),
+        (
+            BluetoothAction::Clear,
+            &["bt clear", "bt clr", "disconnect"][..],
+        ),
         (BluetoothAction::Next, &["bt next", "bt nxt"][..]),
         (BluetoothAction::Prev, &["bt prev", "bt prv"][..]),
-        (BluetoothAction::ClearAll, &["bt clear all", "bt clr all"][..]),
+        (
+            BluetoothAction::ClearAll,
+            &["bt clear all", "bt clr all"][..],
+        ),
     ];
 
     for i in 0..=9 {
@@ -170,13 +160,8 @@ pub fn build_bluetooth_group(
     let candidates = actions
         .into_iter()
         .map(|(action, names)| {
-            let mut cand = action_candidate(KeySpec::Bluetooth(action), names, presenter);
-            for name in names {
-                cand = cand.with_search_token(*name);
-            }
-            for extra in extra_tokens_fn(action) {
-                cand = cand.with_search_token(*extra);
-            }
+            let mut cand = action_candidate(KeySpec::Bluetooth(action), names, presenter)
+                .with_search_tokens(extra_tokens_fn(action).iter().copied());
             match action {
                 BluetoothAction::Select(n) => {
                     cand = cand
@@ -184,8 +169,7 @@ pub fn build_bluetooth_group(
                         .with_search_token(format!("bt sel {n}"));
                 }
                 BluetoothAction::Disconnect(n) => {
-                    cand = cand
-                        .with_search_token(format!("bt disc {n}"));
+                    cand = cand.with_search_token(format!("bt disc {n}"));
                 }
                 _ => {}
             }
@@ -214,11 +198,8 @@ pub fn build_output_group(
     let candidates = targets
         .into_iter()
         .map(|(target, names)| {
-            let mut cand = action_candidate(KeySpec::Output(target), names, presenter);
-            for extra in extra_tokens_fn(target) {
-                cand = cand.with_search_token(*extra);
-            }
-            cand
+            action_candidate(KeySpec::Output(target), names, presenter)
+                .with_search_tokens(extra_tokens_fn(target).iter().copied())
         })
         .collect();
 
@@ -234,25 +215,31 @@ pub fn build_system_group(
     extra_tokens_fn: impl Fn(u16) -> &'static [&'static str],
 ) -> CandidateGroup {
     let sys_keys = [
-        (HidKey::system(0x81), &["system power", "sys power", "power down"][..]),
-        (HidKey::system(0x82), &["system sleep", "sys sleep", "sleep"][..]),
-        (HidKey::system(0x83), &["system wake", "sys wake", "wake"][..]),
+        (
+            HidKey::system(0x81),
+            &["system power", "sys power", "power down"][..],
+        ),
+        (
+            HidKey::system(0x82),
+            &["system sleep", "sys sleep", "sleep"][..],
+        ),
+        (
+            HidKey::system(0x83),
+            &["system wake", "sys wake", "wake"][..],
+        ),
     ];
     let candidates = sys_keys
         .into_iter()
         .map(|(key, names)| {
-            let mut cand = action_candidate(
+            action_candidate(
                 KeySpec::KeyPress {
                     key,
                     modifiers: Modifiers::default(),
                 },
                 names,
                 presenter,
-            );
-            for extra in extra_tokens_fn(key.id) {
-                cand = cand.with_search_token(*extra);
-            }
-            cand
+            )
+            .with_search_tokens(extra_tokens_fn(key.id).iter().copied())
         })
         .collect();
 
@@ -271,11 +258,8 @@ pub fn build_boot_power_group(
     let candidates = actions
         .iter()
         .map(|(action, names)| {
-            let mut cand = action_candidate(KeySpec::Power(*action), names, presenter);
-            for extra in extra_tokens_fn(*action) {
-                cand = cand.with_search_token(*extra);
-            }
-            cand
+            action_candidate(KeySpec::Power(*action), names, presenter)
+                .with_search_tokens(extra_tokens_fn(*action).iter().copied())
         })
         .collect();
 
@@ -297,17 +281,21 @@ pub fn build_backlight_group(
         (BacklightAction::Inc, &["bl inc", "backlight up"][..]),
         (BacklightAction::Dec, &["bl dec", "backlight down"][..]),
         (BacklightAction::Cycle, &["bl step", "backlight cycle"][..]),
-        (BacklightAction::BreathingToggle, &["bl breath", "bl breathing"][..]),
+        (
+            BacklightAction::BreathingToggle,
+            &["bl breath", "bl breathing"][..],
+        ),
     ];
 
     let candidates = bl_actions
         .into_iter()
         .map(|(action, names)| {
-            let mut cand = action_candidate(KeySpec::Lighting(LightingAction::Backlight(action)), names, presenter);
-            for extra in extra_tokens_fn(action) {
-                cand = cand.with_search_token(*extra);
-            }
-            cand
+            action_candidate(
+                KeySpec::Lighting(LightingAction::Backlight(action)),
+                names,
+                presenter,
+            )
+            .with_search_tokens(extra_tokens_fn(action).iter().copied())
         })
         .collect();
 
@@ -343,11 +331,12 @@ pub fn build_rgb_underglow_group(
     let candidates = rgb_actions
         .into_iter()
         .map(|(action, names)| {
-            let mut cand = action_candidate(KeySpec::Lighting(LightingAction::Rgb(action)), names, presenter);
-            for extra in extra_tokens_fn(action) {
-                cand = cand.with_search_token(*extra);
-            }
-            cand
+            action_candidate(
+                KeySpec::Lighting(LightingAction::Rgb(action)),
+                names,
+                presenter,
+            )
+            .with_search_tokens(extra_tokens_fn(action).iter().copied())
         })
         .collect();
 
@@ -363,26 +352,48 @@ pub fn build_rgb_matrix_group(
     extra_tokens_fn: impl Fn(RgbMatrixAction) -> &'static [&'static str],
 ) -> CandidateGroup {
     let actions = [
-        (RgbMatrixAction::Toggle, &["rgb matrix toggle", "rgb_tog"][..]),
-        (RgbMatrixAction::ModeNext, &["rgb matrix next", "rgb_mod"][..]),
-        (RgbMatrixAction::ModePrev, &["rgb matrix prev", "rgb_rmod"][..]),
+        (
+            RgbMatrixAction::Toggle,
+            &["rgb matrix toggle", "rgb_tog"][..],
+        ),
+        (
+            RgbMatrixAction::ModeNext,
+            &["rgb matrix next", "rgb_mod"][..],
+        ),
+        (
+            RgbMatrixAction::ModePrev,
+            &["rgb matrix prev", "rgb_rmod"][..],
+        ),
         (RgbMatrixAction::HueInc, &["rgb matrix hue+", "rgb_hui"][..]),
         (RgbMatrixAction::HueDec, &["rgb matrix hue-", "rgb_hud"][..]),
         (RgbMatrixAction::SatInc, &["rgb matrix sat+", "rgb_sai"][..]),
         (RgbMatrixAction::SatDec, &["rgb matrix sat-", "rgb_sad"][..]),
-        (RgbMatrixAction::BrightInc, &["rgb matrix val+", "rgb_vai"][..]),
-        (RgbMatrixAction::BrightDec, &["rgb matrix val-", "rgb_vad"][..]),
-        (RgbMatrixAction::SpeedInc, &["rgb matrix speed+", "rgb_spi"][..]),
-        (RgbMatrixAction::SpeedDec, &["rgb matrix speed-", "rgb_spd"][..]),
+        (
+            RgbMatrixAction::BrightInc,
+            &["rgb matrix val+", "rgb_vai"][..],
+        ),
+        (
+            RgbMatrixAction::BrightDec,
+            &["rgb matrix val-", "rgb_vad"][..],
+        ),
+        (
+            RgbMatrixAction::SpeedInc,
+            &["rgb matrix speed+", "rgb_spi"][..],
+        ),
+        (
+            RgbMatrixAction::SpeedDec,
+            &["rgb matrix speed-", "rgb_spd"][..],
+        ),
     ];
     let candidates = actions
         .into_iter()
         .map(|(act, names)| {
-            let mut cand = action_candidate(KeySpec::Lighting(LightingAction::RgbMatrix(act)), names, presenter);
-            for extra in extra_tokens_fn(act) {
-                cand = cand.with_search_token(*extra);
-            }
-            cand
+            action_candidate(
+                KeySpec::Lighting(LightingAction::RgbMatrix(act)),
+                names,
+                presenter,
+            )
+            .with_search_tokens(extra_tokens_fn(act).iter().copied())
         })
         .collect();
     CandidateGroup {
@@ -416,11 +427,8 @@ pub fn build_audio_group(
     let candidates = actions
         .into_iter()
         .map(|(act, names)| {
-            let mut cand = action_candidate(KeySpec::Audio(act), names, presenter);
-            for extra in extra_tokens_fn(act) {
-                cand = cand.with_search_token(*extra);
-            }
-            cand
+            action_candidate(KeySpec::Audio(act), names, presenter)
+                .with_search_tokens(extra_tokens_fn(act).iter().copied())
         })
         .collect();
     CandidateGroup {
@@ -437,8 +445,14 @@ pub fn build_mouse_groups(
 ) -> Vec<CandidateGroup> {
     let buttons = [
         (MouseButton::Left, &["mouse left", "btn1", "left click"][..]),
-        (MouseButton::Right, &["mouse right", "btn2", "right click"][..]),
-        (MouseButton::Middle, &["mouse middle", "btn3", "middle click"][..]),
+        (
+            MouseButton::Right,
+            &["mouse right", "btn2", "right click"][..],
+        ),
+        (
+            MouseButton::Middle,
+            &["mouse middle", "btn3", "middle click"][..],
+        ),
         (MouseButton::Button4, &["mouse btn4"][..]),
         (MouseButton::Button5, &["mouse btn5"][..]),
         (MouseButton::Other(6), &["mouse btn6"][..]),
@@ -450,49 +464,64 @@ pub fn build_mouse_groups(
         .into_iter()
         .map(|(btn, names)| {
             let spec = KeySpec::Mouse(MouseAction::Press(btn));
-            let mut cand = action_candidate(spec.clone(), names, presenter);
-            for extra in extra_tokens_fn(&spec) {
-                cand = cand.with_search_token(*extra);
-            }
-            cand
+            let extra = extra_tokens_fn(&spec);
+            action_candidate(spec, names, presenter).with_search_tokens(extra.iter().copied())
         })
         .collect();
 
     let move_directions = [
-        (MouseAction::Move { x: 0, y: -1 }, &["mouse up", "move up", "ms up"][..]),
-        (MouseAction::Move { x: 0, y: 1 }, &["mouse down", "move down", "ms down"][..]),
-        (MouseAction::Move { x: -1, y: 0 }, &["mouse left", "move left", "ms left"][..]),
-        (MouseAction::Move { x: 1, y: 0 }, &["mouse right", "move right", "ms right"][..]),
+        (
+            MouseAction::Move { x: 0, y: -1 },
+            &["mouse up", "move up", "ms up"][..],
+        ),
+        (
+            MouseAction::Move { x: 0, y: 1 },
+            &["mouse down", "move down", "ms down"][..],
+        ),
+        (
+            MouseAction::Move { x: -1, y: 0 },
+            &["mouse left", "move left", "ms left"][..],
+        ),
+        (
+            MouseAction::Move { x: 1, y: 0 },
+            &["mouse right", "move right", "ms right"][..],
+        ),
     ];
 
     let move_candidates = move_directions
         .into_iter()
         .map(|(action, names)| {
             let spec = KeySpec::Mouse(action);
-            let mut cand = action_candidate(spec.clone(), names, presenter);
-            for extra in extra_tokens_fn(&spec) {
-                cand = cand.with_search_token(*extra);
-            }
-            cand
+            let extra = extra_tokens_fn(&spec);
+            action_candidate(spec, names, presenter).with_search_tokens(extra.iter().copied())
         })
         .collect();
 
     let scroll_directions = [
-        (MouseAction::Scroll { x: 0, y: 1 }, &["scroll up", "wh up"][..]),
-        (MouseAction::Scroll { x: 0, y: -1 }, &["scroll down", "wh down"][..]),
-        (MouseAction::Scroll { x: -1, y: 0 }, &["scroll left", "wh left"][..]),
-        (MouseAction::Scroll { x: 1, y: 0 }, &["scroll right", "wh right"][..]),
+        (
+            MouseAction::Scroll { x: 0, y: 1 },
+            &["scroll up", "wh up"][..],
+        ),
+        (
+            MouseAction::Scroll { x: 0, y: -1 },
+            &["scroll down", "wh down"][..],
+        ),
+        (
+            MouseAction::Scroll { x: -1, y: 0 },
+            &["scroll left", "wh left"][..],
+        ),
+        (
+            MouseAction::Scroll { x: 1, y: 0 },
+            &["scroll right", "wh right"][..],
+        ),
     ];
 
     let scroll_candidates = scroll_directions
         .into_iter()
         .map(|(action, names)| {
             let spec = KeySpec::Mouse(action);
-            let mut cand = action_candidate(spec.clone(), names, presenter);
-            for extra in extra_tokens_fn(&spec) {
-                cand = cand.with_search_token(*extra);
-            }
-            cand
+            let extra = extra_tokens_fn(&spec);
+            action_candidate(spec, names, presenter).with_search_tokens(extra.iter().copied())
         })
         .collect();
 
@@ -522,11 +551,8 @@ pub fn build_mouse_groups(
             .into_iter()
             .map(|(level, names)| {
                 let spec = KeySpec::Mouse(MouseAction::Acceleration(level));
-                let mut cand = action_candidate(spec.clone(), names, presenter);
-                for extra in extra_tokens_fn(&spec) {
-                    cand = cand.with_search_token(*extra);
-                }
-                cand
+                let extra = extra_tokens_fn(&spec);
+                action_candidate(spec, names, presenter).with_search_tokens(extra.iter().copied())
             })
             .collect();
 
@@ -555,11 +581,8 @@ pub fn build_special_group(
     let candidates = actions
         .into_iter()
         .map(|(spec, names)| {
-            let mut cand = action_candidate(spec.clone(), names, presenter);
-            for extra in extra_tokens_fn(&spec) {
-                cand = cand.with_search_token(*extra);
-            }
-            cand
+            let extra = extra_tokens_fn(&spec);
+            action_candidate(spec, names, presenter).with_search_tokens(extra.iter().copied())
         })
         .collect();
 
@@ -620,22 +643,17 @@ pub fn build_layer_groups(
         .map(|(name, activation, search_tokens)| {
             let candidates = (0..count)
                 .map(|layer| {
-                    let mut cand = Candidate::from_action(
+                    Candidate::from_action(
                         KeySpec::Layer {
                             layer: layer as u8,
                             activation: *activation,
                         },
                         presenter,
                         layer_names,
-                    );
-                    for token in *search_tokens {
-                        cand = cand.with_search_token(token);
-                    }
-                    for extra in extra_tokens_fn(*activation) {
-                        cand = cand.with_search_token(*extra);
-                    }
-                    cand = cand.with_search_token(format!("l{layer}"));
-                    cand
+                    )
+                    .with_search_tokens(*search_tokens)
+                    .with_search_tokens(extra_tokens_fn(*activation).iter().copied())
+                    .with_search_token(format!("l{layer}"))
                 })
                 .collect();
 
@@ -646,7 +664,7 @@ pub fn build_layer_groups(
     let tap_key = tap.key.unwrap_or_else(|| HidKey::keyboard(0x2C));
     let lt_candidates = (0..count)
         .map(|layer| {
-            let mut cand = Candidate::from_action(
+            Candidate::from_action(
                 KeySpec::LayerTap {
                     layer: layer as u8,
                     tap: tap_key,
@@ -654,12 +672,10 @@ pub fn build_layer_groups(
                 },
                 presenter,
                 layer_names,
-            );
-            cand = cand.with_search_token("lt");
-            cand = cand.with_search_token("layer tap");
-            cand = cand.with_search_token(format!("lt{layer}"));
-            cand = cand.with_search_token(format!("l{layer}"));
-            cand
+            )
+            .with_search_tokens(["lt", "layer tap"])
+            .with_search_token(format!("lt{layer}"))
+            .with_search_token(format!("l{layer}"))
         })
         .collect();
 
@@ -677,7 +693,11 @@ mod tests {
 
     #[test]
     fn common_keyboard_candidates_produce_expected_specs() {
-        let cands = build_keyboard_candidates(&crate::key_presenter::StandardKeyPresenter, vec![0x04, 0x28], |_| vec!["token".to_string()]);
+        let cands = build_keyboard_candidates(
+            &crate::key_presenter::StandardKeyPresenter,
+            vec![0x04, 0x28],
+            |_| vec!["token".to_string()],
+        );
         assert_eq!(cands.len(), 2);
         assert_eq!(
             cands[0].binding,
@@ -693,12 +713,14 @@ mod tests {
 
     #[test]
     fn common_bluetooth_candidates_produce_bluetooth_specs() {
-        let group = build_bluetooth_group(&crate::key_presenter::StandardKeyPresenter, |_| &["test_extra"]);
+        let group = build_bluetooth_group(&crate::key_presenter::StandardKeyPresenter, |_| {
+            &["test_extra"]
+        });
         assert_eq!(group.name, "Bluetooth");
-        assert!(group.candidates.iter().any(|c| matches!(
-            c.binding,
-            KeySpec::Bluetooth(BluetoothAction::Clear)
-        )));
+        assert!(group
+            .candidates
+            .iter()
+            .any(|c| matches!(c.binding, KeySpec::Bluetooth(BluetoothAction::Clear))));
         assert!(group.candidates[0].matches_query("test_extra"));
     }
 }

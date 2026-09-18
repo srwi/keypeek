@@ -13,7 +13,7 @@ mod state;
 mod ui_overlay;
 mod ui_settings;
 
-use connection_manager::{ConnectionEvent, ConnectOutcome, DeviceConnectionManager};
+use connection_manager::{ConnectOutcome, ConnectionEvent, DeviceConnectionManager};
 use state::{SettingsState, UiState};
 
 pub struct OverlayApp {
@@ -186,7 +186,8 @@ impl OverlayApp {
         self.ui.file_dialog.update(ctx);
 
         if let Some(path) = self.ui.file_dialog.take_picked() {
-            self.connection_mgr.set_layout_file_path(path.to_string_lossy().to_string());
+            self.connection_mgr
+                .set_layout_file_path(path.to_string_lossy().to_string());
             self.connect_from_ui();
         }
 
@@ -201,7 +202,8 @@ impl OverlayApp {
             self.draw_overlay_window(ctx, &keyboard, self.overlay_visible());
             if self.editor.is_open() {
                 let style = self.paint_style(crate::keymap_editor::KEY_UNIT);
-                self.editor.draw_window(ctx, &keyboard, profile.as_ref(), &style);
+                self.editor
+                    .draw_window(ctx, &keyboard, profile.as_ref(), &style);
             }
         } else if self.editor.is_open() {
             // The connection dropped; close the editor. Unsaved ZMK changes

@@ -145,18 +145,10 @@ impl VisibilityStateMachine {
         default_layers: u32,
         now: Instant,
     ) -> bool {
-        let active = ActiveLayers::classify(
-            active_layers,
-            default_layers,
-            self.config.visible_layers,
-        );
-        self.window = next_visibility_window(
-            active,
-            self.previous_layers,
-            self.window,
-            now,
-            self.config,
-        );
+        let active =
+            ActiveLayers::classify(active_layers, default_layers, self.config.visible_layers);
+        self.window =
+            next_visibility_window(active, self.previous_layers, self.window, now, self.config);
         self.previous_layers = active;
         true
     }

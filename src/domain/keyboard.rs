@@ -59,7 +59,12 @@ impl KeyboardDomain {
     }
 
     pub fn layer_info(&self, index: usize) -> Option<LayerInfo> {
-        self.matrix.lock().unwrap().layer_infos().get(index).cloned()
+        self.matrix
+            .lock()
+            .unwrap()
+            .layer_infos()
+            .get(index)
+            .cloned()
     }
 
     pub fn update_binding(

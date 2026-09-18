@@ -5,9 +5,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::application::session::KeyboardSession;
-use crate::domain::keyboard::KeyboardDomain;
 use crate::domain::key_matrix::KeyMatrix;
 use crate::domain::key_spec::{KeySpec, LayerInfo};
+use crate::domain::keyboard::KeyboardDomain;
 use crate::domain::layout::KeyboardLayout;
 use crate::domain::visibility::OverlayConfig;
 use crate::key_presenter::KeyPresenter;

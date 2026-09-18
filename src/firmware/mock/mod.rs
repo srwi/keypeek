@@ -39,7 +39,9 @@ impl FirmwareBundle for MockBundle {
                 let protocol = MockProtocol::connect()?;
                 Ok(Box::new(protocol))
             }
-            _ => Err(DeviceError::Unsupported("Unsupported spec for Mock bundle".to_string())),
+            _ => Err(DeviceError::Unsupported(
+                "Unsupported spec for Mock bundle".to_string(),
+            )),
         }
     }
 }

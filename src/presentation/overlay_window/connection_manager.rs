@@ -1,6 +1,6 @@
+use crate::application::Keyboard;
 use crate::connection::{ConnectionRequest, ConnectionTask};
 use crate::device_discovery::DiscoveredDevice;
-use crate::application::Keyboard;
 use crate::domain::visibility::OverlayConfig;
 use crate::keymap_editor::EditorProfile;
 use crate::protocols::{ConnectionSpec, Reopener};
@@ -323,10 +323,7 @@ mod tests {
 
     #[test]
     fn test_connect_validation() {
-        let mut mgr = DeviceConnectionManager::new(
-            vec![sample_device(true)],
-            dummy_wake(),
-        );
+        let mut mgr = DeviceConnectionManager::new(vec![sample_device(true)], dummy_wake());
         let config = OverlayConfig {
             timeout_ms: 1000,
             activation_delay_ms: 0,
@@ -347,10 +344,7 @@ mod tests {
         ));
 
         mgr.set_layout_file_path("path/to/layout.json".to_string());
-        assert!(matches!(
-            mgr.connect(config),
-            ConnectOutcome::Started
-        ));
+        assert!(matches!(mgr.connect(config), ConnectOutcome::Started));
         assert!(mgr.is_connecting());
         assert!(mgr.is_locked());
     }

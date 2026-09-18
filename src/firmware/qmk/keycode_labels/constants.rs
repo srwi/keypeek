@@ -1,6 +1,5 @@
 pub use qmk_via_api::QmkModMask;
 
-
 /// Translate a QMK mod mask into the protocol-agnostic
 /// `HELD_MOD_SHIFT`/`HELD_MOD_RALT` flags `LayoutKey::mod_mask` uses.
 pub fn to_held_mod_mask(mods: QmkModMask) -> u16 {

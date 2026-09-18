@@ -2,11 +2,11 @@
 
 pub mod application;
 pub mod domain;
-pub mod presentation;
 mod firmware;
 mod hid_labels;
 mod os_layout;
 mod platform;
+pub mod presentation;
 mod protocols;
 
 pub use application::{connection, device_discovery, session};

@@ -68,9 +68,33 @@ mod tests {
         let layout = KeyboardLayout {
             name: "test".to_string(),
             keys: vec![
-                Key { row: 0, col: 0, x: 0.0, y: 0.0, w: 1.0, h: 1.0, r: 0.0 },
-                Key { row: 0, col: 1, x: 1.0, y: 0.0, w: 2.0, h: 1.0, r: 0.0 },
-                Key { row: 1, col: 0, x: 0.0, y: 1.0, w: 1.0, h: 2.0, r: 0.0 },
+                Key {
+                    row: 0,
+                    col: 0,
+                    x: 0.0,
+                    y: 0.0,
+                    w: 1.0,
+                    h: 1.0,
+                    r: 0.0,
+                },
+                Key {
+                    row: 0,
+                    col: 1,
+                    x: 1.0,
+                    y: 0.0,
+                    w: 2.0,
+                    h: 1.0,
+                    r: 0.0,
+                },
+                Key {
+                    row: 1,
+                    col: 0,
+                    x: 0.0,
+                    y: 1.0,
+                    w: 1.0,
+                    h: 2.0,
+                    r: 0.0,
+                },
             ],
         };
         assert_eq!(layout.get_dimensions(), (3.0, 3.0));
@@ -84,8 +108,14 @@ mod tests {
             rows: 2,
             cols: 2,
             layouts: vec![
-                KeyboardLayout { name: "ANSI".to_string(), keys: vec![] },
-                KeyboardLayout { name: "ISO".to_string(), keys: vec![] },
+                KeyboardLayout {
+                    name: "ANSI".to_string(),
+                    keys: vec![],
+                },
+                KeyboardLayout {
+                    name: "ISO".to_string(),
+                    keys: vec![],
+                },
             ],
         };
         assert_eq!(def.get_layout_names(), vec!["ANSI", "ISO"]);

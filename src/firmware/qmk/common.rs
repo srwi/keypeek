@@ -1,9 +1,9 @@
+use super::codec as qmk_codec;
 use crate::key_spec::{KeySpec, KeymapSnapshot, LayerInfo};
 use crate::layout::KeyboardDefinition;
 use crate::protocols::{
     pump_hid_reader, ActionFilter, DeviceError, DeviceEvent, KeyboardProtocol, WriteSupport,
 };
-use super::codec as qmk_codec;
 use qmk_via_api::api::KeyboardApi;
 pub use qmk_via_api::QmkFeatures;
 use std::error::Error;

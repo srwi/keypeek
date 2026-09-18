@@ -149,12 +149,8 @@ impl KeyMatrix {
             if !self.is_pressed(key.row, key.col) {
                 return acc;
             }
-            let (effective_layer, _) = self.effective_layer(
-                layer_state,
-                default_layer_state,
-                key.row,
-                key.col,
-            );
+            let (effective_layer, _) =
+                self.effective_layer(layer_state, default_layer_state, key.row, key.col);
             let mask = self
                 .get_key(effective_layer as usize, key.row, key.col)
                 .and_then(|k| k.mod_mask)
@@ -186,10 +182,10 @@ impl KeyMatrix {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::layout::Key;
     use crate::hid_labels::Modifiers;
     use crate::key_spec::HidKey;
     use crate::layout_key::{Label, LayoutKey, HELD_MOD_SHIFT};
-    use crate::domain::layout::Key;
 
     #[test]
     fn effective_layer_falls_through_transparent_keys() {
@@ -213,8 +209,14 @@ mod tests {
                 })]],
             ],
             layers: vec![
-                LayerInfo { id: 0, name: Some("Base".into()) },
-                LayerInfo { id: 1, name: Some("Fn".into()) },
+                LayerInfo {
+                    id: 0,
+                    name: Some("Base".into()),
+                },
+                LayerInfo {
+                    id: 1,
+                    name: Some("Fn".into()),
+                },
             ],
             pressed: vec![vec![false]],
         };
@@ -274,13 +276,32 @@ mod tests {
                     }),
                 }),
             ]]],
-            layers: vec![LayerInfo { id: 0, name: Some("Base".into()) }],
+            layers: vec![LayerInfo {
+                id: 0,
+                name: Some("Base".into()),
+            }],
             pressed: vec![vec![false, false]],
         };
 
         let layout_keys = vec![
-            Key { row: 0, col: 0, x: 0.0, y: 0.0, w: 1.0, h: 1.0, r: 0.0 },
-            Key { row: 0, col: 1, x: 1.0, y: 0.0, w: 1.0, h: 1.0, r: 0.0 },
+            Key {
+                row: 0,
+                col: 0,
+                x: 0.0,
+                y: 0.0,
+                w: 1.0,
+                h: 1.0,
+                r: 0.0,
+            },
+            Key {
+                row: 0,
+                col: 1,
+                x: 1.0,
+                y: 0.0,
+                w: 1.0,
+                h: 1.0,
+                r: 0.0,
+            },
         ];
 
         // Nothing pressed -> mask is 0

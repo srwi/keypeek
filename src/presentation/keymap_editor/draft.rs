@@ -69,13 +69,6 @@ impl EditorSection {
     }
 }
 
-/// Backlight command parameters for staged backlight adjustment.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct BacklightDraft {
-    pub value: u8,
-    pub staged: bool,
-}
-
 /// In-progress editable parameter state for the key editor.
 #[derive(Clone, Debug, Default)]
 pub struct KeyDraft {
@@ -95,7 +88,7 @@ pub struct KeyDraft {
     /// Indicates whether the active layer configuration is Layer-Tap.
     pub is_layer_tap: bool,
     /// Backlight level parameter.
-    pub backlight: BacklightDraft,
+    pub backlight_level: u8,
     /// Raw hex entry string.
     pub hex: String,
 }
@@ -167,8 +160,7 @@ impl KeyDraft {
             KeySpec::Lighting(LightingAction::Backlight(bl)) => {
                 draft.section = EditorSection::Backlight;
                 if let BacklightAction::Set(val) = bl {
-                    draft.backlight.value = *val;
-                    draft.backlight.staged = true;
+                    draft.backlight_level = *val;
                 }
             }
             KeySpec::Lighting(LightingAction::Rgb(_)) => {
@@ -339,15 +331,9 @@ impl KeyDraft {
             | EditorSection::ModTap
             | EditorSection::OneShot
             | EditorSection::KeyToggle
-            | EditorSection::LayerMod => self.staged().is_some(),
+            | EditorSection::LayerMod
+            | EditorSection::Layers => self.staged().is_some(),
             EditorSection::RawHex => u16::from_str_radix(&self.hex, 16).is_ok(),
-            EditorSection::Layers => {
-                if self.is_layer_tap {
-                    self.target_layer.is_some() && self.tap_key.is_some()
-                } else {
-                    self.target_layer.is_some()
-                }
-            }
             _ => true,
         }
     }

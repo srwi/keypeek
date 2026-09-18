@@ -3,8 +3,8 @@
 //! Orchestrates discovery across registered [`DeviceDriverScanner`] implementations,
 //! managing shared transport snapshots (e.g. USB HID devices) and conflict resolution.
 
-use std::collections::HashSet;
 use crate::protocols::ConnectionSpec;
+use std::collections::HashSet;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DiscoveredDevice {
@@ -113,10 +113,7 @@ pub fn discover_devices_with(
 
     devices.sort_by_cached_key(|d| d.display_name());
     devices.dedup_by(|a, b| {
-        a.vid == b.vid
-            && a.pid == b.pid
-            && a.driver_id == b.driver_id
-            && a.spec == b.spec
+        a.vid == b.vid && a.pid == b.pid && a.driver_id == b.driver_id && a.spec == b.spec
     });
 
     devices

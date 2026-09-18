@@ -112,10 +112,14 @@ impl OverlayApp {
                                         .width(combo_width)
                                         .selected_text(selected_device_text.clone())
                                         .show_ui(ui, |ui| {
-                                            for idx in 0..self.connection_mgr.available_devices().len() {
-                                                let device = &self.connection_mgr.available_devices()[idx];
+                                            for idx in
+                                                0..self.connection_mgr.available_devices().len()
+                                            {
+                                                let device =
+                                                    &self.connection_mgr.available_devices()[idx];
                                                 let selected =
-                                                    self.connection_mgr.selected_device_index() == Some(idx);
+                                                    self.connection_mgr.selected_device_index()
+                                                        == Some(idx);
                                                 if ui
                                                     .selectable_label(
                                                         selected,
@@ -140,7 +144,10 @@ impl OverlayApp {
                                                 self.connection_mgr.is_connecting();
                                             let can_connect = !connection_locked
                                                 && !connect_in_progress
-                                                && self.connection_mgr.selected_device_index().is_some();
+                                                && self
+                                                    .connection_mgr
+                                                    .selected_device_index()
+                                                    .is_some();
                                             let button_label = if reconnecting {
                                                 "Reconnecting..."
                                             } else if connect_in_progress {
@@ -167,20 +174,19 @@ impl OverlayApp {
 
                             ui.label("Layout");
                             ui.horizontal(|ui| {
-                                let (layout_enabled, current_layout, layout_names) =
-                                    if let Some(keyboard) = self.connection_mgr.connected_keyboard() {
-                                        (
-                                            keyboard.supports_live_layout_switching(),
-                                            keyboard.active_layout_name(),
-                                            keyboard.layout_names(),
-                                        )
-                                    } else {
-                                        (
-                                            false,
-                                            "Connect to device first".to_string(),
-                                            Vec::new(),
-                                        )
-                                    };
+                                let (layout_enabled, current_layout, layout_names) = if let Some(
+                                    keyboard,
+                                ) =
+                                    self.connection_mgr.connected_keyboard()
+                                {
+                                    (
+                                        keyboard.supports_live_layout_switching(),
+                                        keyboard.active_layout_name(),
+                                        keyboard.layout_names(),
+                                    )
+                                } else {
+                                    (false, "Connect to device first".to_string(), Vec::new())
+                                };
                                 let layout_width =
                                     (ui.available_width() - RIGHT_COLUMN_WIDTH - control_spacing)
                                         .max(120.0);
@@ -197,11 +203,14 @@ impl OverlayApp {
                                                     if let Some(keyboard) =
                                                         self.connection_mgr.connected_keyboard()
                                                     {
-                                                        if let Err(e) = keyboard.switch_layout(name) {
+                                                        if let Err(e) = keyboard.switch_layout(name)
+                                                        {
                                                             self.ui.settings_error = Some(e);
                                                         } else {
                                                             self.connection_mgr
-                                                                .set_preferred_layout_name(Some(name.clone()));
+                                                                .set_preferred_layout_name(Some(
+                                                                    name.clone(),
+                                                                ));
                                                         }
                                                     }
                                                 }

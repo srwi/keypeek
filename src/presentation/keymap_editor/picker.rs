@@ -46,6 +46,14 @@ impl Candidate {
         self
     }
 
+    /// Appends multiple search tokens to the precomputed search haystack.
+    pub fn with_search_tokens(mut self, tokens: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
+        for token in tokens {
+            push_token(&mut self.search_haystack, token.as_ref());
+        }
+        self
+    }
+
     /// Checks whether this candidate matches the search query.
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn matches_query(&self, query: &str) -> bool {
@@ -122,7 +130,6 @@ fn build_search_haystack(binding: &KeySpec, key: &LayoutKey) -> String {
     push_opt_token(&mut haystack, &key.ralt);
     push_opt_token(&mut haystack, &key.ralt_shifted);
     push_opt_token(&mut haystack, &key.symbol);
-    push_opt_token(&mut haystack, &key.tooltip_text());
     push_lbl_token(&mut haystack, &key.behavior);
     push_lbl_token(&mut haystack, &key.argument);
 
@@ -337,27 +344,6 @@ fn render_candidate_groups(
     }
 }
 
-/// Draws a titled group containing candidate keys, filtering by the search query.
-pub fn titled_candidate_group(
-    ui: &mut egui::Ui,
-    group: &CandidateGroup,
-    search_query: &str,
-    filter: impl Fn(&Candidate) -> bool,
-    selected: Option<SelectedKey<'_>>,
-    style: &KeyPaintStyle,
-    on_select: impl FnMut(&Candidate),
-) {
-    let q = search_query.trim().to_lowercase();
-    let refs = filter_candidates_lowercased(&group.candidates, &q, &filter);
-    crate::ui_widgets::titled_group(ui, group.name, |ui| {
-        if refs.is_empty() && !q.is_empty() {
-            ui.weak("No matching keys");
-        } else {
-            picker_grid_refs(ui, group.name, &refs, selected, style, on_select);
-        }
-    });
-}
-
 /// Draws multiple candidate groups inside an existing UI container,
 /// filtering all groups by the search query.
 pub fn multi_candidate_groups(
@@ -427,27 +413,22 @@ fn key_chip(
     key_button(ui, cell, id, key, colors, selected, style)
 }
 
-/// Hand variant for a modifier key.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Hand {
-    Left,
-    Right,
-}
-
-impl Hand {
-    fn tag(self) -> Label {
-        match self {
-            Hand::Left => Label::with_short("Left", "L"),
-            Hand::Right => Label::with_short("Right", "R"),
-        }
-    }
-}
-
-/// Creates a modifier key definition with an optional hand label.
-fn modifier_chip_key(name: &modifier_symbols::ModName, hand: Option<Hand>) -> LayoutKey {
-    let mut key = modifier_symbols::modifier_key(name, 0);
-    key.argument = hand.map(Hand::tag);
-    key
+/// Precomputed definitions for the 8 standard modifier keys (4 Left, 4 Right).
+fn modifier_chip_keys() -> &'static [LayoutKey; 8] {
+    static CHIPS: std::sync::OnceLock<[LayoutKey; 8]> = std::sync::OnceLock::new();
+    CHIPS.get_or_init(|| {
+        use modifier_symbols::{MOD_ALT, MOD_CTRL, MOD_GUI, MOD_SHIFT};
+        let mods = [&MOD_CTRL, &MOD_SHIFT, &MOD_ALT, &MOD_GUI];
+        std::array::from_fn(|i| {
+            let mut key = modifier_symbols::modifier_key(mods[i % 4], 0);
+            key.argument = Some(if i < 4 {
+                Label::with_short("Left", "L")
+            } else {
+                Label::with_short("Right", "R")
+            });
+            key
+        })
+    })
 }
 
 /// Draws an 8-key modifier toggle grid (4 Left, 4 Right).
@@ -459,36 +440,29 @@ pub fn modifier_toggle_grid(
     style: &KeyPaintStyle,
     mut on_toggle: impl FnMut(u8),
 ) {
-    use modifier_symbols::{MOD_ALT, MOD_CTRL, MOD_GUI, MOD_SHIFT};
-
-    let names = [&MOD_CTRL, &MOD_SHIFT, &MOD_ALT, &MOD_GUI];
-    let cells = names.len() as f32;
-    let row_width = cells * KEY_UNIT + (cells - 1.0) * GAP;
+    let row_width = 4.0 * KEY_UNIT + 3.0 * GAP;
     let total_height = 2.0 * KEY_UNIT + GAP;
-
     let (_, space_rect) = ui.allocate_space(egui::vec2(row_width, total_height));
-    let origin = space_rect.min;
 
-    for (row, hand) in [(0u8, Hand::Left), (1, Hand::Right)] {
-        for (i, name) in names.iter().enumerate() {
-            let mask = 1 << (row * 4 + i as u8);
-            let cell = egui::Rect::from_min_size(
-                origin + egui::vec2(i as f32 * (KEY_UNIT + GAP), row as f32 * (KEY_UNIT + GAP)),
-                egui::vec2(KEY_UNIT, KEY_UNIT),
-            );
-            let key = modifier_chip_key(name, Some(hand));
-            let response = key_chip(
-                ui,
-                cell,
-                ui.id().with((id_salt, "mod", mask)),
-                &key,
-                mods & mask != 0,
-                valid,
-                style,
-            );
-            if response.clicked() {
-                on_toggle(mask);
-            }
+    for (idx, chip) in modifier_chip_keys().iter().enumerate() {
+        let col = (idx % 4) as f32;
+        let row = (idx / 4) as f32;
+        let mask = 1 << idx;
+        let cell = egui::Rect::from_min_size(
+            space_rect.min + egui::vec2(col * (KEY_UNIT + GAP), row * (KEY_UNIT + GAP)),
+            egui::vec2(KEY_UNIT, KEY_UNIT),
+        );
+        let response = key_chip(
+            ui,
+            cell,
+            ui.id().with((id_salt, "mod", mask)),
+            chip,
+            mods & mask != 0,
+            valid,
+            style,
+        );
+        if response.clicked() {
+            on_toggle(mask);
         }
     }
 }
