@@ -32,7 +32,7 @@ struct PageContext<'a> {
 fn editor_left_panel(
     ui: &mut egui::Ui,
     left_id: &str,
-    keyboard: &Keyboard,
+    is_action_supported: &dyn Fn(&KeySpec) -> bool,
     profile: &dyn EditorProfile,
     current: EditorSection,
     sections: &[SidebarSection<EditorSection>],
@@ -63,7 +63,9 @@ fn editor_left_panel(
                                     .items
                                     .iter()
                                     .copied()
-                                    .filter(|item| profile.is_section_supported(*item, keyboard))
+                                    .filter(|item| {
+                                        profile.is_section_supported(*item, is_action_supported)
+                                    })
                                     .collect();
                                 if supported.is_empty() {
                                     continue;
@@ -128,14 +130,15 @@ impl EditorState {
         style: &KeyPaintStyle,
     ) {
         let sections = profile.sidebar_sections();
+        let is_action_supported = |spec: &KeySpec| keyboard.is_action_supported(spec);
 
         // If current section is unsupported on this keyboard, switch to first supported
-        if !profile.is_section_supported(self.draft.section, keyboard) {
+        if !profile.is_section_supported(self.draft.section, &is_action_supported) {
             if let Some(first) = sections
                 .iter()
                 .flat_map(|s| s.items.iter())
                 .copied()
-                .find(|s| profile.is_section_supported(*s, keyboard))
+                .find(|s| profile.is_section_supported(*s, &is_action_supported))
             {
                 self.draft.section = first;
             }
@@ -147,7 +150,7 @@ impl EditorState {
         if let Some(section) = editor_left_panel(
             ui,
             "editor_sections",
-            keyboard,
+            &is_action_supported,
             profile,
             current_section,
             sections,

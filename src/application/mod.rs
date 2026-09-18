@@ -1,11 +1,15 @@
 //! Application services for connection orchestration, device discovery, and sessions.
 
 pub mod connection;
+pub mod connection_manager;
 pub mod device_discovery;
 pub mod keyboard;
 pub mod session;
 
 pub use connection::{ConnectionRequest, ConnectionTask};
+pub use connection_manager::{
+    ConnectOutcome, ConnectionEvent, ConnectionStatus, DeviceConnectionManager,
+};
 pub use device_discovery::{
     discover_devices, DeviceDriverScanner, DiscoveredDevice, DiscoveryContext, HidDeviceInfo,
 };

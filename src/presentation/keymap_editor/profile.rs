@@ -4,10 +4,8 @@
 //! section organization, candidate presentation, and vocabulary.
 
 use super::draft::EditorSection;
-use crate::application::Keyboard;
-use crate::hid_labels::Modifiers;
 use crate::key_presenter::KeyPresenter;
-use crate::key_spec::{HidKey, KeySpec};
+use crate::key_spec::{HidKey, KeySpec, Modifiers};
 use crate::keymap_editor::picker::CandidateGroup;
 
 /// A section group for the editor's left sidebar.
@@ -41,8 +39,12 @@ pub trait EditorProfile: KeyPresenter + Send + Sync {
         section.label()
     }
 
-    /// Checks if a section is supported on this profile for the given keyboard.
-    fn is_section_supported(&self, section: EditorSection, keyboard: &Keyboard) -> bool {
+    /// Checks if a section is supported on this profile given a device capability filter.
+    fn is_section_supported(
+        &self,
+        section: EditorSection,
+        is_action_supported: &dyn Fn(&KeySpec) -> bool,
+    ) -> bool {
         if !self
             .sidebar_sections()
             .iter()
@@ -50,7 +52,7 @@ pub trait EditorProfile: KeyPresenter + Send + Sync {
         {
             return false;
         }
-        is_device_section_supported(section, keyboard)
+        is_device_section_supported(section, is_action_supported)
     }
 
     /// Candidate groups suitable for tap targets (e.g. Mod-Tap, Layer-Tap).
@@ -86,8 +88,11 @@ pub trait EditorProfile: KeyPresenter + Send + Sync {
     }
 }
 
-/// Checks if a device capability filter allows the given editor section on the connected keyboard.
-fn is_device_section_supported(section: EditorSection, keyboard: &Keyboard) -> bool {
+/// Checks if a device capability filter allows the given editor section.
+fn is_device_section_supported(
+    section: EditorSection,
+    is_action_supported: &dyn Fn(&KeySpec) -> bool,
+) -> bool {
     match section {
         EditorSection::Keyboard
         | EditorSection::Special
@@ -103,23 +108,23 @@ fn is_device_section_supported(section: EditorSection, keyboard: &Keyboard) -> b
         | EditorSection::BootPower
         | EditorSection::RawHex => true,
 
-        EditorSection::Backlight => keyboard.is_action_supported(&KeySpec::Lighting(
+        EditorSection::Backlight => is_action_supported(&KeySpec::Lighting(
             crate::key_spec::LightingAction::Backlight(crate::key_spec::BacklightAction::Toggle),
         )),
-        EditorSection::Rgb => keyboard.is_action_supported(&KeySpec::Lighting(
+        EditorSection::Rgb => is_action_supported(&KeySpec::Lighting(
             crate::key_spec::LightingAction::Rgb(crate::key_spec::RgbAction::Toggle),
         )),
-        EditorSection::RgbMatrix => keyboard.is_action_supported(&KeySpec::Lighting(
+        EditorSection::RgbMatrix => is_action_supported(&KeySpec::Lighting(
             crate::key_spec::LightingAction::RgbMatrix(crate::key_spec::RgbMatrixAction::Toggle),
         )),
         EditorSection::Audio => {
-            keyboard.is_action_supported(&KeySpec::Audio(crate::key_spec::AudioAction::Toggle))
+            is_action_supported(&KeySpec::Audio(crate::key_spec::AudioAction::Toggle))
         }
-        EditorSection::Mouse => keyboard.is_action_supported(&KeySpec::Mouse(
+        EditorSection::Mouse => is_action_supported(&KeySpec::Mouse(
             crate::key_spec::MouseAction::Press(crate::key_spec::MouseButton::Left),
         )),
         EditorSection::Custom => {
-            keyboard.is_action_supported(&KeySpec::Custom(crate::key_spec::CustomBinding {
+            is_action_supported(&KeySpec::Custom(crate::key_spec::CustomBinding {
                 kind: crate::key_spec::CustomKind::Macro,
                 id: 0,
                 name: None,
@@ -243,35 +248,21 @@ mod tests {
 
     #[test]
     fn profile_delegates_section_support() {
-        let protocol: Box<dyn crate::protocols::KeyboardProtocol> =
-            Box::new(crate::firmware::mock::MockProtocol::connect().unwrap());
-        let layout_name = protocol.get_layout_definition().layouts[0].name.clone();
-        let keyboard = Keyboard::new(
-            protocol,
-            layout_name,
-            crate::domain::visibility::OverlayConfig {
-                timeout_ms: 2000,
-                activation_delay_ms: 300,
-                visible_layers: u32::MAX,
-            },
-            crate::ui_wake::UiWake::new(std::sync::Arc::new(|| ())),
-            std::sync::Arc::new(QmkEditorProfile),
-        )
-        .unwrap();
+        let all_supported = |_spec: &KeySpec| true;
 
         let qmk = QmkEditorProfile;
-        assert!(qmk.is_section_supported(EditorSection::Keyboard, &keyboard));
-        assert!(qmk.is_section_supported(EditorSection::Layers, &keyboard));
-        assert!(qmk.is_section_supported(EditorSection::RawHex, &keyboard));
+        assert!(qmk.is_section_supported(EditorSection::Keyboard, &all_supported));
+        assert!(qmk.is_section_supported(EditorSection::Layers, &all_supported));
+        assert!(qmk.is_section_supported(EditorSection::RawHex, &all_supported));
         // QMK rejects KeyToggle and Wireless sections regardless of device
-        assert!(!qmk.is_section_supported(EditorSection::KeyToggle, &keyboard));
-        assert!(!qmk.is_section_supported(EditorSection::Bluetooth, &keyboard));
-        assert!(!qmk.is_section_supported(EditorSection::Output, &keyboard));
+        assert!(!qmk.is_section_supported(EditorSection::KeyToggle, &all_supported));
+        assert!(!qmk.is_section_supported(EditorSection::Bluetooth, &all_supported));
+        assert!(!qmk.is_section_supported(EditorSection::Output, &all_supported));
 
         let zmk = ZmkEditorProfile;
         // ZMK does not support RawHex or LayerMod section even if protocol supports it
-        assert!(!zmk.is_section_supported(EditorSection::RawHex, &keyboard));
-        assert!(!zmk.is_section_supported(EditorSection::LayerMod, &keyboard));
+        assert!(!zmk.is_section_supported(EditorSection::RawHex, &all_supported));
+        assert!(!zmk.is_section_supported(EditorSection::LayerMod, &all_supported));
     }
 
     #[test]
@@ -321,32 +312,18 @@ mod tests {
     fn capability_handling_separates_family_from_device() {
         // 1. Family constraints: ZMK profile does not offer RawHex section or candidates,
         //    even if the connected protocol were to accept raw hex.
-        let protocol: Box<dyn crate::protocols::KeyboardProtocol> =
-            Box::new(crate::firmware::mock::MockProtocol::connect().unwrap());
-        let layout_name = protocol.get_layout_definition().layouts[0].name.clone();
-        let keyboard = Keyboard::new(
-            protocol,
-            layout_name,
-            crate::domain::visibility::OverlayConfig {
-                timeout_ms: 2000,
-                activation_delay_ms: 300,
-                visible_layers: u32::MAX,
-            },
-            crate::ui_wake::UiWake::new(std::sync::Arc::new(|| ())),
-            std::sync::Arc::new(QmkEditorProfile),
-        )
-        .unwrap();
+        let all_supported = |_spec: &KeySpec| true;
 
         let zmk = ZmkEditorProfile;
-        assert!(!zmk.is_section_supported(EditorSection::RawHex, &keyboard));
-        assert!(!zmk.is_section_supported(EditorSection::Audio, &keyboard));
-        assert!(!zmk.is_section_supported(EditorSection::RgbMatrix, &keyboard));
-        assert!(!zmk.is_section_supported(EditorSection::LayerMod, &keyboard));
+        assert!(!zmk.is_section_supported(EditorSection::RawHex, &all_supported));
+        assert!(!zmk.is_section_supported(EditorSection::Audio, &all_supported));
+        assert!(!zmk.is_section_supported(EditorSection::RgbMatrix, &all_supported));
+        assert!(!zmk.is_section_supported(EditorSection::LayerMod, &all_supported));
 
         let qmk = QmkEditorProfile;
-        assert!(!qmk.is_section_supported(EditorSection::KeyToggle, &keyboard));
-        assert!(!qmk.is_section_supported(EditorSection::Bluetooth, &keyboard));
-        assert!(!qmk.is_section_supported(EditorSection::Output, &keyboard));
+        assert!(!qmk.is_section_supported(EditorSection::KeyToggle, &all_supported));
+        assert!(!qmk.is_section_supported(EditorSection::Bluetooth, &all_supported));
+        assert!(!qmk.is_section_supported(EditorSection::Output, &all_supported));
 
         // Candidate group family separation:
         // ZMK does not generate Mouse Acceleration

@@ -1,4 +1,84 @@
-use crate::hid_labels::Modifiers;
+/// Normalized 8-bit modifier flags matching standard USB HID Usage Tables (Page 0x07, Usages 0xE0..=0xE7).
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+pub struct Modifiers {
+    pub ctrl: bool,
+    pub shift: bool,
+    pub alt: bool,
+    pub gui: bool,
+    pub right_ctrl: bool,
+    pub right_shift: bool,
+    pub right_alt: bool,
+    pub right_gui: bool,
+}
+
+impl Modifiers {
+    pub const fn is_empty(&self) -> bool {
+        !self.ctrl
+            && !self.shift
+            && !self.alt
+            && !self.gui
+            && !self.right_ctrl
+            && !self.right_shift
+            && !self.right_alt
+            && !self.right_gui
+    }
+
+    pub const fn to_hid_mask(self) -> u8 {
+        let mut mask = 0;
+        if self.ctrl {
+            mask |= 0x01;
+        }
+        if self.shift {
+            mask |= 0x02;
+        }
+        if self.alt {
+            mask |= 0x04;
+        }
+        if self.gui {
+            mask |= 0x08;
+        }
+        if self.right_ctrl {
+            mask |= 0x10;
+        }
+        if self.right_shift {
+            mask |= 0x20;
+        }
+        if self.right_alt {
+            mask |= 0x40;
+        }
+        if self.right_gui {
+            mask |= 0x80;
+        }
+        mask
+    }
+
+    pub const fn from_hid_mask(mask: u8) -> Self {
+        Self {
+            ctrl: (mask & 0x01) != 0,
+            shift: (mask & 0x02) != 0,
+            alt: (mask & 0x04) != 0,
+            gui: (mask & 0x08) != 0,
+            right_ctrl: (mask & 0x10) != 0,
+            right_shift: (mask & 0x20) != 0,
+            right_alt: (mask & 0x40) != 0,
+            right_gui: (mask & 0x80) != 0,
+        }
+    }
+}
+
+impl From<u8> for Modifiers {
+    fn from(mask: u8) -> Self {
+        Self::from_hid_mask(mask)
+    }
+}
+
+impl From<Modifiers> for u8 {
+    fn from(mods: Modifiers) -> Self {
+        mods.to_hid_mask()
+    }
+}
 
 /// Standard USB HID key reference (page + 16-bit usage ID).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]

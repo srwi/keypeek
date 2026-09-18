@@ -1,10 +1,10 @@
-use crate::application::Keyboard;
-use crate::connection::{ConnectionRequest, ConnectionTask};
-use crate::device_discovery::DiscoveredDevice;
+use super::connection::{ConnectionRequest, ConnectionTask};
+use super::device_discovery::DiscoveredDevice;
+use super::keyboard::Keyboard;
 use crate::domain::visibility::OverlayConfig;
-use crate::keymap_editor::EditorProfile;
+use crate::presentation::keymap_editor::EditorProfile;
+use crate::presentation::ui_wake::UiWake;
 use crate::protocols::{ConnectionSpec, Reopener};
-use crate::ui_wake::UiWake;
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -203,7 +203,7 @@ impl DeviceConnectionManager {
     pub fn update(
         &mut self,
         overlay_config: OverlayConfig,
-        ctx: &egui::Context,
+        schedule_repaint: impl Fn(Duration),
     ) -> Option<ConnectionEvent> {
         let mut event = None;
 
@@ -253,7 +253,7 @@ impl DeviceConnectionManager {
             if self.pending_connect.is_none() {
                 let now = Instant::now();
                 if now < next_attempt_at {
-                    ctx.request_repaint_after(next_attempt_at - now);
+                    schedule_repaint(next_attempt_at - now);
                 } else if let Some(spec) = self.last_spec.clone() {
                     let request = ConnectionRequest {
                         spec,

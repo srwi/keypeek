@@ -7,17 +7,17 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-pub mod connection_manager;
 mod settings_sync;
 mod state;
 mod ui_overlay;
 mod ui_settings;
 
-use connection_manager::{ConnectOutcome, ConnectionEvent, DeviceConnectionManager};
+use crate::application::connection_manager::{
+    ConnectOutcome, ConnectionEvent, DeviceConnectionManager,
+};
 use state::{SettingsState, UiState};
 
 pub struct OverlayApp {
-    _tray: crate::tray::Tray,
     settings_requested: Arc<AtomicBool>,
     pub(crate) ui: UiState,
     settings: SettingsState,
@@ -27,14 +27,12 @@ pub struct OverlayApp {
 
 impl OverlayApp {
     pub fn new(
-        tray: crate::tray::Tray,
         settings_requested: Arc<AtomicBool>,
         ui_wake: UiWake,
         base_settings: Settings,
         available_devices: Vec<DiscoveredDevice>,
     ) -> Self {
         Self {
-            _tray: tray,
             settings_requested,
             ui: UiState {
                 settings_visible: true,
@@ -167,7 +165,10 @@ impl OverlayApp {
             self.ui.settings_visible = true;
         }
 
-        if let Some(event) = self.connection_mgr.update(self.overlay_config(), ctx) {
+        if let Some(event) = self
+            .connection_mgr
+            .update(self.overlay_config(), |d| ctx.request_repaint_after(d))
+        {
             match event {
                 ConnectionEvent::Connected => {
                     self.ui.settings_error = None;

@@ -23,6 +23,7 @@ impl OverlayHost for EframeHost<'_> {
 
 struct EframeApp {
     app: OverlayApp,
+    _tray: crate::tray::Tray,
     // Undecorated transparent windows don't reliably honor `with_maximized`, so we
     // size to the monitor explicitly once known. Linux never WM-maximizes at all,
     // since Mutter drops always-on-top on a maximized window.
@@ -211,9 +212,10 @@ fn run_inner(
             super::add_phosphor_to_fonts(&mut fonts);
             cc.egui_ctx.set_fonts(fonts);
 
-            let app = OverlayApp::new(tray_icon, settings_requested, ui_wake, settings, devices);
+            let app = OverlayApp::new(settings_requested, ui_wake, settings, devices);
             Ok(Box::new(EframeApp {
                 app,
+                _tray: tray_icon,
                 #[cfg(any(target_os = "macos", target_os = "linux"))]
                 sized_to_monitor: false,
                 #[cfg(target_os = "linux")]

@@ -182,8 +182,8 @@ impl KeyMatrix {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::key_spec::Modifiers;
     use crate::domain::layout::Key;
-    use crate::hid_labels::Modifiers;
     use crate::key_spec::HidKey;
     use crate::layout_key::{Label, LayoutKey, HELD_MOD_SHIFT};
 

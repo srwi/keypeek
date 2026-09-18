@@ -91,6 +91,7 @@ struct WaylandApp {
 
     egui_ctx: egui::Context,
     app: OverlayApp,
+    _tray: crate::tray::Tray,
     input: InputState,
 
     egl: Option<EglState>,
@@ -175,7 +176,7 @@ pub fn run(
             ui_wake.request_repaint();
         })
     });
-    let app = OverlayApp::new(tray_icon, settings_requested, ui_wake, settings, devices);
+    let app = OverlayApp::new(settings_requested, ui_wake, settings, devices);
 
     let mut state = WaylandApp {
         registry_state: RegistryState::new(&globals),
@@ -188,6 +189,7 @@ pub fn run(
         pointer: None,
         egui_ctx,
         app,
+        _tray: tray_icon,
         input: InputState::default(),
         egl: None,
         painter: None,
