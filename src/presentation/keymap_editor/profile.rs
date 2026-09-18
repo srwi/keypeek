@@ -86,52 +86,17 @@ fn is_device_section_supported(section: EditorSection, keyboard: &Keyboard) -> b
         EditorSection::Keyboard
         | EditorSection::Special
         | EditorSection::Layers
-        | EditorSection::Combo => true,
-        EditorSection::KeyToggle => keyboard.is_action_supported(&KeySpec::KeyToggle {
-            key: HidKey::keyboard(0x04),
-            modifiers: crate::hid_labels::Modifiers::default(),
-        }),
-        EditorSection::ModTap => {
-            let sample = KeySpec::ModTap {
-                hold: crate::hid_labels::Modifiers {
-                    shift: true,
-                    ..Default::default()
-                },
-                tap: HidKey::keyboard(0x04),
-                tap_modifiers: crate::hid_labels::Modifiers::default(),
-            };
-            keyboard.is_action_supported(&sample)
-        }
-        EditorSection::LayerMod => keyboard.is_action_supported(&KeySpec::Layer {
-            layer: 0,
-            activation: crate::key_spec::LayerActivation::LayerMod(crate::hid_labels::Modifiers {
-                shift: true,
-                ..Default::default()
-            }),
-        }),
-        EditorSection::OneShot => {
-            let sample = KeySpec::StickyKey {
-                key: None,
-                modifiers: crate::hid_labels::Modifiers {
-                    shift: true,
-                    ..Default::default()
-                },
-            };
-            keyboard.is_action_supported(&sample)
-        }
-        EditorSection::Bluetooth => {
-            keyboard.is_action_supported(&KeySpec::Bluetooth(crate::key_spec::BluetoothAction::Clear))
-        }
-        EditorSection::Output => {
-            keyboard.is_action_supported(&KeySpec::Output(crate::key_spec::OutputTarget::Toggle))
-        }
-        EditorSection::System => keyboard.is_action_supported(&KeySpec::KeyPress {
-            key: HidKey::system(0x81),
-            modifiers: crate::hid_labels::Modifiers::default(),
-        }),
-        EditorSection::BootPower => {
-            keyboard.is_action_supported(&KeySpec::Power(crate::key_spec::PowerAction::Reset))
-        }
+        | EditorSection::Combo
+        | EditorSection::KeyToggle
+        | EditorSection::ModTap
+        | EditorSection::LayerMod
+        | EditorSection::OneShot
+        | EditorSection::Bluetooth
+        | EditorSection::Output
+        | EditorSection::System
+        | EditorSection::BootPower
+        | EditorSection::RawHex => true,
+
         EditorSection::Backlight => keyboard.is_action_supported(&KeySpec::Lighting(
             crate::key_spec::LightingAction::Backlight(crate::key_spec::BacklightAction::Toggle),
         )),
@@ -156,7 +121,6 @@ fn is_device_section_supported(section: EditorSection, keyboard: &Keyboard) -> b
                 param2: None,
             },
         )),
-        EditorSection::RawHex => true,
     }
 }
 
