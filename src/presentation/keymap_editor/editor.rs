@@ -157,14 +157,7 @@ impl EditorState {
             });
 
             let tap_spec = self.draft.tap_key_spec();
-            let action = ctx.target.action(ctx.keyboard);
-            let selected = tap_spec
-                .as_ref()
-                .or(action
-                    .as_ref()
-                    .filter(|a| matches!(a, KeySpec::KeyPress { .. })))
-                .map(SelectedKey::valid);
-
+            let selected = tap_spec.as_ref().map(SelectedKey::valid);
             self.draw_tap_candidate_picker(ui, ctx, selected);
         });
     }
@@ -250,14 +243,7 @@ impl EditorState {
             );
 
             let tap_spec = self.draft.tap_key_spec();
-            let action = ctx.target.action(ctx.keyboard);
-            let selected = tap_spec
-                .as_ref()
-                .or(action
-                    .as_ref()
-                    .filter(|a| matches!(a, KeySpec::KeyPress { modifiers, .. } if !modifiers.is_empty())))
-                .map(SelectedKey::valid);
-
+            let selected = tap_spec.as_ref().map(SelectedKey::valid);
             self.draw_tap_candidate_picker(ui, ctx, selected);
 
             if self.draft.modifiers == 0 {
@@ -398,14 +384,7 @@ impl EditorState {
             );
 
             let tap_spec = self.draft.tap_key_spec();
-            let action = ctx.target.action(ctx.keyboard);
-            let selected = tap_spec
-                .as_ref()
-                .or(action
-                    .as_ref()
-                    .filter(|a| matches!(a, KeySpec::KeyToggle { .. })))
-                .map(SelectedKey::valid);
-
+            let selected = tap_spec.as_ref().map(SelectedKey::valid);
             self.draw_tap_candidate_picker(ui, ctx, selected);
         });
     }

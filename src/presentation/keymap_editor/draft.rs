@@ -3,9 +3,9 @@
 //! Stores interactive in-progress key configuration state, and converts directly
 //! to and from [`KeySpec`].
 
+use super::profile::{EditorProfile, LayerTapTarget};
 use crate::hid_labels::Modifiers;
 use crate::key_spec::{BacklightAction, HidKey, KeySpec, LayerActivation, LightingAction};
-use super::profile::{EditorProfile, LayerTapTarget};
 
 /// Unified sidebar sections for key categories.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
@@ -198,30 +198,20 @@ impl KeyDraft {
         draft
     }
 
-    /// Initializes draft for a section, preserving active parameters if relevant.
+    /// Initializes draft for a section from the current key binding.
     pub fn for_section(section: EditorSection, current_spec: Option<&KeySpec>) -> Self {
         if let Some(spec) = current_spec {
-            let draft = Self::from_spec(spec);
+            let mut draft = Self::from_spec(spec);
             if draft.section == section {
                 return draft;
             }
-            if section == EditorSection::Layers {
-                return Self {
-                    section,
-                    tap_key: draft.tap_key,
-                    tap_modifiers: draft.tap_modifiers,
-                    is_layer_tap: false,
-                    ..Default::default()
-                };
-            }
-            // Preserve tap_key if navigating to another parameterized section
-            if let Some(tap) = draft.tap_key {
-                return Self {
-                    section,
-                    tap_key: Some(tap),
-                    modifiers: draft.modifiers,
-                    ..Default::default()
-                };
+            if section == EditorSection::Combo {
+                if let KeySpec::KeyPress { modifiers, .. } = spec {
+                    if !modifiers.is_empty() {
+                        draft.section = EditorSection::Combo;
+                        return draft;
+                    }
+                }
             }
         }
 
@@ -645,17 +635,37 @@ mod tests {
     }
 
     #[test]
-    fn for_section_preserves_tap_key_across_sections() {
-        let current = KeySpec::KeyPress {
-            key: HidKey::keyboard(0x04),
+    fn for_section_does_not_leak_across_sections() {
+        let current = KeySpec::KeyToggle {
+            key: HidKey::keyboard(0x05),
             modifiers: Modifiers {
-                ctrl: true,
+                shift: true,
                 ..Default::default()
             },
         };
-        let draft = KeyDraft::for_section(EditorSection::ModTap, Some(&current));
-        assert_eq!(draft.section, EditorSection::ModTap);
-        assert_eq!(draft.tap_key, Some(HidKey::keyboard(0x04)));
+        // Navigating to Keyboard must not carry over tap_key or modifiers
+        let kb_draft = KeyDraft::for_section(EditorSection::Keyboard, Some(&current));
+        assert_eq!(kb_draft.section, EditorSection::Keyboard);
+        assert_eq!(kb_draft.tap_key, None);
+        assert_eq!(kb_draft.modifiers, 0);
+
+        // Navigating to ModTap must not carry over tap_key
+        let mod_tap_draft = KeyDraft::for_section(EditorSection::ModTap, Some(&current));
+        assert_eq!(mod_tap_draft.section, EditorSection::ModTap);
+        assert_eq!(mod_tap_draft.tap_key, None);
+        assert_eq!(mod_tap_draft.hold_mods, 0);
+
+        // Navigating to Layers must not carry over tap_key
+        let layer_draft = KeyDraft::for_section(EditorSection::Layers, Some(&current));
+        assert_eq!(layer_draft.section, EditorSection::Layers);
+        assert_eq!(layer_draft.tap_key, None);
+        assert!(!layer_draft.is_layer_tap);
+
+        // KeyToggle section retains the assigned action parameters
+        let toggle_draft = KeyDraft::for_section(EditorSection::KeyToggle, Some(&current));
+        assert_eq!(toggle_draft.section, EditorSection::KeyToggle);
+        assert_eq!(toggle_draft.tap_key, Some(HidKey::keyboard(0x05)));
+        assert_eq!(toggle_draft.modifiers, 0x02);
     }
 
     #[test]
@@ -701,6 +711,21 @@ mod tests {
         assert_eq!(draft.section, EditorSection::Keyboard);
         assert_eq!(draft.tap_key, Some(HidKey::keyboard(0x04)));
         assert_eq!(draft.modifiers, 0x01 | 0x02);
+
+        let combo = KeyDraft::for_section(EditorSection::Combo, Some(&current));
+        assert_eq!(combo.section, EditorSection::Combo);
+        assert_eq!(combo.tap_key, Some(HidKey::keyboard(0x04)));
+        assert_eq!(combo.modifiers, 0x01 | 0x02);
+
+        // Plain keypress with no modifiers should not populate Combo
+        let plain = KeySpec::KeyPress {
+            key: HidKey::keyboard(0x04),
+            modifiers: Modifiers::default(),
+        };
+        let combo_plain = KeyDraft::for_section(EditorSection::Combo, Some(&plain));
+        assert_eq!(combo_plain.section, EditorSection::Combo);
+        assert_eq!(combo_plain.tap_key, None);
+        assert_eq!(combo_plain.modifiers, 0);
     }
 
     #[test]
