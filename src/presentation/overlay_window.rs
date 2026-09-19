@@ -37,11 +37,13 @@ impl OverlayApp {
         Self {
             settings_requested,
             ui: UiState {
-                settings_visible: true,
+                settings_visible: !cfg!(target_arch = "wasm32"),
                 settings_error: None,
                 settings_warning: None,
                 mouse_passthrough: None,
                 file_dialog: egui_file_dialog::FileDialog::new(),
+                #[cfg(target_arch = "wasm32")]
+                initial_editor_opened: false,
             },
             settings: SettingsState::new(base_settings),
             settings_store,
@@ -70,7 +72,7 @@ impl OverlayApp {
         }
     }
 
-    pub(super) fn connect_from_ui(&mut self) {
+    pub fn connect_from_ui(&mut self) {
         match self.connection_mgr.connect(self.overlay_config()) {
             ConnectOutcome::Started => {
                 self.ui.settings_error = None;
@@ -110,6 +112,7 @@ impl OverlayApp {
 
     /// Requests the editor window to close, initiating a ZMK save first if changes
     /// are pending; otherwise closes immediately.
+    #[allow(dead_code)]
     pub(crate) fn request_close_editor(&mut self) {
         if self.editor.request_close() {
             if let Some(keyboard) = self.connection_mgr.connected_keyboard() {
@@ -148,10 +151,17 @@ impl OverlayApp {
     /// the settings or keymap editor window is open, otherwise transparent so only
     /// the overlay is visible.
     pub fn clear_color(&self) -> egui::Rgba {
-        if self.is_any_window_open() {
-            egui::Rgba::from_black_alpha(0.65)
-        } else {
-            egui::Rgba::TRANSPARENT
+        #[cfg(target_arch = "wasm32")]
+        {
+            egui::Rgba::from_rgb(0.118, 0.118, 0.180)
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if self.is_any_window_open() {
+                egui::Rgba::from_black_alpha(0.65)
+            } else {
+                egui::Rgba::TRANSPARENT
+            }
         }
     }
 
@@ -164,6 +174,10 @@ impl OverlayApp {
     /// Update phase: processes requests, background task completions, dialog updates,
     /// and window passthrough state before any UI rendering occurs.
     fn update(&mut self, ctx: &egui::Context, host: &mut dyn OverlayHost) {
+        if let Some(keyboard) = self.connection_mgr.connected_keyboard() {
+            keyboard.poll();
+        }
+
         if self.settings_requested.swap(false, Ordering::Relaxed) {
             self.ui.settings_visible = true;
         }
@@ -182,7 +196,8 @@ impl OverlayApp {
                     self.ui.settings_error = Some(e);
                 }
                 ConnectionEvent::Disconnected => {
-                    self.close_editor();
+                    self.ui.settings_warning = Some("Device disconnected".into());
+                    self.request_close_editor();
                 }
             }
         }
@@ -198,22 +213,66 @@ impl OverlayApp {
         self.sync_mouse_passthrough(host);
     }
 
+    #[cfg(target_arch = "wasm32")]
+    fn render_web_chrome(
+        &mut self,
+        ctx: &egui::Context,
+        keyboard: Option<&crate::application::Keyboard>,
+    ) {
+        if let Some(keyboard) = keyboard {
+            if !self.ui.initial_editor_opened {
+                self.ui.initial_editor_opened = true;
+                if let Some(first_key) = keyboard.layout().keys.first() {
+                    self.editor.retarget(
+                        keyboard,
+                        crate::keymap_editor::EditTarget::new(0, first_key.row, first_key.col),
+                    );
+                }
+            }
+        }
+
+        egui::Area::new(egui::Id::new("web_toolbar"))
+            .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-16.0, 16.0))
+            .show(ctx, |ui| {
+                if ui
+                    .button(egui::RichText::new(format!(
+                        "{} Settings",
+                        egui_phosphor::regular::GEAR
+                    )))
+                    .clicked()
+                {
+                    self.ui.settings_visible = !self.ui.settings_visible;
+                }
+            });
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn render_web_chrome(
+        &mut self,
+        _ctx: &egui::Context,
+        _keyboard: Option<&crate::application::Keyboard>,
+    ) {
+    }
+
     /// Render phase: paints visible overlay, editor, settings, and modal dialogs.
     fn render(&mut self, ctx: &egui::Context, host: &mut dyn OverlayHost) {
-        if let Some((keyboard, profile)) = self.connection_mgr.connected_pair() {
+        let connected = self.connection_mgr.connected_pair();
+        if let Some((keyboard, profile)) = &connected {
             // Clone the shared keyboard so drawing can mutate app state (the
             // editor) without holding a borrow on `self.connection_mgr`.
-            self.draw_overlay_window(ctx, &keyboard, self.overlay_visible());
+            self.draw_overlay_window(ctx, keyboard, self.overlay_visible());
             if self.editor.is_open() {
                 let style = self.paint_style(crate::keymap_editor::KEY_UNIT);
                 self.editor
-                    .draw_window(ctx, &keyboard, profile.as_ref(), &style);
+                    .draw_window(ctx, keyboard, profile.as_ref(), &style);
             }
         } else if self.editor.is_open() {
             // The connection dropped; close the editor. Unsaved ZMK changes
             // died with the connection, so the dirty flag goes too.
             self.close_editor();
         }
+
+        self.render_web_chrome(ctx, connected.as_ref().map(|(k, _)| k.as_ref()));
 
         if self.ui.settings_visible {
             self.draw_settings_window(ctx, host);

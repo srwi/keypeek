@@ -75,6 +75,10 @@ impl Keyboard {
 
     // --- Session delegations ---
 
+    pub fn poll(&self) {
+        self.session.poll();
+    }
+
     pub fn is_alive(&self) -> bool {
         self.session.is_alive()
     }

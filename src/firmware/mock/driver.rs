@@ -12,8 +12,11 @@ use qmk_via_api::QmkLayerOp;
 use std::collections::HashMap;
 use std::sync::mpsc;
 use std::sync::OnceLock;
+#[cfg(not(target_arch = "wasm32"))]
 use std::thread;
 use std::time::Duration;
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::JsCast;
 
 const FIXTURE: &str = include_str!("../../../resources/mock_keyboard.json");
 
@@ -124,21 +127,35 @@ impl KeyboardProtocol for MockProtocol {
         let tick_interval = self.tick_interval;
         let layer_states = self.layer_states.clone();
 
-        thread::spawn(move || {
-            let mut tick = 0;
-            loop {
-                thread::sleep(tick_interval);
-                let index = tick % layer_states.len();
-                tick += 1;
-                let event = DeviceEvent::LayersChanged {
-                    active_layers: layer_states[index],
-                    default_layers: DEFAULT_LAYER_STATE,
-                };
-                if event_tx.send(event).is_err() {
-                    break;
-                }
+        let mut tick = 0;
+        let mut next_layer_event = move || {
+            let index = tick % layer_states.len();
+            tick += 1;
+            DeviceEvent::LayersChanged {
+                active_layers: layer_states[index],
+                default_layers: DEFAULT_LAYER_STATE,
+            }
+        };
+
+        #[cfg(not(target_arch = "wasm32"))]
+        thread::spawn(move || loop {
+            thread::sleep(tick_interval);
+            if event_tx.send(next_layer_event()).is_err() {
+                break;
             }
         });
+
+        #[cfg(target_arch = "wasm32")]
+        if let Some(window) = web_sys::window() {
+            let closure = wasm_bindgen::closure::Closure::<dyn FnMut()>::new(move || {
+                let _ = event_tx.send(next_layer_event());
+            });
+            let _ = window.set_interval_with_callback_and_timeout_and_arguments_0(
+                closure.as_ref().unchecked_ref(),
+                tick_interval.as_millis() as i32,
+            );
+            closure.forget();
+        }
 
         Ok(event_rx)
     }

@@ -1,4 +1,3 @@
-use crate::device_discovery::DiscoveredDevice;
 use crate::overlay_window::OverlayApp;
 use crate::presentation::OverlayHost;
 use crate::settings::MemorySettingsStore;
@@ -36,14 +35,17 @@ impl WebApp {
         let ui_wake = UiWake::new(Arc::new(move || ctx.request_repaint()));
         let settings_requested = Arc::new(AtomicBool::new(false));
         let settings_store = Arc::new(MemorySettingsStore::default());
-        let available_devices: Vec<DiscoveredDevice> = Vec::new();
+        let available_devices = vec![crate::firmware::mock::driver::mock_device()];
 
-        let app = OverlayApp::new(
+        let mut app = OverlayApp::new(
             settings_requested,
             ui_wake,
             settings_store,
             available_devices,
         );
+        app.connection_mgr.select_device(0);
+        app.connect_from_ui();
+
         Self { app }
     }
 }

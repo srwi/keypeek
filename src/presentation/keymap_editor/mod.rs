@@ -273,6 +273,13 @@ impl EditorState {
             .resizable(true)
             .default_size(egui::vec2(440.0, 525.0))
             .min_size(egui::vec2(440.0, 525.0));
+        #[cfg(target_arch = "wasm32")]
+        {
+            window = window.default_pos(egui::pos2(
+                (ctx.viewport_rect().width() - 440.0).max(0.0) * 0.5,
+                380.0,
+            ));
+        }
         let mut open = true;
         if !closing {
             window = window.open(&mut open);

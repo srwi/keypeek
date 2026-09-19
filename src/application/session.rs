@@ -6,6 +6,7 @@ use crate::ui_wake::UiWake;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
+#[cfg(not(target_arch = "wasm32"))]
 use std::thread;
 use web_time::Instant;
 
@@ -32,11 +33,24 @@ pub enum KeymapCommand {
 
 /// Manages background worker threads, command queue, and protocol communication.
 pub struct KeyboardSession {
+    #[allow(dead_code)]
     command_tx: mpsc::Sender<KeymapCommand>,
     alive: Arc<AtomicBool>,
     write_support: WriteSupport,
     supports_live_layout_switching: bool,
     action_filter: Option<ActionFilter>,
+    #[cfg(target_arch = "wasm32")]
+    event_rx: Mutex<mpsc::Receiver<DeviceEvent>>,
+    #[cfg(target_arch = "wasm32")]
+    domain: Arc<KeyboardDomain>,
+    #[cfg(target_arch = "wasm32")]
+    protocol: Arc<Mutex<Box<dyn KeyboardProtocol>>>,
+    #[cfg(target_arch = "wasm32")]
+    layer_names: Vec<String>,
+    #[cfg(target_arch = "wasm32")]
+    presenter: Arc<dyn KeyPresenter>,
+    #[cfg(target_arch = "wasm32")]
+    ui_wake: UiWake,
 }
 
 impl KeyboardSession {
@@ -55,51 +69,58 @@ impl KeyboardSession {
         let supports_live_layout_switching = protocol.supports_live_layout_switching();
         let action_filter = protocol.action_filter();
 
+        #[cfg(not(target_arch = "wasm32"))]
         let (command_tx, command_rx) = mpsc::channel::<KeymapCommand>();
+        #[cfg(target_arch = "wasm32")]
+        let (command_tx, _command_rx) = mpsc::channel::<KeymapCommand>();
         let alive = Arc::new(AtomicBool::new(true));
         let protocol = Arc::new(Mutex::new(protocol));
 
-        // 1. Live event consumer loop (drives hardware events into domain model)
-        let domain_for_events = Arc::clone(&domain);
-        let alive_for_events = Arc::clone(&alive);
-        let ui_wake_events = ui_wake.clone();
-        thread::spawn(move || {
-            while let Ok(event) = event_rx.recv() {
-                let is_disconnected = matches!(event, DeviceEvent::Disconnected(_));
-                if handle_device_event(
-                    &domain_for_events,
-                    &alive_for_events,
-                    event,
-                    Instant::now(),
-                ) {
-                    ui_wake_events.request_repaint();
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            // 1. Live event consumer loop (drives hardware events into domain model)
+            let domain_for_events = Arc::clone(&domain);
+            let alive_for_events = Arc::clone(&alive);
+            let ui_wake_events = ui_wake.clone();
+            thread::spawn(move || {
+                while let Ok(event) = event_rx.recv() {
+                    let is_disconnected = matches!(event, DeviceEvent::Disconnected(_));
+                    if handle_device_event(
+                        &domain_for_events,
+                        &alive_for_events,
+                        event,
+                        Instant::now(),
+                    ) {
+                        ui_wake_events.request_repaint();
+                    }
+                    if is_disconnected {
+                        break;
+                    }
                 }
-                if is_disconnected {
-                    break;
-                }
-            }
-            alive_for_events.store(false, Ordering::Relaxed);
-            ui_wake_events.request_repaint();
-        });
+                alive_for_events.store(false, Ordering::Relaxed);
+                ui_wake_events.request_repaint();
+            });
 
-        // 2. Command execution loop (runs writes on dedicated worker)
-        let domain_for_cmds = Arc::clone(&domain);
-        let ui_wake_cmd = ui_wake;
-        let presenter_cmd = presenter;
-        let protocol_for_cmds = Arc::clone(&protocol);
-        thread::spawn(move || {
-            while let Ok(command) = command_rx.recv() {
-                let mut protocol_guard = protocol_for_cmds.lock().unwrap();
-                run_keymap_command(
-                    protocol_guard.as_mut(),
-                    command,
-                    &layer_names,
-                    &domain_for_cmds,
-                    &ui_wake_cmd,
-                    presenter_cmd.as_ref(),
-                );
-            }
-        });
+            // 2. Command execution loop (runs writes on dedicated worker)
+            let domain_for_cmds = Arc::clone(&domain);
+            let ui_wake_cmd = ui_wake.clone();
+            let presenter_cmd = Arc::clone(&presenter);
+            let protocol_for_cmds = Arc::clone(&protocol);
+            let layer_names_for_cmds = layer_names.clone();
+            thread::spawn(move || {
+                while let Ok(command) = command_rx.recv() {
+                    let mut protocol_guard = protocol_for_cmds.lock().unwrap();
+                    run_keymap_command(
+                        protocol_guard.as_mut(),
+                        command,
+                        &layer_names_for_cmds,
+                        &domain_for_cmds,
+                        &ui_wake_cmd,
+                        presenter_cmd.as_ref(),
+                    );
+                }
+            });
+        }
 
         Ok(Self {
             command_tx,
@@ -107,8 +128,45 @@ impl KeyboardSession {
             write_support,
             supports_live_layout_switching,
             action_filter,
+            #[cfg(target_arch = "wasm32")]
+            event_rx: Mutex::new(event_rx),
+            #[cfg(target_arch = "wasm32")]
+            domain,
+            #[cfg(target_arch = "wasm32")]
+            protocol,
+            #[cfg(target_arch = "wasm32")]
+            layer_names,
+            #[cfg(target_arch = "wasm32")]
+            presenter,
+            #[cfg(target_arch = "wasm32")]
+            ui_wake,
         })
     }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn poll(&self) {
+        if let Ok(rx) = self.event_rx.lock() {
+            while let Ok(event) = rx.try_recv() {
+                let is_disconnected = matches!(event, DeviceEvent::Disconnected(_));
+                if handle_device_event(
+                    &self.domain,
+                    &self.alive,
+                    event,
+                    Instant::now(),
+                ) {
+                    self.ui_wake.request_repaint();
+                }
+                if is_disconnected {
+                    self.alive.store(false, Ordering::Relaxed);
+                    self.ui_wake.request_repaint();
+                    break;
+                }
+            }
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn poll(&self) {}
 
     pub fn is_alive(&self) -> bool {
         self.alive.load(Ordering::Relaxed)
@@ -153,7 +211,27 @@ impl KeyboardSession {
     }
 
     pub fn release_edit_lock(&self) {
-        let _ = self.command_tx.send(KeymapCommand::ReleaseEditLock);
+        let _ = self.send_command(KeymapCommand::ReleaseEditLock);
+    }
+
+    fn send_command(&self, command: KeymapCommand) -> Result<(), mpsc::SendError<KeymapCommand>> {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.command_tx.send(command)
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let mut protocol_guard = self.protocol.lock().unwrap();
+            run_keymap_command(
+                protocol_guard.as_mut(),
+                command,
+                &self.layer_names,
+                &self.domain,
+                &self.ui_wake,
+                self.presenter.as_ref(),
+            );
+            Ok(())
+        }
     }
 
     fn send_keymap_command(
@@ -163,7 +241,7 @@ impl KeyboardSession {
         let (respond, receiver) = mpsc::channel();
         let command = build(respond);
 
-        if let Err(send_error) = self.command_tx.send(command) {
+        if let Err(send_error) = self.send_command(command) {
             match send_error.0 {
                 KeymapCommand::SetKey { respond, .. }
                 | KeymapCommand::Save { respond }

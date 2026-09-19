@@ -1,8 +1,6 @@
 use super::OverlayApp;
 use crate::domain::visibility::OverlayConfig;
-use crate::settings::WindowPosition;
 use egui::Align2;
-use web_time::Instant;
 
 impl OverlayApp {
     /// The active settings as the overlay timing values `Keyboard` runs on.
@@ -24,24 +22,39 @@ impl OverlayApp {
     }
 
     pub(super) fn get_anchor_params(&self) -> (Align2, egui::Vec2) {
-        use WindowPosition::*;
-        let m = self.settings.active.margin as f32;
-        let (align, dx, dy) = match self.settings.active.position {
-            TopLeft => (Align2::LEFT_TOP, m, m),
-            TopRight => (Align2::RIGHT_TOP, -m, m),
-            BottomLeft => (Align2::LEFT_BOTTOM, m, -m),
-            BottomRight => (Align2::RIGHT_BOTTOM, -m, -m),
-            Bottom => (Align2::CENTER_BOTTOM, 0.0, -m),
-            Top => (Align2::CENTER_TOP, 0.0, m),
-        };
-        (align, egui::vec2(dx, dy))
+        #[cfg(target_arch = "wasm32")]
+        {
+            (Align2::CENTER_TOP, egui::vec2(0.0, 24.0))
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            use crate::settings::WindowPosition::*;
+            let m = self.settings.active.margin as f32;
+            let (align, dx, dy) = match self.settings.active.position {
+                TopLeft => (Align2::LEFT_TOP, m, m),
+                TopRight => (Align2::RIGHT_TOP, -m, m),
+                BottomLeft => (Align2::LEFT_BOTTOM, m, -m),
+                BottomRight => (Align2::RIGHT_BOTTOM, -m, -m),
+                Bottom => (Align2::CENTER_BOTTOM, 0.0, -m),
+                Top => (Align2::CENTER_TOP, 0.0, m),
+            };
+            (align, egui::vec2(dx, dy))
+        }
     }
 
     pub(super) fn overlay_visible(&self) -> bool {
-        if let Some(keyboard) = self.connection_mgr.connected_keyboard() {
-            self.is_any_window_open() || keyboard.overlay_is_visible(Instant::now())
-        } else {
-            false
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.connection_mgr.connected_keyboard().is_some()
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            use web_time::Instant;
+            if let Some(keyboard) = self.connection_mgr.connected_keyboard() {
+                self.is_any_window_open() || keyboard.overlay_is_visible(Instant::now())
+            } else {
+                false
+            }
         }
     }
 }

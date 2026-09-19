@@ -7,6 +7,8 @@ pub struct UiState {
     pub settings_warning: Option<String>,
     pub mouse_passthrough: Option<bool>,
     pub file_dialog: FileDialog,
+    #[cfg(target_arch = "wasm32")]
+    pub initial_editor_opened: bool,
 }
 
 pub struct SettingsState {

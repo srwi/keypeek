@@ -56,11 +56,18 @@ pub struct ConnectionTask {
 impl ConnectionTask {
     pub fn start(request: ConnectionRequest, ui_wake: UiWake) -> Self {
         let (tx, rx) = mpsc::channel();
-        std::thread::spawn(move || {
+        let execute = move || {
             let result = build_connected_state(request, ui_wake.clone());
             let _ = tx.send(result);
             ui_wake.request_repaint();
-        });
+        };
+
+        #[cfg(not(target_arch = "wasm32"))]
+        std::thread::spawn(execute);
+
+        #[cfg(target_arch = "wasm32")]
+        execute();
+
         Self { rx }
     }
 

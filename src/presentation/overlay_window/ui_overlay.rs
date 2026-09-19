@@ -17,8 +17,8 @@ impl OverlayApp {
         let size = self.settings.active.size as f32;
         // Pinned while the editor is targeting a specific layer; otherwise automatic (active).
         let pinned = self.editor.pinned_layer();
-        // Keys can be clicked whenever either window is open (window is not clickthrough).
-        let hit_test_enabled = self.is_any_window_open();
+        // Keys can be clicked whenever either window is open (or always on web).
+        let hit_test_enabled = cfg!(target_arch = "wasm32") || self.is_any_window_open();
 
         // One shared painter for every key this frame; painting itself lives
         // in `key_paint` so pickers render identically.
