@@ -11,4 +11,4 @@ pub mod ui_widgets;
 pub use key_presenter::{KeyPresenter, StandardKeyPresenter};
 pub use layout_key::{Label, LayoutKey};
 pub use overlay_window::OverlayApp;
-pub use settings::Settings;
+pub use settings::{FileSettingsStore, MemorySettingsStore, Settings, SettingsStore};

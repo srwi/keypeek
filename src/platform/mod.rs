@@ -1,5 +1,7 @@
+use std::sync::Arc;
+
 use crate::device_discovery::DiscoveredDevice;
-use crate::settings::Settings;
+use crate::settings::SettingsStore;
 
 mod eframe_host;
 pub(crate) mod tray;
@@ -30,14 +32,14 @@ pub(crate) fn add_phosphor_to_fonts(fonts: &mut egui::FontDefinitions) {
 }
 
 pub fn run(
-    settings: Settings,
+    settings_store: Arc<dyn SettingsStore>,
     devices: Vec<DiscoveredDevice>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "linux")]
     {
         // `WAYLAND_DISPLAY` is unset under XWayland, so X11 falls through to eframe below.
         if std::env::var_os("WAYLAND_DISPLAY").is_some() {
-            match wayland::run(settings.clone(), devices.clone()) {
+            match wayland::run(settings_store.clone(), devices.clone()) {
                 Ok(()) => return Ok(()),
                 Err(e) => {
                     // No wlr-layer-shell (e.g. GNOME/Mutter): fall back to eframe on
@@ -46,12 +48,12 @@ pub fn run(
                         "KeyPeek: Wayland layer-shell host unavailable ({e}); \
                          falling back to eframe on XWayland for always-on-top."
                     );
-                    return Ok(eframe_host::run(settings, devices, true)?);
+                    return Ok(eframe_host::run(settings_store, devices, true)?);
                 }
             }
         }
     }
 
-    eframe_host::run(settings, devices, false)?;
+    eframe_host::run(settings_store, devices, false)?;
     Ok(())
 }

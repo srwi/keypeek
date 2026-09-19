@@ -5,6 +5,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::RwLock;
 
 #[derive(Debug)]
 pub struct ParseSettingsError;
@@ -215,7 +216,7 @@ impl Default for ThemeSettings {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Settings {
     pub size: i32,
     pub font_size_multiplier: f32,
@@ -251,33 +252,20 @@ impl Settings {
     pub const MAX_ACTIVATION_DELAY_MS: u32 = 3_000;
 
     pub fn config_file_path() -> Option<PathBuf> {
-        Self::project_dirs().map(|dirs| dirs.config_dir().join("settings.ini"))
-    }
-
-    fn project_dirs() -> Option<ProjectDirs> {
-        ProjectDirs::from("dev", "srwi", "KeyPeek")
+        FileSettingsStore::default_config_path()
     }
 
     pub fn save(&self) -> std::io::Result<()> {
-        let path = Self::config_file_path().ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                "could not determine the KeyPeek config directory",
-            )
-        })?;
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        self.save_to_file(&path)
+        FileSettingsStore::default()
+            .save(self)
+            .map_err(io::Error::other)
     }
 
     pub fn load() -> Option<Self> {
-        Self::config_file_path()
-            .and_then(Self::load_from_file)
-            .or_else(|| Self::load_from_file("settings.ini"))
+        FileSettingsStore::default().load_file()
     }
 
-    pub fn save_to_file(&self, path: impl AsRef<Path>) -> std::io::Result<()> {
+    pub fn to_ini(&self) -> Ini {
         let mut conf = Ini::new();
         let mut section = conf.with_section(Some("settings"));
         section.set("size", self.size.to_string());
@@ -299,11 +287,17 @@ impl Settings {
         }
         section.set("font_color", self.theme.font_color.to_string());
         section.set("legend_mode", self.legend_mode.to_string());
-        conf.write_to_file(path)
+        conf
     }
 
-    pub fn load_from_file(path: impl AsRef<Path>) -> Option<Self> {
-        let conf = Ini::load_from_file(path).ok()?;
+    pub fn to_ini_string(&self) -> String {
+        let conf = self.to_ini();
+        let mut buf = Vec::new();
+        let _ = conf.write_to(&mut buf);
+        String::from_utf8(buf).unwrap_or_default()
+    }
+
+    pub fn from_ini(conf: &Ini) -> Option<Self> {
         let section = conf.section(Some("settings"))?;
         let mut s = Settings::default();
         if let Some(val) = section.get("size") {
@@ -357,5 +351,181 @@ impl Settings {
             }
         }
         Some(s)
+    }
+
+    pub fn from_ini_str(content: &str) -> Option<Self> {
+        let conf = Ini::load_from_str(content).ok()?;
+        Self::from_ini(&conf)
+    }
+
+    pub fn save_to_file(&self, path: impl AsRef<Path>) -> std::io::Result<()> {
+        let conf = self.to_ini();
+        conf.write_to_file(path)
+    }
+
+    pub fn load_from_file(path: impl AsRef<Path>) -> Option<Self> {
+        let conf = Ini::load_from_file(path).ok()?;
+        Self::from_ini(&conf)
+    }
+}
+
+/// Persistent storage port for application settings.
+pub trait SettingsStore: Send + Sync {
+    fn load(&self) -> Settings;
+    fn save(&self, settings: &Settings) -> Result<(), String>;
+}
+
+/// In-memory settings store, useful for tests, fallbacks, and environments without disk access.
+#[derive(Debug)]
+pub struct MemorySettingsStore {
+    settings: RwLock<Settings>,
+}
+
+impl MemorySettingsStore {
+    pub fn new(settings: Settings) -> Self {
+        Self {
+            settings: RwLock::new(settings),
+        }
+    }
+}
+
+impl Default for MemorySettingsStore {
+    fn default() -> Self {
+        Self::new(Settings::default())
+    }
+}
+
+impl SettingsStore for MemorySettingsStore {
+    fn load(&self) -> Settings {
+        self.settings.read().map(|s| s.clone()).unwrap_or_default()
+    }
+
+    fn save(&self, settings: &Settings) -> Result<(), String> {
+        match self.settings.write() {
+            Ok(mut guard) => {
+                *guard = settings.clone();
+                Ok(())
+            }
+            Err(e) => Err(format!("MemorySettingsStore lock poisoned: {e}")),
+        }
+    }
+}
+
+/// File-backed settings store using INI format on the local filesystem.
+#[derive(Clone, Debug, Default)]
+pub struct FileSettingsStore {
+    custom_path: Option<PathBuf>,
+}
+
+impl FileSettingsStore {
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        Self {
+            custom_path: Some(path.into()),
+        }
+    }
+
+    pub fn default_config_path() -> Option<PathBuf> {
+        ProjectDirs::from("dev", "srwi", "KeyPeek")
+            .map(|dirs| dirs.config_dir().join("settings.ini"))
+    }
+
+    pub fn resolve_path(&self) -> Option<PathBuf> {
+        self.custom_path.clone().or_else(Self::default_config_path)
+    }
+
+    pub fn load_file(&self) -> Option<Settings> {
+        if let Some(path) = self.resolve_path() {
+            if let Some(settings) = Settings::load_from_file(&path) {
+                return Some(settings);
+            }
+        }
+        Settings::load_from_file("settings.ini")
+    }
+}
+
+impl SettingsStore for FileSettingsStore {
+    fn load(&self) -> Settings {
+        self.load_file().unwrap_or_default()
+    }
+
+    fn save(&self, settings: &Settings) -> Result<(), String> {
+        let path = self
+            .resolve_path()
+            .ok_or_else(|| "could not determine the KeyPeek config directory".to_string())?;
+
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| {
+                format!(
+                    "failed to create config directory {}: {e}",
+                    parent.display()
+                )
+            })?;
+        }
+
+        settings
+            .save_to_file(&path)
+            .map_err(|e| format!("failed to save settings to {}: {e}", path.display()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_settings_ini_round_trip() {
+        let mut original = Settings::default();
+        original.size = 75;
+        original.font_size_multiplier = 1.3;
+        original.auto_fit_before_ellipsis = true;
+        original.position = WindowPosition::TopLeft;
+        original.timeout = 3500;
+        original.activation_delay = 200;
+        original.margin = 25;
+        original.visible_layers = LayerMask(0x0000000f);
+        original.legend_mode = LegendMode::SingleLive;
+        original.theme.font_color = ThemeColor::new(10, 20, 30, 40);
+        original.theme.layer_colors[0] = ThemeColor::new(50, 60, 70, 80);
+
+        let ini_text = original.to_ini_string();
+        let loaded = Settings::from_ini_str(&ini_text).expect("should parse ini");
+
+        assert_eq!(original, loaded);
+    }
+
+    #[test]
+    fn test_memory_settings_store() {
+        let store = MemorySettingsStore::default();
+        let initial = store.load();
+        assert_eq!(initial, Settings::default());
+
+        let mut updated = initial.clone();
+        updated.timeout = 5000;
+        updated.position = WindowPosition::Bottom;
+
+        store.save(&updated).expect("save should succeed");
+        assert_eq!(store.load(), updated);
+    }
+
+    #[test]
+    fn test_file_settings_store_custom_path() {
+        let temp_dir = std::env::temp_dir().join(format!("keypeek_test_{}", std::process::id()));
+        let file_path = temp_dir.join("test_settings.ini");
+
+        let store = FileSettingsStore::new(&file_path);
+        let mut settings = Settings::default();
+        settings.size = 80;
+        settings.position = WindowPosition::TopRight;
+
+        store
+            .save(&settings)
+            .expect("saving to temp file should succeed");
+        assert!(file_path.exists());
+
+        let loaded = store.load();
+        assert_eq!(loaded, settings);
+
+        let _ = fs::remove_file(&file_path);
+        let _ = fs::remove_dir(&temp_dir);
     }
 }

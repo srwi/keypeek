@@ -1,7 +1,7 @@
 use super::OverlayHost;
 use crate::device_discovery::DiscoveredDevice;
 use crate::overlay_window::OverlayApp;
-use crate::settings::Settings;
+use crate::settings::SettingsStore;
 use crate::ui_wake::UiWake;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -123,13 +123,13 @@ fn enable_dwm_per_pixel_alpha(cc: &eframe::CreationContext<'_>) {
 // `force_x11` (Linux only) makes winit use XWayland instead of native Wayland,
 // since Mutter honors always-on-top for XWayland clients but not native ones.
 pub fn run(
-    settings: Settings,
+    settings_store: Arc<dyn SettingsStore>,
     devices: Vec<DiscoveredDevice>,
     #[cfg_attr(not(target_os = "linux"), allow(unused_variables))] force_x11: bool,
 ) -> Result<(), eframe::Error> {
     #[cfg(target_os = "linux")]
     if force_x11 {
-        match run_inner(settings.clone(), devices.clone(), true) {
+        match run_inner(settings_store.clone(), devices.clone(), true) {
             Ok(()) => return Ok(()),
             Err(e) => {
                 eprintln!(
@@ -139,11 +139,11 @@ pub fn run(
             }
         }
     }
-    run_inner(settings, devices, false)
+    run_inner(settings_store, devices, false)
 }
 
 fn run_inner(
-    settings: Settings,
+    settings_store: Arc<dyn SettingsStore>,
     devices: Vec<DiscoveredDevice>,
     #[cfg_attr(not(target_os = "linux"), allow(unused_variables))] force_x11: bool,
 ) -> Result<(), eframe::Error> {
@@ -213,7 +213,7 @@ fn run_inner(
             super::add_phosphor_to_fonts(&mut fonts);
             cc.egui_ctx.set_fonts(fonts);
 
-            let app = OverlayApp::new(settings_requested, ui_wake, settings, devices);
+            let app = OverlayApp::new(settings_requested, ui_wake, settings_store, devices);
             Ok(Box::new(EframeApp {
                 app,
                 _tray: tray_icon,

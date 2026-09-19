@@ -53,7 +53,7 @@ use egui_glow::glow;
 use crate::device_discovery::DiscoveredDevice;
 use crate::overlay_window::OverlayApp;
 use crate::platform::OverlayHost;
-use crate::settings::Settings;
+use crate::settings::SettingsStore;
 use crate::ui_wake::UiWake;
 
 use egl::EglState;
@@ -111,7 +111,7 @@ struct WaylandApp {
 }
 
 pub fn run(
-    settings: Settings,
+    settings_store: Arc<dyn SettingsStore>,
     devices: Vec<DiscoveredDevice>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let conn = Connection::connect_to_env()?;
@@ -177,7 +177,7 @@ pub fn run(
             ui_wake.request_repaint();
         })
     });
-    let app = OverlayApp::new(settings_requested, ui_wake, settings, devices);
+    let app = OverlayApp::new(settings_requested, ui_wake, settings_store, devices);
 
     let mut state = WaylandApp {
         registry_state: RegistryState::new(&globals),

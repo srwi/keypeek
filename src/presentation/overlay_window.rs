@@ -1,6 +1,6 @@
 use crate::device_discovery::DiscoveredDevice;
 use crate::platform::OverlayHost;
-use crate::settings::Settings;
+use crate::settings::SettingsStore;
 use crate::ui_wake::UiWake;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -21,6 +21,7 @@ pub struct OverlayApp {
     settings_requested: Arc<AtomicBool>,
     pub(crate) ui: UiState,
     settings: SettingsState,
+    settings_store: Arc<dyn SettingsStore>,
     pub(crate) connection_mgr: DeviceConnectionManager,
     pub(crate) editor: crate::keymap_editor::EditorState,
 }
@@ -29,9 +30,10 @@ impl OverlayApp {
     pub fn new(
         settings_requested: Arc<AtomicBool>,
         ui_wake: UiWake,
-        base_settings: Settings,
+        settings_store: Arc<dyn SettingsStore>,
         available_devices: Vec<DiscoveredDevice>,
     ) -> Self {
+        let base_settings = settings_store.load();
         Self {
             settings_requested,
             ui: UiState {
@@ -42,6 +44,7 @@ impl OverlayApp {
                 file_dialog: egui_file_dialog::FileDialog::new(),
             },
             settings: SettingsState::new(base_settings),
+            settings_store,
             connection_mgr: DeviceConnectionManager::new(available_devices, ui_wake),
             editor: crate::keymap_editor::EditorState::new(),
         }
@@ -62,7 +65,7 @@ impl OverlayApp {
     }
 
     pub(crate) fn persist_settings(&self) {
-        if let Err(e) = self.settings.active.save() {
+        if let Err(e) = self.settings_store.save(&self.settings.active) {
             eprintln!("Failed to save settings: {e}");
         }
     }

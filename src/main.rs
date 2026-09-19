@@ -15,12 +15,14 @@ pub use presentation::{
     key_paint, key_presenter, keymap_editor, layout_key, overlay_window, settings, ui_widgets,
 };
 
+use std::sync::Arc;
+
 use application::device_discovery::discover_devices;
-use settings::Settings;
+use settings::FileSettingsStore;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     os_layout::init();
-    let settings = Settings::load().unwrap_or_default();
+    let settings_store = Arc::new(FileSettingsStore::default());
     let available_devices = discover_devices();
-    platform::run(settings, available_devices)
+    platform::run(settings_store, available_devices)
 }
