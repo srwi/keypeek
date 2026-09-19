@@ -1,4 +1,4 @@
-use super::OverlayApp;
+use super::{OverlayApp, OverlayHost};
 use crate::settings::{LayerMask, LegendMode, Settings, ThemeColor, ThemeSettings, WindowPosition};
 use crate::ui_widgets::titled_group;
 use egui::Window;
@@ -70,7 +70,7 @@ impl OverlayApp {
     pub(super) fn draw_settings_window(
         &mut self,
         ctx: &egui::Context,
-        host: &mut dyn crate::platform::OverlayHost,
+        host: &mut dyn OverlayHost,
     ) {
         let mut open = self.ui.settings_visible;
         let reconnecting = self.connection_mgr.is_reconnecting();

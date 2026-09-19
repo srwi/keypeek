@@ -36,23 +36,8 @@ pub struct HidDeviceInfo {
     pub serial_number: Option<String>,
 }
 
-/// Scans all currently enumerated USB HID interfaces on the system.
-pub fn scan_all_hid() -> Vec<HidDeviceInfo> {
-    let Ok(api) = hidapi::HidApi::new() else {
-        return Vec::new();
-    };
-    api.device_list()
-        .map(|d| HidDeviceInfo {
-            vendor_id: d.vendor_id(),
-            product_id: d.product_id(),
-            usage_page: d.usage_page(),
-            product: d.product_string().map(|s| s.to_string()),
-            serial_number: d.serial_number().map(|s| s.to_string()),
-        })
-        .collect()
-}
-
 /// Context shared across device driver scanners during discovery.
+#[derive(Default)]
 pub struct DiscoveryContext {
     hid_devices: Vec<HidDeviceInfo>,
     claimed_vid_pids: HashSet<(u16, u16)>,
@@ -64,10 +49,6 @@ impl DiscoveryContext {
             hid_devices,
             claimed_vid_pids: HashSet::new(),
         }
-    }
-
-    pub fn from_system() -> Self {
-        Self::new(scan_all_hid())
     }
 
     pub fn hid_devices(&self) -> &[HidDeviceInfo] {
@@ -119,9 +100,9 @@ pub fn discover_devices_with(
     devices
 }
 
-/// Discovers all available keyboards using system hardware scans and default protocol scanners.
-pub fn discover_devices() -> Vec<DiscoveredDevice> {
-    let mut ctx = DiscoveryContext::from_system();
+/// Discovers all available keyboards using provided HID interfaces and default protocol scanners.
+pub fn discover_devices(hid_devices: Vec<HidDeviceInfo>) -> Vec<DiscoveredDevice> {
+    let mut ctx = DiscoveryContext::new(hid_devices);
     let scanners = default_scanners();
     discover_devices_with(&mut ctx, &scanners)
 }
@@ -225,7 +206,7 @@ mod tests {
 
     #[test]
     fn discover_devices_with_deduplicates_and_sorts() {
-        let mut ctx = DiscoveryContext::new(Vec::new());
+        let mut ctx = DiscoveryContext::default();
         let scanner1: Box<dyn DeviceDriverScanner> = Box::new(TestScanner {
             devices: vec![
                 DiscoveredDevice {

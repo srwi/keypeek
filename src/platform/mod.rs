@@ -4,17 +4,13 @@ use crate::device_discovery::DiscoveredDevice;
 use crate::settings::SettingsStore;
 
 mod eframe_host;
+pub mod hid;
 pub(crate) mod tray;
+
+pub use hid::scan_all_hid;
 
 #[cfg(target_os = "linux")]
 mod wayland;
-
-// eframe (winit) can't do always-on-top/click-through on native Wayland, so on
-// Linux Wayland sessions we drive a wlr-layer-shell surface directly instead.
-pub trait OverlayHost {
-    fn set_passthrough(&mut self, enabled: bool);
-    fn request_close(&mut self);
-}
 
 /// Registers Phosphor icons into the egui font definitions.
 pub(crate) fn add_phosphor_to_fonts(fonts: &mut egui::FontDefinitions) {

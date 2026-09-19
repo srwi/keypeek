@@ -474,16 +474,18 @@ mod tests {
 
     #[test]
     fn test_settings_ini_round_trip() {
-        let mut original = Settings::default();
-        original.size = 75;
-        original.font_size_multiplier = 1.3;
-        original.auto_fit_before_ellipsis = true;
-        original.position = WindowPosition::TopLeft;
-        original.timeout = 3500;
-        original.activation_delay = 200;
-        original.margin = 25;
-        original.visible_layers = LayerMask(0x0000000f);
-        original.legend_mode = LegendMode::SingleLive;
+        let mut original = Settings {
+            size: 75,
+            font_size_multiplier: 1.3,
+            auto_fit_before_ellipsis: true,
+            position: WindowPosition::TopLeft,
+            timeout: 3500,
+            activation_delay: 200,
+            margin: 25,
+            visible_layers: LayerMask(0x0000000f),
+            legend_mode: LegendMode::SingleLive,
+            ..Default::default()
+        };
         original.theme.font_color = ThemeColor::new(10, 20, 30, 40);
         original.theme.layer_colors[0] = ThemeColor::new(50, 60, 70, 80);
 
@@ -513,9 +515,11 @@ mod tests {
         let file_path = temp_dir.join("test_settings.ini");
 
         let store = FileSettingsStore::new(&file_path);
-        let mut settings = Settings::default();
-        settings.size = 80;
-        settings.position = WindowPosition::TopRight;
+        let settings = Settings {
+            size: 80,
+            position: WindowPosition::TopRight,
+            ..Default::default()
+        };
 
         store
             .save(&settings)
