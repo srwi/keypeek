@@ -6,7 +6,9 @@ pub(crate) mod keycode_labels;
 pub mod kle_parser;
 pub mod presenter;
 pub mod profile;
+#[cfg(feature = "hidapi")]
 pub mod via;
+#[cfg(feature = "hidapi")]
 pub mod vial;
 
 pub use presenter::QmkKeyPresenter;
@@ -31,10 +33,18 @@ impl FirmwareBundle for QmkBundle {
     }
 
     fn scanners(&self) -> Vec<Box<dyn DeviceDriverScanner>> {
-        vec![Box::new(discovery::QmkScanner)]
+        #[cfg(feature = "hidapi")]
+        {
+            vec![Box::new(discovery::QmkScanner)]
+        }
+        #[cfg(not(feature = "hidapi"))]
+        {
+            vec![]
+        }
     }
 
     fn connect(&self, spec: &ConnectionSpec) -> Result<Box<dyn KeyboardProtocol>, DeviceError> {
+        #[cfg(feature = "hidapi")]
         match spec {
             ConnectionSpec::Via { json_path } => {
                 let protocol = via::ViaProtocol::connect(json_path)?;
@@ -47,6 +57,13 @@ impl FirmwareBundle for QmkBundle {
             _ => Err(DeviceError::Unsupported(
                 "Unsupported spec for QMK bundle".to_string(),
             )),
+        }
+        #[cfg(not(feature = "hidapi"))]
+        {
+            let _ = spec;
+            Err(DeviceError::Unsupported(
+                "Native QMK HID is not supported in this build".to_string(),
+            ))
         }
     }
 }

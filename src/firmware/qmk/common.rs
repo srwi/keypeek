@@ -1,30 +1,46 @@
 use super::codec as qmk_codec;
+#[cfg(feature = "hidapi")]
 use crate::key_spec::{KeySpec, KeymapSnapshot, LayerInfo};
+#[cfg(feature = "hidapi")]
 use crate::layout::KeyboardDefinition;
-use crate::protocols::{
-    pump_hid_reader, ActionFilter, DeviceError, DeviceEvent, KeyboardProtocol, RawHidTransport,
-    WriteSupport,
-};
+use crate::protocols::ActionFilter;
+#[cfg(feature = "hidapi")]
+use crate::protocols::{pump_hid_reader, DeviceEvent, KeyboardProtocol, WriteSupport};
+#[cfg(any(feature = "hidapi", test))]
+use crate::protocols::{DeviceError, RawHidTransport};
+#[cfg(feature = "hidapi")]
 use qmk_via_api::api::KeyboardApi;
 pub use qmk_via_api::QmkFeatures;
+#[cfg(any(feature = "hidapi", test))]
 use std::error::Error;
-use std::sync::{mpsc, Arc, Mutex};
+#[cfg(feature = "hidapi")]
+use std::sync::{mpsc, Mutex};
+use std::sync::Arc;
+#[cfg(feature = "hidapi")]
 use std::thread;
+#[cfg(feature = "hidapi")]
 use std::time::Duration;
 
+#[cfg(any(feature = "hidapi", test))]
 const KEYPEEK_SUBSCRIBE_MARKER: u8 = 0xC0;
+#[cfg(any(feature = "hidapi", test))]
 const KEYPEEK_SUBSCRIBE_ACTIVE: u8 = 0xA1;
+#[cfg(any(feature = "hidapi", test))]
 const KEYPEEK_SUBSCRIBE_INACTIVE: u8 = 0xA0;
 
+#[cfg(any(feature = "hidapi", test))]
 trait SubscriptionSender: Send {
     fn set_active(&mut self, active: bool) -> Result<(), Box<dyn Error>>;
 }
 
+#[cfg(any(feature = "hidapi", test))]
 struct RawHidSubscription {
     transport: Box<dyn RawHidTransport>,
 }
 
+#[cfg(any(feature = "hidapi", test))]
 impl RawHidSubscription {
+    #[cfg(feature = "desktop")]
     fn open(vid: u16, pid: u16) -> Result<Option<Box<dyn SubscriptionSender>>, DeviceError> {
         let transport = crate::platform::hid::open_hid_transport(vid, pid, 0xff60).map_err(|e| {
             DeviceError::Transport(format!(
@@ -34,8 +50,14 @@ impl RawHidSubscription {
         })?;
         Ok(Some(Box::new(Self { transport })))
     }
+
+    #[cfg(not(feature = "desktop"))]
+    fn open(_vid: u16, _pid: u16) -> Result<Option<Box<dyn SubscriptionSender>>, DeviceError> {
+        Ok(None)
+    }
 }
 
+#[cfg(any(feature = "hidapi", test))]
 impl SubscriptionSender for RawHidSubscription {
     fn set_active(&mut self, active: bool) -> Result<(), Box<dyn Error>> {
         let value = if active {
@@ -49,6 +71,7 @@ impl SubscriptionSender for RawHidSubscription {
     }
 }
 
+#[cfg(feature = "hidapi")]
 pub struct QmkSubscription {
     pub events: mpsc::Receiver<DeviceEvent>,
     pub keepalive: Option<mpsc::Sender<()>>,
@@ -56,6 +79,7 @@ pub struct QmkSubscription {
 
 /// Subscribes to live layer and key events from a QMK-based keyboard, managing the
 /// keepalive heartbeat thread and raw HID reader loop internally.
+#[cfg(feature = "hidapi")]
 pub fn qmk_subscribe_events(
     api: Arc<Mutex<KeyboardApi>>,
     vid: u16,
@@ -100,6 +124,7 @@ pub fn qmk_subscribe_events(
 }
 
 /// A connected QMK/VIA/Vial keyboard communicating over raw HID.
+#[cfg(feature = "hidapi")]
 pub struct QmkProtocol {
     api: Arc<Mutex<KeyboardApi>>,
     definition: KeyboardDefinition,
@@ -107,6 +132,7 @@ pub struct QmkProtocol {
     _keepalive: Option<mpsc::Sender<()>>,
 }
 
+#[cfg(feature = "hidapi")]
 impl QmkProtocol {
     pub fn new(api: KeyboardApi, definition: KeyboardDefinition, features: QmkFeatures) -> Self {
         Self {
@@ -118,6 +144,7 @@ impl QmkProtocol {
     }
 }
 
+#[cfg(feature = "hidapi")]
 impl KeyboardProtocol for QmkProtocol {
     fn get_layout_definition(&self) -> &KeyboardDefinition {
         &self.definition
@@ -171,6 +198,7 @@ pub fn qmk_action_filter(features: QmkFeatures) -> Option<ActionFilter> {
 }
 
 /// Reads a complete keymap snapshot across all dynamic layers from a QMK/VIA/VIAL keyboard.
+#[cfg(feature = "hidapi")]
 pub fn qmk_read_snapshot(
     api: &KeyboardApi,
     definition: &KeyboardDefinition,
@@ -206,6 +234,7 @@ pub fn qmk_read_snapshot(
 }
 
 /// Writes a key binding to a QMK keyboard.
+#[cfg(feature = "hidapi")]
 pub fn qmk_set_key(
     api: &KeyboardApi,
     layer_index: usize,
@@ -218,6 +247,7 @@ pub fn qmk_set_key(
 }
 
 /// Writes a keycode via the VIA protocol with readback verification on error.
+#[cfg(feature = "hidapi")]
 pub(crate) fn qmk_set_key_with_retry(
     api: &KeyboardApi,
     layer_index: usize,

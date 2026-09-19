@@ -1,10 +1,13 @@
 pub mod codec;
+#[cfg(feature = "desktop")]
 pub mod discovery;
+#[cfg(feature = "desktop")]
 pub mod driver;
 #[cfg(test)]
 pub(crate) mod keycode_labels;
 pub mod presenter;
 pub mod profile;
+#[cfg(feature = "desktop")]
 pub mod rpc;
 
 pub use presenter::ZmkKeyPresenter;
@@ -14,7 +17,9 @@ use crate::device_discovery::DeviceDriverScanner;
 use crate::firmware::FirmwareBundle;
 use crate::key_presenter::KeyPresenter;
 use crate::keymap_editor::EditorProfile;
-use crate::protocols::{ConnectionSpec, DeviceError, KeyboardProtocol, ZmkTransportConfig};
+use crate::protocols::{ConnectionSpec, DeviceError, KeyboardProtocol};
+#[cfg(feature = "desktop")]
+use crate::protocols::ZmkTransportConfig;
 use std::sync::Arc;
 
 pub struct ZmkBundle;
@@ -29,10 +34,18 @@ impl FirmwareBundle for ZmkBundle {
     }
 
     fn scanners(&self) -> Vec<Box<dyn DeviceDriverScanner>> {
-        vec![Box::new(discovery::ZmkScanner)]
+        #[cfg(feature = "desktop")]
+        {
+            vec![Box::new(discovery::ZmkScanner)]
+        }
+        #[cfg(not(feature = "desktop"))]
+        {
+            vec![]
+        }
     }
 
     fn connect(&self, spec: &ConnectionSpec) -> Result<Box<dyn KeyboardProtocol>, DeviceError> {
+        #[cfg(feature = "desktop")]
         match spec {
             ConnectionSpec::Zmk {
                 vid,
@@ -53,6 +66,13 @@ impl FirmwareBundle for ZmkBundle {
             _ => Err(DeviceError::Unsupported(
                 "Unsupported spec for ZMK bundle".to_string(),
             )),
+        }
+        #[cfg(not(feature = "desktop"))]
+        {
+            let _ = spec;
+            Err(DeviceError::Unsupported(
+                "Native ZMK transport is not supported in this build".to_string(),
+            ))
         }
     }
 }

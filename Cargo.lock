@@ -4304,8 +4304,6 @@ dependencies = [
 [[package]]
 name = "qmk-via-api"
 version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53c2d37fb76cbe950db5fdedae305d4be6bd82f83ce46ff773e59db01fd1880d"
 dependencies = [
  "hidapi",
  "itertools 0.15.0",
@@ -7188,8 +7186,6 @@ checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
 [[package]]
 name = "zmk-studio-api"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb099dfd4acabf4c64439fa8756402c00f6cf7aeb5482fef7ac50bace5a62b71"
 dependencies = [
  "bluest",
  "futures",
@@ -7203,6 +7199,7 @@ dependencies = [
  "strum 0.28.0",
  "strum_macros 0.28.0",
  "tokio",
+ "web-time",
 ]
 
 [[package]]

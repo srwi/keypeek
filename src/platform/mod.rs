@@ -1,18 +1,26 @@
+#[cfg(feature = "desktop")]
 use std::sync::Arc;
 
+#[cfg(feature = "desktop")]
 use crate::device_discovery::DiscoveredDevice;
+#[cfg(feature = "desktop")]
 use crate::settings::SettingsStore;
 
+#[cfg(feature = "desktop")]
 mod eframe_host;
+#[cfg(feature = "desktop")]
 pub mod hid;
+#[cfg(feature = "desktop")]
 pub(crate) mod tray;
 
+#[cfg(feature = "desktop")]
 pub use hid::scan_all_hid;
 
 #[cfg(target_os = "linux")]
 mod wayland;
 
 /// Registers Phosphor icons into the egui font definitions.
+#[allow(dead_code)]
 pub(crate) fn add_phosphor_to_fonts(fonts: &mut egui::FontDefinitions) {
     fonts.font_data.insert(
         "phosphor".to_owned(),
@@ -27,6 +35,7 @@ pub(crate) fn add_phosphor_to_fonts(fonts: &mut egui::FontDefinitions) {
     }
 }
 
+#[cfg(feature = "desktop")]
 pub fn run(
     settings_store: Arc<dyn SettingsStore>,
     devices: Vec<DiscoveredDevice>,
