@@ -2,6 +2,12 @@ use std::error::Error;
 use std::fmt;
 use std::sync::{mpsc, Arc};
 
+pub mod transport;
+pub use transport::RawHidTransport;
+
+#[cfg(test)]
+pub use transport::MockHidTransport;
+
 /// Unified domain error for keyboard communication, configuration, and driver operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeviceError {

@@ -2,7 +2,8 @@ use super::codec as qmk_codec;
 use crate::key_spec::{KeySpec, KeymapSnapshot, LayerInfo};
 use crate::layout::KeyboardDefinition;
 use crate::protocols::{
-    pump_hid_reader, ActionFilter, DeviceError, DeviceEvent, KeyboardProtocol, WriteSupport,
+    pump_hid_reader, ActionFilter, DeviceError, DeviceEvent, KeyboardProtocol, RawHidTransport,
+    WriteSupport,
 };
 use qmk_via_api::api::KeyboardApi;
 pub use qmk_via_api::QmkFeatures;
@@ -16,34 +17,34 @@ const KEYPEEK_SUBSCRIBE_ACTIVE: u8 = 0xA1;
 const KEYPEEK_SUBSCRIBE_INACTIVE: u8 = 0xA0;
 
 trait SubscriptionSender: Send {
-    fn set_active(&self, active: bool) -> Result<(), Box<dyn Error>>;
+    fn set_active(&mut self, active: bool) -> Result<(), Box<dyn Error>>;
 }
 
 struct RawHidSubscription {
-    api: KeyboardApi,
+    transport: Box<dyn RawHidTransport>,
 }
 
 impl RawHidSubscription {
     fn open(vid: u16, pid: u16) -> Result<Option<Box<dyn SubscriptionSender>>, DeviceError> {
-        let api = KeyboardApi::new(vid, pid, 0xff60, None).map_err(|e| {
+        let transport = crate::platform::hid::open_hid_transport(vid, pid, 0xff60).map_err(|e| {
             DeviceError::Transport(format!(
                 "Could not open the RAW HID interface ({vid:04x}:{pid:04x}) to subscribe to \
                  layer events: {e}. The overlay cannot follow layer changes without it."
             ))
         })?;
-        Ok(Some(Box::new(Self { api })))
+        Ok(Some(Box::new(Self { transport })))
     }
 }
 
 impl SubscriptionSender for RawHidSubscription {
-    fn set_active(&self, active: bool) -> Result<(), Box<dyn Error>> {
+    fn set_active(&mut self, active: bool) -> Result<(), Box<dyn Error>> {
         let value = if active {
             KEYPEEK_SUBSCRIBE_ACTIVE
         } else {
             KEYPEEK_SUBSCRIBE_INACTIVE
         };
-        self.api
-            .hid_send(vec![KEYPEEK_SUBSCRIBE_MARKER, value])
+        self.transport
+            .write_output_report(&[KEYPEEK_SUBSCRIBE_MARKER, value])
             .map_err(|e| format!("Subscription keepalive write error: {e}").into())
     }
 }
@@ -61,7 +62,7 @@ pub fn qmk_subscribe_events(
     pid: u16,
 ) -> Result<QmkSubscription, DeviceError> {
     // 1. Start keepalive loop if subscription interface is available
-    let keepalive = RawHidSubscription::open(vid, pid)?.map(|sender| {
+    let keepalive = RawHidSubscription::open(vid, pid)?.map(|mut sender| {
         let (tx, rx) = mpsc::channel::<()>();
         thread::spawn(move || {
             loop {
@@ -275,5 +276,28 @@ mod tests {
         assert!(!filter(&qmk_codec::qmk_to_keyspec(
             Keycode::QK_AUDIO_TOGGLE as u16
         )));
+    }
+
+    #[test]
+    fn test_raw_hid_subscription_keepalive() {
+        let mock_transport = crate::protocols::MockHidTransport::new();
+        let mut sub = RawHidSubscription {
+            transport: Box::new(mock_transport.clone()),
+        };
+
+        sub.set_active(true).unwrap();
+        assert_eq!(
+            mock_transport.written_packets(),
+            vec![vec![KEYPEEK_SUBSCRIBE_MARKER, KEYPEEK_SUBSCRIBE_ACTIVE]]
+        );
+
+        sub.set_active(false).unwrap();
+        assert_eq!(
+            mock_transport.written_packets(),
+            vec![
+                vec![KEYPEEK_SUBSCRIBE_MARKER, KEYPEEK_SUBSCRIBE_ACTIVE],
+                vec![KEYPEEK_SUBSCRIBE_MARKER, KEYPEEK_SUBSCRIBE_INACTIVE],
+            ]
+        );
     }
 }

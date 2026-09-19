@@ -4,27 +4,26 @@ use crate::key_spec::{KeySpec, KeymapSnapshot, LayerInfo};
 use crate::layout::geometry::flattened_top_left_after_center_rotation;
 use crate::layout::{Key, KeyboardDefinition, KeyboardLayout};
 use crate::protocols::{
-    pump_hid_reader, DeviceError, DeviceEvent, KeyboardProtocol, Reopener, WriteSupport,
+    pump_hid_reader, DeviceError, DeviceEvent, KeyboardProtocol, RawHidTransport, Reopener,
+    WriteSupport,
 };
-use hidapi::{HidApi, HidDevice};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
-use web_time::Instant;
 use zmk_studio_api::{BehaviorBindingParametersSet, BehaviorRole, ClientError, ResolvedLayer};
 
 const ZMK_USAGE_PAGE: u16 = 0xff60;
 
-struct ZmkLayout {
-    definition: KeyboardDefinition,
-    snapshot: Mutex<KeymapSnapshot>,
-    supported_behaviors: HashSet<BehaviorRole>,
-    behavior_metadata: HashMap<BehaviorRole, Vec<BehaviorBindingParametersSet>>,
+pub(crate) struct ZmkLayout {
+    pub(crate) definition: KeyboardDefinition,
+    pub(crate) snapshot: Mutex<KeymapSnapshot>,
+    pub(crate) supported_behaviors: HashSet<BehaviorRole>,
+    pub(crate) behavior_metadata: HashMap<BehaviorRole, Vec<BehaviorBindingParametersSet>>,
 }
 
 pub struct ZmkProtocol {
-    hid_device: Option<HidDevice>,
+    hid_transport: Option<Box<dyn RawHidTransport>>,
     layout: Arc<ZmkLayout>,
     transport: ZmkTransport,
     session: Option<ZmkStudioSession>,
@@ -54,20 +53,28 @@ impl ZmkProtocol {
 
     fn open_hid(layout: Arc<ZmkLayout>, transport: ZmkTransport) -> Result<Self, DeviceError> {
         let (vid, pid) = (layout.definition.vid, layout.definition.pid);
-        wait_for_hid_reappearance(vid, pid, ZMK_USAGE_PAGE, Duration::from_secs(8))
-            .map_err(DeviceError::Transport)?;
-        let hid_device = open_zmk_hid(vid, pid).map_err(|e| {
-            DeviceError::Transport(format!(
-                "Failed to connect HID ({vid:04x}:{pid:04x}) after reappearance: {e}"
-            ))
-        })?;
+        let hid_transport = crate::platform::hid::wait_and_open_hid_transport(
+            vid,
+            pid,
+            ZMK_USAGE_PAGE,
+            Duration::from_secs(8),
+        )?;
 
-        Ok(Self {
-            hid_device: Some(hid_device),
+        Ok(Self::from_parts(layout, transport, Some(hid_transport)))
+    }
+
+    /// Constructs a ZmkProtocol instance from its components.
+    pub fn from_parts(
+        layout: Arc<ZmkLayout>,
+        transport: ZmkTransport,
+        hid_transport: Option<Box<dyn RawHidTransport>>,
+    ) -> Self {
+        Self {
+            hid_transport,
             layout,
             transport,
             session: None,
-        })
+        }
     }
 
     /// Executes an operation with an active ZMK studio session.
@@ -121,67 +128,6 @@ fn should_drop_session(err: &(dyn Error + 'static)) -> bool {
     )
 }
 
-fn open_zmk_hid(vid: u16, pid: u16) -> Result<HidDevice, String> {
-    let api = HidApi::new().map_err(|e| format!("hidapi init failed: {e}"))?;
-    let path = api
-        .device_list()
-        .find(|device| {
-            device.vendor_id() == vid
-                && device.product_id() == pid
-                && device.usage_page() == ZMK_USAGE_PAGE
-        })
-        .map(|device| device.path().to_owned())
-        .ok_or_else(|| {
-            format!(
-                "could not find HID interface for {:04x}:{:04x} usage 0x{:04x}",
-                vid, pid, ZMK_USAGE_PAGE
-            )
-        })?;
-
-    api.open_path(&path).map_err(|e| e.to_string())
-}
-
-fn wait_for_hid_reappearance(
-    vid: u16,
-    pid: u16,
-    usage_page: u16,
-    timeout: Duration,
-) -> Result<(), String> {
-    // On Linux BLE, the HID node can temporarily disappear while HoG/GATT activity settles; wait
-    // for the matching HID interface to reappear before reconnecting via hidapi.
-    let deadline = Instant::now() + timeout;
-    let mut device_present_without_usage = false;
-    while Instant::now() < deadline {
-        let api = HidApi::new().map_err(|e| format!("hidapi init failed: {e}"))?;
-        let mut matched = false;
-        for d in api.device_list() {
-            if d.vendor_id() == vid && d.product_id() == pid {
-                if d.usage_page() == usage_page {
-                    matched = true;
-                    break;
-                }
-                device_present_without_usage = true;
-            }
-        }
-        if matched {
-            return Ok(());
-        }
-        std::thread::sleep(Duration::from_millis(150));
-    }
-
-    if device_present_without_usage {
-        return Err("Please re-pair the keyboard to refresh the HID descriptor.".to_string());
-    }
-
-    Err(format!(
-        "HID interface did not reappear in {} ms for {:04x}:{:04x} usage 0x{:04x}",
-        timeout.as_millis(),
-        vid,
-        pid,
-        usage_page
-    ))
-}
-
 impl KeyboardProtocol for ZmkProtocol {
     fn get_layout_definition(&self) -> &KeyboardDefinition {
         &self.layout.definition
@@ -192,20 +138,15 @@ impl KeyboardProtocol for ZmkProtocol {
     }
 
     fn subscribe_events(&mut self) -> Result<mpsc::Receiver<DeviceEvent>, DeviceError> {
-        let hid_device = self
-            .hid_device
+        let mut hid_transport = self
+            .hid_transport
             .take()
             .ok_or_else(|| DeviceError::Protocol("Already subscribed to ZMK events".to_string()))?;
         let (event_tx, event_rx) = mpsc::channel();
 
         std::thread::spawn(move || {
-            let mut buffer = [0u8; 32];
             pump_hid_reader(
-                || match hid_device.read_timeout(&mut buffer, 200) {
-                    Ok(read) if read > 0 => Ok(Some(buffer[..read].to_vec())),
-                    Ok(_) => Ok(None),
-                    Err(e) => Err(e.to_string()),
-                },
+                || hid_transport.read_input_report(Duration::from_millis(200)).map_err(|e| e.to_string()),
                 event_tx,
                 "ZMK HID device disconnected",
             );
@@ -383,34 +324,38 @@ mod tests {
     use std::collections::HashSet;
     use zmk_studio_api::BehaviorRole;
 
+    impl ZmkLayout {
+        fn mock(supported_behaviors: HashSet<BehaviorRole>) -> Arc<Self> {
+            Arc::new(Self {
+                definition: KeyboardDefinition {
+                    vid: 0x1234,
+                    pid: 0x5678,
+                    rows: 1,
+                    cols: 1,
+                    layouts: vec![],
+                },
+                snapshot: Mutex::new(KeymapSnapshot {
+                    layers: vec![],
+                    actions: vec![],
+                }),
+                supported_behaviors,
+                behavior_metadata: Default::default(),
+            })
+        }
+    }
+
     #[test]
     fn test_zmk_action_filter_rejects_unknown_custom_behaviors() {
         let mut supported_behaviors = HashSet::new();
         supported_behaviors.insert(BehaviorRole::KeyPress);
         supported_behaviors.insert(BehaviorRole::KeyToggle);
 
-        let layout = Arc::new(ZmkLayout {
-            definition: KeyboardDefinition {
-                vid: 0x1234,
-                pid: 0x5678,
-                rows: 1,
-                cols: 1,
-                layouts: vec![],
-            },
-            snapshot: Mutex::new(KeymapSnapshot {
-                layers: vec![],
-                actions: vec![],
-            }),
-            supported_behaviors,
-            behavior_metadata: Default::default(),
-        });
-
-        let proto = ZmkProtocol {
-            hid_device: None,
+        let layout = ZmkLayout::mock(supported_behaviors);
+        let proto = ZmkProtocol::from_parts(
             layout,
-            transport: ZmkTransport::SerialPort("mock".to_string()),
-            session: None,
-        };
+            ZmkTransport::SerialPort("mock".to_string()),
+            None,
+        );
 
         let filter = proto.action_filter().expect("filter should be present");
 
@@ -430,5 +375,35 @@ mod tests {
             param2: None,
         });
         assert!(!filter(&qmk_raw));
+    }
+
+    #[test]
+    fn test_zmk_subscribe_events_with_mock_transport() {
+        let layout = ZmkLayout::mock(HashSet::new());
+        let mock_transport = crate::protocols::MockHidTransport::new();
+        // Queue an input packet: 0xF1, row=2, col=3, pressed=true
+        mock_transport.push_incoming(vec![0xF1, 2, 3, 1]);
+
+        let mut proto = ZmkProtocol::from_parts(
+            layout,
+            ZmkTransport::SerialPort("mock".to_string()),
+            Some(Box::new(mock_transport)),
+        );
+
+        let rx = proto.subscribe_events().expect("subscribe should succeed");
+        let event = rx
+            .recv_timeout(Duration::from_millis(500))
+            .expect("should receive event");
+        assert_eq!(
+            event,
+            DeviceEvent::KeyPressed {
+                row: 2,
+                col: 3,
+                pressed: true
+            }
+        );
+
+        // Subscribing again should return an error as the transport has been taken
+        assert!(proto.subscribe_events().is_err());
     }
 }
