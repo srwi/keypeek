@@ -19,6 +19,9 @@ pub use hid::scan_all_hid;
 #[cfg(target_os = "linux")]
 mod wayland;
 
+#[cfg(target_arch = "wasm32")]
+pub mod web;
+
 /// Registers Phosphor icons into the egui font definitions.
 #[allow(dead_code)]
 pub(crate) fn add_phosphor_to_fonts(fonts: &mut egui::FontDefinitions) {

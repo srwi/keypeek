@@ -13,3 +13,6 @@ pub use presentation::{
     key_paint, key_presenter, keymap_editor, layout_key, overlay_host, overlay_window, settings,
     ui_widgets,
 };
+
+#[cfg(target_arch = "wasm32")]
+pub use platform::web::*;
