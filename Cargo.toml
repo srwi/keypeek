@@ -8,24 +8,50 @@ readme = "README.md"
 version = "0.10.0"
 edition = "2021"
 
+[lib]
+name = "keypeek"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "keypeek"
+path = "src/main.rs"
+required-features = ["desktop"]
+
+[features]
+default = ["desktop"]
+desktop = [
+    "directories",
+    "tray-icon",
+    "hidapi",
+    "serialport",
+    "zmk-studio-api/serial",
+    "zmk-studio-api/ble",
+]
+directories = ["dep:directories"]
+tray-icon = ["dep:tray-icon"]
+hidapi = ["dep:hidapi"]
+serialport = ["dep:serialport"]
+
 [dependencies]
 rust-ini = "0.21.3"
-directories = "6.0.0"
-tray-icon = "0.24.2"
 egui = "0.36.1"
 eframe = { version = "0.36.1", features = ["glow"] }
 egui_extras = { version = "0.36.1", features = ["all_loaders"] }
 qmk-via-api = "0.9.0"
-hidapi = { version = "2.6.5", features = ["macos-shared-device"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 egui-phosphor = "0.13.0"
 egui-file-dialog = "0.15.0"
 image = "0.25.10"
 lzma-rs = "0.3"
-serialport = "4.10.0"
-zmk-studio-api = { version = "0.6.0", features = ["serial", "ble"] }
 web-time = "1.1.0"
+zmk-studio-api = { version = "0.6.0", default-features = false }
+
+# Desktop / native-only dependencies
+directories = { version = "6.0.0", optional = true }
+tray-icon = { version = "0.24.2", optional = true }
+hidapi = { version = "2.6.5", features = ["macos-shared-device"], optional = true }
+serialport = { version = "4.10.0", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"

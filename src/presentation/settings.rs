@@ -1,3 +1,4 @@
+#[cfg(feature = "directories")]
 use directories::ProjectDirs;
 use ini::Ini;
 use std::fmt;
@@ -424,9 +425,15 @@ impl FileSettingsStore {
         }
     }
 
+    #[cfg(feature = "directories")]
     pub fn default_config_path() -> Option<PathBuf> {
         ProjectDirs::from("dev", "srwi", "KeyPeek")
             .map(|dirs| dirs.config_dir().join("settings.ini"))
+    }
+
+    #[cfg(not(feature = "directories"))]
+    pub fn default_config_path() -> Option<PathBuf> {
+        None
     }
 
     pub fn resolve_path(&self) -> Option<PathBuf> {

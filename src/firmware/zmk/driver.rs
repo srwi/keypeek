@@ -64,7 +64,7 @@ impl ZmkProtocol {
     }
 
     /// Constructs a ZmkProtocol instance from its components.
-    pub fn from_parts(
+    pub(crate) fn from_parts(
         layout: Arc<ZmkLayout>,
         transport: ZmkTransport,
         hid_transport: Option<Box<dyn RawHidTransport>>,
