@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Instant;
+use web_time::Instant;
 
 /// A keymap command for the protocol, executed on the reader thread so writes
 /// and reads never race the same HID handle.

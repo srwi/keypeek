@@ -7,7 +7,8 @@ mod input;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use web_time::Instant;
 
 use smithay_client_toolkit::reexports::protocols::wp::{
     fractional_scale::v1::client::{

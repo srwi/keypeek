@@ -2723,6 +2723,7 @@ dependencies = [
  "tray-icon",
  "wayland-client",
  "wayland-egl",
+ "web-time",
  "windows 0.62.2",
  "winit",
  "winreg",

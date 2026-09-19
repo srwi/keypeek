@@ -2,7 +2,7 @@ use super::OverlayApp;
 use crate::domain::visibility::OverlayConfig;
 use crate::settings::WindowPosition;
 use egui::Align2;
-use std::time::Instant;
+use web_time::Instant;
 
 impl OverlayApp {
     /// The active settings as the overlay timing values `Keyboard` runs on.

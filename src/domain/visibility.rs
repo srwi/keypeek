@@ -1,4 +1,5 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use web_time::Instant;
 
 /// The active layers as seen through the visible-layer bitmask (bit `i` selects layer
 /// `i`; see `Settings::visible_layers`).

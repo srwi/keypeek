@@ -10,7 +10,8 @@ use hidapi::{HidApi, HidDevice};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::sync::{mpsc, Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use web_time::Instant;
 use zmk_studio_api::{BehaviorBindingParametersSet, BehaviorRole, ClientError, ResolvedLayer};
 
 const ZMK_USAGE_PAGE: u16 = 0xff60;

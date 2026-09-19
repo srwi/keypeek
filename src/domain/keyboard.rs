@@ -1,7 +1,8 @@
 //! Pure in-memory keyboard domain aggregate and layout switching state machine.
 
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use web_time::Instant;
 
 use crate::domain::key_matrix::KeyMatrix;
 use crate::domain::key_spec::{KeySpec, LayerInfo};

@@ -5,7 +5,7 @@ use crate::ui_wake::UiWake;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use web_time::Instant;
 
 mod settings_sync;
 mod state;

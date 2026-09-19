@@ -7,7 +7,8 @@ use crate::presentation::keymap_editor::EditorProfile;
 use crate::protocols::{ConnectionSpec, Reopener};
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use web_time::Instant;
 
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(3);
 

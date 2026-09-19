@@ -25,6 +25,7 @@ image = "0.25.10"
 lzma-rs = "0.3"
 serialport = "4.10.0"
 zmk-studio-api = { version = "0.6.0", features = ["serial", "ble"] }
+web-time = "1.1.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"

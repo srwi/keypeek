@@ -2,7 +2,8 @@
 
 use std::sync::mpsc;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use web_time::Instant;
 
 use crate::application::session::KeyboardSession;
 use crate::domain::key_matrix::KeyMatrix;
