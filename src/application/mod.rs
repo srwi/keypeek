@@ -15,5 +15,5 @@ pub use device_discovery::{
     discover_devices, DeviceDriverScanner, DiscoveredDevice, DiscoveryContext, HidDeviceInfo,
 };
 pub use keyboard::Keyboard;
-pub use session::{KeyboardSession, KeymapCommand};
+pub use session::{handle_device_event, run_keymap_command, KeyboardSession, KeymapCommand};
 pub use ui_wake::UiWake;

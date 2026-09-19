@@ -65,27 +65,17 @@ impl KeyboardSession {
         let ui_wake_events = ui_wake.clone();
         thread::spawn(move || {
             while let Ok(event) = event_rx.recv() {
-                let needs_repaint = match event {
-                    DeviceEvent::LayersChanged {
-                        active_layers,
-                        default_layers,
-                    } => domain_for_events.on_layers_changed(
-                        active_layers,
-                        default_layers,
-                        Instant::now(),
-                    ),
-                    DeviceEvent::KeyPressed { row, col, pressed } => {
-                        domain_for_events.on_key_pressed(row, col, pressed, Instant::now())
-                    }
-                    DeviceEvent::Disconnected(_) => {
-                        alive_for_events.store(false, Ordering::Relaxed);
-                        ui_wake_events.request_repaint();
-                        break;
-                    }
-                };
-
-                if needs_repaint {
+                let is_disconnected = matches!(event, DeviceEvent::Disconnected(_));
+                if handle_device_event(
+                    &domain_for_events,
+                    &alive_for_events,
+                    event,
+                    Instant::now(),
+                ) {
                     ui_wake_events.request_repaint();
+                }
+                if is_disconnected {
+                    break;
                 }
             }
             alive_for_events.store(false, Ordering::Relaxed);
@@ -185,10 +175,49 @@ impl KeyboardSession {
         }
         receiver
     }
+
+    #[cfg(test)]
+    pub fn new_mock(
+        command_tx: mpsc::Sender<KeymapCommand>,
+        alive: Arc<AtomicBool>,
+        write_support: WriteSupport,
+    ) -> Self {
+        Self {
+            command_tx,
+            alive,
+            write_support,
+            supports_live_layout_switching: false,
+            action_filter: None,
+        }
+    }
 }
 
-/// Executes one command on the protocol. Runs on the dedicated command worker thread.
-fn run_keymap_command(
+/// Handles a single incoming device event, updating domain state and session liveness.
+///
+/// Returns `true` if the event causes state changes requiring a UI repaint.
+pub fn handle_device_event(
+    domain: &KeyboardDomain,
+    alive: &AtomicBool,
+    event: DeviceEvent,
+    now: Instant,
+) -> bool {
+    match event {
+        DeviceEvent::LayersChanged {
+            active_layers,
+            default_layers,
+        } => domain.on_layers_changed(active_layers, default_layers, now),
+        DeviceEvent::KeyPressed { row, col, pressed } => {
+            domain.on_key_pressed(row, col, pressed, now)
+        }
+        DeviceEvent::Disconnected(_) => {
+            alive.store(false, Ordering::Relaxed);
+            true
+        }
+    }
+}
+
+/// Executes one command on the protocol and synchronizes keymap updates to domain state.
+pub fn run_keymap_command(
     protocol: &mut dyn KeyboardProtocol,
     command: KeymapCommand,
     layer_names: &[String],
@@ -229,5 +258,141 @@ fn run_keymap_command(
             let _ = respond.send(result);
         }
         KeymapCommand::ReleaseEditLock => protocol.release_edit_lock(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_handle_device_event_layers_changed() {
+        let domain = crate::domain::keyboard::tests::create_test_domain();
+        let alive = AtomicBool::new(true);
+
+        let repaint = handle_device_event(
+            &domain,
+            &alive,
+            DeviceEvent::LayersChanged {
+                active_layers: 2,
+                default_layers: 1,
+            },
+            Instant::now(),
+        );
+
+        assert!(repaint);
+        assert_eq!(domain.layer_state(), 2);
+        assert!(alive.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn test_handle_device_event_key_pressed() {
+        let domain = crate::domain::keyboard::tests::create_test_domain();
+        domain.set_config(crate::domain::visibility::OverlayConfig {
+            timeout_ms: 2000,
+            activation_delay_ms: 0,
+            visible_layers: u32::MAX,
+        });
+        let alive = AtomicBool::new(true);
+
+        // Activate non-base layer so overlay is visible
+        handle_device_event(
+            &domain,
+            &alive,
+            DeviceEvent::LayersChanged {
+                active_layers: 2,
+                default_layers: 1,
+            },
+            Instant::now(),
+        );
+
+        let repaint_press = handle_device_event(
+            &domain,
+            &alive,
+            DeviceEvent::KeyPressed {
+                row: 0,
+                col: 0,
+                pressed: true,
+            },
+            Instant::now(),
+        );
+        assert!(repaint_press);
+        assert!(domain.is_key_pressed(0, 0));
+
+        let repaint_release = handle_device_event(
+            &domain,
+            &alive,
+            DeviceEvent::KeyPressed {
+                row: 0,
+                col: 0,
+                pressed: false,
+            },
+            Instant::now(),
+        );
+        assert!(repaint_release);
+        assert!(!domain.is_key_pressed(0, 0));
+    }
+
+    #[test]
+    fn test_handle_device_event_disconnected() {
+        let domain = crate::domain::keyboard::tests::create_test_domain();
+        let alive = AtomicBool::new(true);
+
+        let repaint = handle_device_event(
+            &domain,
+            &alive,
+            DeviceEvent::Disconnected("cable pulled".to_string()),
+            Instant::now(),
+        );
+
+        assert!(repaint);
+        assert!(!alive.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn test_run_keymap_command_acquire_lock_and_save() {
+        let mut mock_protocol = crate::firmware::mock::driver::MockProtocol::connect().unwrap();
+        let domain = crate::domain::keyboard::tests::create_test_domain();
+        let ui_wake = UiWake::default();
+        let presenter = crate::key_presenter::StandardKeyPresenter;
+
+        let (tx, rx) = mpsc::channel();
+        run_keymap_command(
+            &mut mock_protocol,
+            KeymapCommand::AcquireEditLock { respond: tx },
+            &[],
+            &domain,
+            &ui_wake,
+            &presenter,
+        );
+        assert_eq!(rx.recv().unwrap(), Ok(()));
+
+        let (tx_save, rx_save) = mpsc::channel();
+        run_keymap_command(
+            &mut mock_protocol,
+            KeymapCommand::Save { respond: tx_save },
+            &[],
+            &domain,
+            &ui_wake,
+            &presenter,
+        );
+        assert_eq!(rx_save.recv().unwrap(), Ok(()));
+    }
+
+    #[test]
+    fn test_session_command_channel_disconnect() {
+        let (cmd_tx, cmd_rx) = mpsc::channel();
+        drop(cmd_rx); // Disconnect receiver
+        let session = KeyboardSession::new_mock(
+            cmd_tx,
+            Arc::new(AtomicBool::new(true)),
+            WriteSupport::Immediate,
+        );
+
+        let rx = session.acquire_edit_lock();
+        assert_eq!(rx.recv().unwrap(), Err("Connection lost".to_string()));
+
+        let rx_save = session.save_keymap();
+        assert_eq!(rx_save.recv().unwrap(), Err("Connection lost".to_string()));
     }
 }

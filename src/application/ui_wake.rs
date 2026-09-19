@@ -13,3 +13,9 @@ impl UiWake {
         (self.0)();
     }
 }
+
+impl Default for UiWake {
+    fn default() -> Self {
+        Self::new(Arc::new(|| {}))
+    }
+}

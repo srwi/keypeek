@@ -168,13 +168,21 @@ impl KeyboardDomain {
     pub fn layout(&self) -> KeyboardLayout {
         self.layout.lock().unwrap().clone()
     }
+
+    pub fn layer_state(&self) -> u32 {
+        *self.layer_state.lock().unwrap()
+    }
+
+    pub fn default_layer_state(&self) -> u32 {
+        *self.default_layer_state.lock().unwrap()
+    }
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
-    fn create_test_domain() -> KeyboardDomain {
+    pub(crate) fn create_test_domain() -> KeyboardDomain {
         let definition = KeyboardDefinition {
             vid: 0x1234,
             pid: 0x5678,
