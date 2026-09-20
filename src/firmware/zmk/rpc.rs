@@ -1,9 +1,9 @@
 use std::error::Error;
 use std::io::{Read, Write};
 use std::time::Duration;
-use zmk_studio_api::proto::zmk::{core, keymap};
+use zmk_studio_api::proto::zmk::core;
 use zmk_studio_api::transport::{serial::SerialTransport, BleDiscoveryMode, PlatformBleTransport};
-use zmk_studio_api::{Behavior, ClientError, ResolvedLayer, StudioClient};
+use zmk_studio_api::{Behavior, ClientError, StudioClient};
 
 pub struct ZmkSerialDevice {
     pub port_name: String,
@@ -95,15 +95,7 @@ fn windows_bluetooth_radio_is_on() -> windows::core::Result<bool> {
     Ok(radio.State()? == RadioState::On)
 }
 
-use std::collections::{HashMap, HashSet};
-use zmk_studio_api::{BehaviorBindingParametersSet, BehaviorRole};
-
-pub struct ZmkData {
-    pub physical_layouts: keymap::PhysicalLayouts,
-    pub resolved_layers: Vec<ResolvedLayer>,
-    pub supported_behaviors: HashSet<BehaviorRole>,
-    pub behavior_metadata: HashMap<BehaviorRole, Vec<BehaviorBindingParametersSet>>,
-}
+pub use super::common::ZmkData;
 
 /// ZMK Studio RPC connection session.
 pub enum ZmkStudioSession {

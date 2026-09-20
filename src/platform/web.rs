@@ -19,6 +19,46 @@ impl OverlayHost for WebHost {
     }
 }
 
+pub struct ConnectedWebDevice {
+    pub device: crate::device_discovery::DiscoveredDevice,
+    pub keyboard: Arc<crate::application::Keyboard>,
+    pub profile: Arc<dyn crate::keymap_editor::EditorProfile>,
+}
+
+impl ConnectedWebDevice {
+    /// Constructs a connected web device, selecting the correct presenter and editor profile
+    /// via the firmware bundle registered for the device's connection spec.
+    pub fn new(
+        device: crate::device_discovery::DiscoveredDevice,
+        protocol: impl crate::protocols::KeyboardProtocol + 'static,
+        overlay_config: crate::domain::visibility::OverlayConfig,
+        ui_wake: UiWake,
+    ) -> Result<Self, crate::protocols::DeviceError> {
+        let bundle = crate::firmware::bundle_for_spec(&device.spec);
+        let selected_layout = protocol
+            .get_layout_definition()
+            .get_layout_names()
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "default".to_string());
+
+        let keyboard = crate::application::Keyboard::new(
+            Box::new(protocol),
+            selected_layout,
+            overlay_config,
+            ui_wake,
+            bundle.create_presenter(),
+        )
+        .map_err(crate::protocols::DeviceError::Protocol)?;
+
+        Ok(Self {
+            device,
+            keyboard: Arc::new(keyboard),
+            profile: bundle.create_profile(),
+        })
+    }
+}
+
 pub struct WebApp {
     app: OverlayApp,
 }

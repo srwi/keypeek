@@ -68,7 +68,8 @@ pub fn open_hid_transport(
     pid: u16,
     usage_page: u16,
 ) -> Result<Box<dyn RawHidTransport>, DeviceError> {
-    let api = HidApi::new().map_err(|e| DeviceError::Transport(format!("hidapi init failed: {e}")))?;
+    let api =
+        HidApi::new().map_err(|e| DeviceError::Transport(format!("hidapi init failed: {e}")))?;
     let path = api
         .device_list()
         .find(|d| d.vendor_id() == vid && d.product_id() == pid && d.usage_page() == usage_page)

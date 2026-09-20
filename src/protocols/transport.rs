@@ -144,7 +144,10 @@ mod tests {
         );
 
         let disconnect = rx.recv().unwrap();
-        assert_eq!(disconnect, DeviceEvent::Disconnected("Disconnected".to_string()));
+        assert_eq!(
+            disconnect,
+            DeviceEvent::Disconnected("Disconnected".to_string())
+        );
         let _ = handle.join();
     }
 }

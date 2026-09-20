@@ -96,11 +96,12 @@ unsafe impl Sync for WebHidTransport {}
 
 #[cfg(target_arch = "wasm32")]
 impl WebHidTransport {
-    /// Creates a new `WebHidTransport` wrapping an opened `web_sys::HidDevice`.
-    ///
-    /// Attaches an `inputreport` listener that demuxes companion telemetry from VIA RPC responses.
-    pub fn new(device: web_sys::HidDevice, ui_wake: UiWake) -> Result<Self, DeviceError> {
-        let (event_tx, event_rx) = mpsc::channel();
+    /// Creates a new `WebHidTransport` wrapping an opened `web_sys::HidDevice` using an existing event channel.
+    pub fn new_with_tx(
+        device: web_sys::HidDevice,
+        event_tx: mpsc::Sender<DeviceEvent>,
+        ui_wake: UiWake,
+    ) -> Result<Self, DeviceError> {
         let response_slot = Arc::new(Mutex::new(ResponseSlot::new()));
 
         let slot_for_closure = Arc::clone(&response_slot);
@@ -119,15 +120,64 @@ impl WebHidTransport {
 
         device
             .add_event_listener_with_callback("inputreport", closure.as_ref().unchecked_ref())
-            .map_err(|e| DeviceError::Transport(format!("Failed to attach inputreport listener: {e:?}")))?;
+            .map_err(|e| {
+                DeviceError::Transport(format!("Failed to attach inputreport listener: {e:?}"))
+            })?;
 
         closure.forget();
 
         Ok(Self {
             device,
-            event_rx: Mutex::new(Some(event_rx)),
+            event_rx: Mutex::new(None),
             response_slot,
         })
+    }
+
+    /// Creates a new `WebHidTransport` wrapping an opened `web_sys::HidDevice`.
+    ///
+    /// Attaches an `inputreport` listener that demuxes companion telemetry from VIA RPC responses.
+    pub fn new(device: web_sys::HidDevice, ui_wake: UiWake) -> Result<Self, DeviceError> {
+        let (event_tx, event_rx) = mpsc::channel();
+        let mut transport = Self::new_with_tx(device, event_tx, ui_wake)?;
+        transport.event_rx = Mutex::new(Some(event_rx));
+        Ok(transport)
+    }
+
+    /// Opens the underlying `web_sys::HidDevice` if not already opened and creates a `WebHidTransport`.
+    pub async fn open(
+        device: web_sys::HidDevice,
+        event_tx: mpsc::Sender<DeviceEvent>,
+        ui_wake: UiWake,
+    ) -> Result<Self, DeviceError> {
+        if !device.opened() {
+            let open_promise = device.open();
+            wasm_bindgen_futures::JsFuture::from(open_promise)
+                .await
+                .map_err(|e| {
+                    DeviceError::Transport(format!("Failed to open WebHID device: {e:?}"))
+                })?;
+        }
+        Self::new_with_tx(device, event_tx, ui_wake)
+    }
+
+    /// Attempts to find and open an already-paired WebHID device matching the specified VID and PID.
+    pub async fn open_paired(
+        vid: u16,
+        pid: u16,
+        event_tx: mpsc::Sender<DeviceEvent>,
+        ui_wake: UiWake,
+    ) -> Option<Self> {
+        let dev = find_already_paired_hid_device(vid, pid).await?;
+        match Self::open(dev, event_tx, ui_wake).await {
+            Ok(hid) => {
+                log::info!("Silently attached paired WebHID telemetry for ({vid:04X}:{pid:04X})");
+                Some(hid)
+            }
+            Err(e) => {
+                log::warn!("Failed to open paired WebHID device ({vid:04X}:{pid:04X}): {e:?}");
+                None
+            }
+        }
     }
 
     /// Access the underlying `web_sys::HidDevice`.
@@ -170,7 +220,9 @@ impl WebHidTransport {
         let promise = self
             .device
             .send_report_with_u8_array(0, &uint8_array)
-            .map_err(|e| DeviceError::Transport(format!("WebHID send_report call failed: {e:?}")))?;
+            .map_err(|e| {
+                DeviceError::Transport(format!("WebHID send_report call failed: {e:?}"))
+            })?;
         wasm_bindgen_futures::JsFuture::from(promise)
             .await
             .map_err(|e| DeviceError::Transport(format!("WebHID send_report failed: {e:?}")))?;
@@ -251,9 +303,8 @@ impl qmk_via_api::ViaTransport for WebHidTransport {
 
     fn read_report(&mut self, _timeout_ms: Option<i32>) -> Result<Vec<u8>, qmk_via_api::Error> {
         let mut slot = self.response_slot.lock().unwrap();
-        slot.pop_response().ok_or_else(|| {
-            qmk_via_api::Error::Hid("No pending WebHID response".into())
-        })
+        slot.pop_response()
+            .ok_or_else(|| qmk_via_api::Error::Hid("No pending WebHID response".into()))
     }
 }
 
@@ -276,12 +327,14 @@ pub fn is_web_hid_supported() -> bool {
 use crate::device_discovery::DiscoveredDevice;
 #[cfg(target_arch = "wasm32")]
 use crate::protocols::ConnectionSpec;
-#[cfg(target_arch = "wasm32")]
-use crate::protocols::KeyboardProtocol;
 
-/// Prompts the user to select and pair a WebHID device matching QMK/VIA usage page (0xFF60).
+/// Prompts the user to select and pair a WebHID device matching QMK/VIA usage page (0xFF60),
+/// optionally filtered by vendor ID and product ID.
 #[cfg(target_arch = "wasm32")]
-pub async fn request_web_hid_device() -> Result<Option<web_sys::HidDevice>, DeviceError> {
+pub async fn request_web_hid_device_with_filter(
+    vid: Option<u16>,
+    pid: Option<u16>,
+) -> Result<Option<web_sys::HidDevice>, DeviceError> {
     let window =
         web_sys::window().ok_or_else(|| DeviceError::Transport("No window found".into()))?;
     if !is_web_hid_supported() {
@@ -293,6 +346,12 @@ pub async fn request_web_hid_device() -> Result<Option<web_sys::HidDevice>, Devi
     let hid = window.navigator().hid();
     let filter = web_sys::HidDeviceFilter::new();
     filter.set_usage_page(0xFF60);
+    if let Some(v) = vid {
+        filter.set_vendor_id(v as u32);
+    }
+    if let Some(p) = pid {
+        filter.set_product_id(p);
+    }
     let filters = [filter];
     let options = web_sys::HidDeviceRequestOptions::new(&filters);
 
@@ -336,48 +395,68 @@ pub async fn request_web_hid_device() -> Result<Option<web_sys::HidDevice>, Devi
     Ok(Some(device))
 }
 
-
+/// Prompts the user to select and pair a WebHID device matching QMK/VIA usage page (0xFF60).
 #[cfg(target_arch = "wasm32")]
-pub struct ConnectedWebDevice {
-    pub device: DiscoveredDevice,
-    pub keyboard: Arc<crate::application::Keyboard>,
-    pub profile: Arc<dyn crate::keymap_editor::EditorProfile>,
+pub async fn request_web_hid_device() -> Result<Option<web_sys::HidDevice>, DeviceError> {
+    request_web_hid_device_with_filter(None, None).await
+}
+
+/// Searches already granted WebHID devices for one matching the specified VID and PID.
+#[cfg(target_arch = "wasm32")]
+pub async fn find_already_paired_hid_device(vid: u16, pid: u16) -> Option<web_sys::HidDevice> {
+    let window = web_sys::window()?;
+    let hid = window.navigator().hid();
+    let promise = hid.get_devices();
+    let devices_val = wasm_bindgen_futures::JsFuture::from(promise).await.ok()?;
+    let devices: js_sys::Array = devices_val.dyn_into().ok()?;
+    for i in 0..devices.length() {
+        if let Ok(dev) = devices.get(i).dyn_into::<web_sys::HidDevice>() {
+            if dev.vendor_id() == vid && dev.product_id() == pid {
+                return Some(dev);
+            }
+        }
+    }
+    None
 }
 
 #[cfg(target_arch = "wasm32")]
-impl ConnectedWebDevice {
-    pub fn from_protocol(
-        device: DiscoveredDevice,
-        protocol: impl KeyboardProtocol + 'static,
-        overlay_config: crate::domain::visibility::OverlayConfig,
-        ui_wake: UiWake,
-    ) -> Result<Self, DeviceError> {
-        let layout_names = protocol.get_layout_definition().get_layout_names();
-        let selected_layout = layout_names
-            .first()
-            .cloned()
-            .unwrap_or_else(|| "default".to_string());
+pub use super::web::ConnectedWebDevice;
 
-        let keyboard = crate::application::Keyboard::new(
-            Box::new(protocol),
-            selected_layout,
-            overlay_config,
-            ui_wake,
-            Arc::new(crate::firmware::qmk::QmkKeyPresenter),
-        )
-        .map_err(DeviceError::Protocol)?;
+#[cfg(target_arch = "wasm32")]
+#[derive(Clone)]
+pub struct PendingZmkTelemetry {
+    pub vid: u16,
+    pub pid: u16,
+    pub event_tx: mpsc::Sender<DeviceEvent>,
+}
 
-        Ok(Self {
-            device,
-            keyboard: Arc::new(keyboard),
-            profile: Arc::new(crate::firmware::qmk::QmkEditorProfile),
-        })
+#[cfg(target_arch = "wasm32")]
+impl PendingZmkTelemetry {
+    /// Prompts user to authorize the WebHID device and opens the transport.
+    pub async fn request_and_open(self, ui_wake: UiWake) -> Option<WebHidTransport> {
+        let dev = request_web_hid_device_with_filter(Some(self.vid), Some(self.pid))
+            .await
+            .ok()??;
+        match WebHidTransport::open(dev, self.event_tx, ui_wake).await {
+            Ok(hid) => {
+                log::info!("Successfully attached WebHID companion telemetry!");
+                Some(hid)
+            }
+            Err(e) => {
+                log::warn!("Failed to open WebHID companion device: {e:?}");
+                None
+            }
+        }
     }
 }
 
 #[cfg(target_arch = "wasm32")]
 pub enum WebConnectOutcome {
     Connected(ConnectedWebDevice),
+    ZmkConnected {
+        connected: ConnectedWebDevice,
+        pending_telemetry: Option<PendingZmkTelemetry>,
+    },
     RequiresLayoutFile {
         device: DiscoveredDevice,
         transport: Arc<WebHidTransport>,
@@ -416,17 +495,10 @@ pub async fn request_and_connect_device(
         spec: ConnectionSpec::Vial { vid, pid },
     };
 
-    match crate::firmware::qmk::web::connect_web_qmk(
-        Arc::clone(&transport),
-        vid,
-        pid,
-        None,
-    )
-    .await?
+    match crate::firmware::qmk::web::connect_web_qmk(Arc::clone(&transport), vid, pid, None).await?
     {
         crate::firmware::qmk::web::WebQmkOutcome::Connected(protocol) => {
-            let connected =
-                ConnectedWebDevice::from_protocol(discovered, protocol, overlay_config, ui_wake)?;
+            let connected = ConnectedWebDevice::new(discovered, protocol, overlay_config, ui_wake)?;
             Ok(Some(WebConnectOutcome::Connected(connected)))
         }
         crate::firmware::qmk::web::WebQmkOutcome::RequiresLayoutFile => {
@@ -455,21 +527,16 @@ pub async fn connect_via_with_layout(
     let vid = device.vid;
     let pid = device.pid;
 
-    let outcome = crate::firmware::qmk::web::connect_web_qmk(
-        transport,
-        vid,
-        pid,
-        Some(&layout_json),
-    )
-    .await?;
+    let outcome =
+        crate::firmware::qmk::web::connect_web_qmk(transport, vid, pid, Some(&layout_json)).await?;
 
     match outcome {
         crate::firmware::qmk::web::WebQmkOutcome::Connected(protocol) => {
-            ConnectedWebDevice::from_protocol(device, protocol, overlay_config, ui_wake)
+            ConnectedWebDevice::new(device, protocol, overlay_config, ui_wake)
         }
-        crate::firmware::qmk::web::WebQmkOutcome::RequiresLayoutFile => {
-            Err(DeviceError::Protocol("Layout definition is required".into()))
-        }
+        crate::firmware::qmk::web::WebQmkOutcome::RequiresLayoutFile => Err(DeviceError::Protocol(
+            "Layout definition is required".into(),
+        )),
     }
 }
 
@@ -590,7 +657,11 @@ mod tests {
         demux_input_report(&packet, &event_tx, &slot, &ui_wake);
 
         assert!(event_rx.try_recv().is_err());
-        let response = slot.lock().unwrap().pop_response().expect("expected response");
+        let response = slot
+            .lock()
+            .unwrap()
+            .pop_response()
+            .expect("expected response");
         assert_eq!(response, packet);
     }
 }

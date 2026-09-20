@@ -1,4 +1,5 @@
 pub mod codec;
+pub mod common;
 #[cfg(feature = "desktop")]
 pub mod discovery;
 #[cfg(feature = "desktop")]
@@ -9,6 +10,8 @@ pub mod presenter;
 pub mod profile;
 #[cfg(feature = "desktop")]
 pub mod rpc;
+#[cfg(target_arch = "wasm32")]
+pub mod web;
 
 pub use presenter::ZmkKeyPresenter;
 pub use profile::ZmkEditorProfile;
@@ -17,9 +20,9 @@ use crate::device_discovery::DeviceDriverScanner;
 use crate::firmware::FirmwareBundle;
 use crate::key_presenter::KeyPresenter;
 use crate::keymap_editor::EditorProfile;
-use crate::protocols::{ConnectionSpec, DeviceError, KeyboardProtocol};
 #[cfg(feature = "desktop")]
 use crate::protocols::ZmkTransportConfig;
+use crate::protocols::{ConnectionSpec, DeviceError, KeyboardProtocol};
 use std::sync::Arc;
 
 pub struct ZmkBundle;

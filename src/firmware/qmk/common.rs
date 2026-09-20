@@ -13,9 +13,9 @@ use qmk_via_api::api::KeyboardApi;
 pub use qmk_via_api::QmkFeatures;
 #[cfg(any(feature = "hidapi", test))]
 use std::error::Error;
+use std::sync::Arc;
 #[cfg(feature = "hidapi")]
 use std::sync::{mpsc, Mutex};
-use std::sync::Arc;
 #[cfg(feature = "hidapi")]
 use std::thread;
 #[cfg(feature = "hidapi")]
@@ -42,12 +42,13 @@ struct RawHidSubscription {
 impl RawHidSubscription {
     #[cfg(feature = "desktop")]
     fn open(vid: u16, pid: u16) -> Result<Option<Box<dyn SubscriptionSender>>, DeviceError> {
-        let transport = crate::platform::hid::open_hid_transport(vid, pid, 0xff60).map_err(|e| {
-            DeviceError::Transport(format!(
-                "Could not open the RAW HID interface ({vid:04x}:{pid:04x}) to subscribe to \
+        let transport =
+            crate::platform::hid::open_hid_transport(vid, pid, 0xff60).map_err(|e| {
+                DeviceError::Transport(format!(
+                    "Could not open the RAW HID interface ({vid:04x}:{pid:04x}) to subscribe to \
                  layer events: {e}. The overlay cannot follow layer changes without it."
-            ))
-        })?;
+                ))
+            })?;
         Ok(Some(Box::new(Self { transport })))
     }
 

@@ -46,7 +46,9 @@ egui-file-dialog = "0.15.0"
 image = "0.25.10"
 lzma-rs = "0.3"
 web-time = "1.1.0"
-futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
+futures-util = { version = "0.3", default-features = false, features = ["alloc", "channel"] }
+futures-channel = "0.3"
+prost = "0.14"
 zmk-studio-api = { version = "0.6.0", default-features = false }
 
 # Desktop / native-only dependencies
@@ -112,6 +114,15 @@ web-sys = { version = "0.3.105", features = [
     "HidDeviceFilter",
     "HidDeviceRequestOptions",
     "HidInputReportEvent",
+    "Serial",
+    "SerialPort",
+    "SerialOptions",
+    "SerialPortRequestOptions",
+    "SerialPortFilter",
+    "ReadableStream",
+    "ReadableStreamDefaultReader",
+    "WritableStream",
+    "WritableStreamDefaultWriter",
 ] }
 console_error_panic_hook = "0.1.7"
 log = "0.4.33"

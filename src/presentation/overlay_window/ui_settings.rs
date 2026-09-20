@@ -67,11 +67,7 @@ impl OverlayApp {
         }
     }
 
-    pub(super) fn draw_settings_window(
-        &mut self,
-        ctx: &egui::Context,
-        host: &mut dyn OverlayHost,
-    ) {
+    pub(super) fn draw_settings_window(&mut self, ctx: &egui::Context, host: &mut dyn OverlayHost) {
         let mut open = self.ui.settings_visible;
 
         let settings_window_size = egui::vec2(450.0, 700.0);

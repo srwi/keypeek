@@ -23,6 +23,8 @@ mod wayland;
 pub mod web;
 #[cfg(any(target_arch = "wasm32", test))]
 pub mod web_hid;
+#[cfg(any(target_arch = "wasm32", test))]
+pub mod web_serial;
 
 /// Registers Phosphor icons into the egui font definitions.
 #[allow(dead_code)]

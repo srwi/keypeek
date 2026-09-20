@@ -1,26 +1,19 @@
 use super::codec as zmk_codec;
-use super::rpc::{self as zmk_rpc, ZmkData, ZmkStudioSession, ZmkTransport};
+use super::rpc::{self as zmk_rpc, ZmkStudioSession, ZmkTransport};
 use crate::key_spec::{KeySpec, KeymapSnapshot, LayerInfo};
-use crate::layout::geometry::flattened_top_left_after_center_rotation;
-use crate::layout::{Key, KeyboardDefinition, KeyboardLayout};
+use crate::layout::KeyboardDefinition;
 use crate::protocols::{
     pump_hid_reader, DeviceError, DeviceEvent, KeyboardProtocol, RawHidTransport, Reopener,
     WriteSupport,
 };
-use std::collections::{HashMap, HashSet};
 use std::error::Error;
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc};
 use std::time::Duration;
-use zmk_studio_api::{BehaviorBindingParametersSet, BehaviorRole, ClientError, ResolvedLayer};
+use zmk_studio_api::ClientError;
 
 const ZMK_USAGE_PAGE: u16 = 0xff60;
 
-pub(crate) struct ZmkLayout {
-    pub(crate) definition: KeyboardDefinition,
-    pub(crate) snapshot: Mutex<KeymapSnapshot>,
-    pub(crate) supported_behaviors: HashSet<BehaviorRole>,
-    pub(crate) behavior_metadata: HashMap<BehaviorRole, Vec<BehaviorBindingParametersSet>>,
-}
+use super::common::{build_from_zmk_data, zmk_action_filter, ZmkLayout};
 
 pub struct ZmkProtocol {
     hid_transport: Option<Box<dyn RawHidTransport>>,
@@ -146,7 +139,11 @@ impl KeyboardProtocol for ZmkProtocol {
 
         std::thread::spawn(move || {
             pump_hid_reader(
-                || hid_transport.read_input_report(Duration::from_millis(200)).map_err(|e| e.to_string()),
+                || {
+                    hid_transport
+                        .read_input_report(Duration::from_millis(200))
+                        .map_err(|e| e.to_string())
+                },
                 event_tx,
                 "ZMK HID device disconnected",
             );
@@ -201,119 +198,11 @@ impl KeyboardProtocol for ZmkProtocol {
     }
 
     fn action_filter(&self) -> Option<crate::protocols::ActionFilter> {
-        let supported = self.layout.supported_behaviors.clone();
-        let metadata = self.layout.behavior_metadata.clone();
-        Some(Arc::new(move |spec| {
-            match zmk_codec::keyspec_to_zmk(spec) {
-                Ok(behavior) => match behavior.role() {
-                    Some(role) => {
-                        if !supported.is_empty() && !supported.contains(&role) {
-                            return false;
-                        }
-                        metadata
-                            .get(&role)
-                            .is_none_or(|sets| behavior.matches_metadata(sets))
-                    }
-                    None => false,
-                },
-                Err(_) => false,
-            }
-        }))
+        zmk_action_filter(
+            self.layout.supported_behaviors.clone(),
+            self.layout.behavior_metadata.clone(),
+        )
     }
-}
-
-fn build_from_zmk_data(vid: u16, pid: u16, data: ZmkData) -> Result<ZmkLayout, Box<dyn Error>> {
-    const ACTIVE_LAYOUT_NAME: &str = "active physical layout";
-
-    let active_idx = data.physical_layouts.active_layout_index as usize;
-    let proto_layouts = &data.physical_layouts.layouts;
-
-    if proto_layouts.is_empty() {
-        return Err("Device has no physical layouts".into());
-    }
-
-    let active_layout = proto_layouts
-        .get(active_idx)
-        .ok_or_else(|| format!("Invalid active layout index: {active_idx}"))?;
-    let active_keys: Vec<Key> = active_layout
-        .keys
-        .iter()
-        .enumerate()
-        .map(|(i, k)| {
-            let w = k.width as f32 / 100.0;
-            let h = k.height as f32 / 100.0;
-
-            let x = k.x as f32 / 100.0;
-            let y = k.y as f32 / 100.0;
-
-            // Position is where the key's center lands after rotating around the pivot;
-            // the rotation itself is applied at render time via `r`.
-            let angle_deg = k.r as f32 / 100.0;
-            let pivot_x = if k.rx == 0 { k.x } else { k.rx } as f32 / 100.0;
-            let pivot_y = if k.ry == 0 { k.y } else { k.ry } as f32 / 100.0;
-            let (x, y) =
-                flattened_top_left_after_center_rotation(x, y, w, h, angle_deg, pivot_x, pivot_y);
-
-            Key {
-                row: 0,
-                col: i,
-                x,
-                y,
-                w,
-                h,
-                r: angle_deg,
-            }
-        })
-        .collect();
-    let num_keys = active_keys.len();
-
-    let definition = KeyboardDefinition {
-        vid,
-        pid,
-        rows: 1,
-        cols: num_keys,
-        layouts: vec![KeyboardLayout {
-            name: ACTIVE_LAYOUT_NAME.to_string(),
-            keys: active_keys,
-        }],
-    };
-
-    let snapshot = snapshot_from_resolved(&data.resolved_layers, num_keys);
-
-    Ok(ZmkLayout {
-        definition,
-        snapshot: Mutex::new(snapshot),
-        supported_behaviors: data.supported_behaviors,
-        behavior_metadata: data.behavior_metadata,
-    })
-}
-
-/// Builds a keymap snapshot from the device's resolved layers. Bindings beyond
-/// `num_keys` are dropped and short layers are padded with `None`, matching the
-/// matrix dimensions.
-fn snapshot_from_resolved(resolved: &[ResolvedLayer], num_keys: usize) -> KeymapSnapshot {
-    let layers = resolved
-        .iter()
-        .map(|layer| LayerInfo {
-            id: layer.id,
-            name: (!layer.name.is_empty()).then(|| layer.name.clone()),
-        })
-        .collect();
-
-    let actions = resolved
-        .iter()
-        .map(|layer| {
-            let mut row: Vec<Option<KeySpec>> = layer
-                .bindings
-                .iter()
-                .map(|b| Some(zmk_codec::zmk_to_keyspec(b)))
-                .collect();
-            row.resize(num_keys, None);
-            vec![row]
-        })
-        .collect();
-
-    KeymapSnapshot { layers, actions }
 }
 
 #[cfg(test)]
@@ -322,6 +211,7 @@ mod tests {
     use crate::hid_labels::Modifiers;
     use crate::key_spec::{CustomBinding, CustomKind, HidKey};
     use std::collections::HashSet;
+    use std::sync::Mutex;
     use zmk_studio_api::BehaviorRole;
 
     impl ZmkLayout {
@@ -351,11 +241,8 @@ mod tests {
         supported_behaviors.insert(BehaviorRole::KeyToggle);
 
         let layout = ZmkLayout::mock(supported_behaviors);
-        let proto = ZmkProtocol::from_parts(
-            layout,
-            ZmkTransport::SerialPort("mock".to_string()),
-            None,
-        );
+        let proto =
+            ZmkProtocol::from_parts(layout, ZmkTransport::SerialPort("mock".to_string()), None);
 
         let filter = proto.action_filter().expect("filter should be present");
 

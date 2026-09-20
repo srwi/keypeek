@@ -148,12 +148,7 @@ impl KeyboardSession {
         if let Ok(rx) = self.event_rx.lock() {
             while let Ok(event) = rx.try_recv() {
                 let is_disconnected = matches!(event, DeviceEvent::Disconnected(_));
-                if handle_device_event(
-                    &self.domain,
-                    &self.alive,
-                    event,
-                    Instant::now(),
-                ) {
+                if handle_device_event(&self.domain, &self.alive, event, Instant::now()) {
                     self.ui_wake.request_repaint();
                 }
                 if is_disconnected {

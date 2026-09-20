@@ -99,20 +99,21 @@ impl OverlayApp {
                     ui.label("Device");
                     ui.add_enabled_ui(!connection_locked, |ui| {
                         ui.horizontal(|ui| {
-                            let combo_width = (ui.available_width()
-                                - RIGHT_COLUMN_WIDTH
-                                - control_spacing)
-                                .max(120.0);
+                            let combo_width =
+                                (ui.available_width() - RIGHT_COLUMN_WIDTH - control_spacing)
+                                    .max(120.0);
                             egui::ComboBox::from_id_salt("device_combo")
                                 .width(combo_width)
                                 .selected_text(selected_device_text.clone())
                                 .show_ui(ui, |ui| {
                                     for idx in 0..self.connection_mgr.available_devices().len() {
-                                        let device =
-                                            &self.connection_mgr.available_devices()[idx];
-                                        let selected =
-                                            self.connection_mgr.selected_device_index() == Some(idx);
-                                        if ui.selectable_label(selected, device.display_name()).clicked() {
+                                        let device = &self.connection_mgr.available_devices()[idx];
+                                        let selected = self.connection_mgr.selected_device_index()
+                                            == Some(idx);
+                                        if ui
+                                            .selectable_label(selected, device.display_name())
+                                            .clicked()
+                                        {
                                             self.connection_mgr.select_device(idx);
                                             self.ui.settings_error = None;
                                         }
@@ -167,7 +168,8 @@ impl OverlayApp {
                                 (false, "Connect to device first".to_string(), Vec::new())
                             };
                         let layout_width =
-                            (ui.available_width() - RIGHT_COLUMN_WIDTH - control_spacing).max(120.0);
+                            (ui.available_width() - RIGHT_COLUMN_WIDTH - control_spacing)
+                                .max(120.0);
                         ui.add_enabled_ui(layout_enabled, |ui| {
                             egui::ComboBox::from_id_salt("layout_combo")
                                 .width(layout_width)
@@ -184,8 +186,9 @@ impl OverlayApp {
                                                 if let Err(e) = keyboard.switch_layout(name) {
                                                     self.ui.settings_error = Some(e);
                                                 } else {
-                                                    self.connection_mgr
-                                                        .set_preferred_layout_name(Some(name.clone()));
+                                                    self.connection_mgr.set_preferred_layout_name(
+                                                        Some(name.clone()),
+                                                    );
                                                 }
                                             }
                                         }

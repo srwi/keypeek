@@ -1,6 +1,6 @@
-use crate::presentation::OverlayHost;
 use crate::device_discovery::DiscoveredDevice;
 use crate::overlay_window::OverlayApp;
+use crate::presentation::OverlayHost;
 use crate::settings::SettingsStore;
 use crate::ui_wake::UiWake;
 use std::sync::atomic::{AtomicBool, Ordering};
