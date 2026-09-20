@@ -24,6 +24,12 @@ pub struct OverlayApp {
     settings_store: Arc<dyn SettingsStore>,
     pub(crate) connection_mgr: DeviceConnectionManager,
     pub(crate) editor: crate::keymap_editor::EditorState,
+    #[cfg(target_arch = "wasm32")]
+    pairing_rx: Option<
+        std::sync::mpsc::Receiver<
+            Result<Option<DiscoveredDevice>, crate::protocols::DeviceError>,
+        >,
+    >,
 }
 
 impl OverlayApp {
@@ -34,6 +40,7 @@ impl OverlayApp {
         available_devices: Vec<DiscoveredDevice>,
     ) -> Self {
         let base_settings = settings_store.load();
+
         Self {
             settings_requested,
             ui: UiState {
@@ -42,13 +49,13 @@ impl OverlayApp {
                 settings_warning: None,
                 mouse_passthrough: None,
                 file_dialog: egui_file_dialog::FileDialog::new(),
-                #[cfg(target_arch = "wasm32")]
-                initial_editor_opened: false,
             },
             settings: SettingsState::new(base_settings),
             settings_store,
             connection_mgr: DeviceConnectionManager::new(available_devices, ui_wake),
             editor: crate::keymap_editor::EditorState::new(),
+            #[cfg(target_arch = "wasm32")]
+            pairing_rx: None,
         }
     }
 
@@ -210,39 +217,81 @@ impl OverlayApp {
             self.connect_from_ui();
         }
 
+        #[cfg(target_arch = "wasm32")]
+        if let Some(rx) = &self.pairing_rx {
+            match rx.try_recv() {
+                Ok(Ok(Some(device))) => {
+                    let idx = self.connection_mgr.add_device(device.clone());
+                    self.connection_mgr.select_device(idx);
+                    self.ui.settings_error = None;
+                    self.ui.settings_warning = Some(format!("Paired: {}", device.base_name));
+                    self.pairing_rx = None;
+                }
+                Ok(Ok(None)) => {
+                    self.pairing_rx = None;
+                }
+                Ok(Err(e)) => {
+                    self.ui.settings_error = Some(e.to_string());
+                    self.pairing_rx = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.pairing_rx = None;
+                }
+            }
+        }
+
         self.sync_mouse_passthrough(host);
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn request_web_hid_pairing(&mut self) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.pairing_rx = Some(rx);
+        let ui_wake = self.connection_mgr.ui_wake().clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            let result = crate::platform::web_hid::request_and_open_device(ui_wake.clone()).await;
+            let _ = tx.send(result);
+            ui_wake.request_repaint();
+        });
     }
 
     #[cfg(target_arch = "wasm32")]
     fn render_web_chrome(
         &mut self,
         ctx: &egui::Context,
-        keyboard: Option<&crate::application::Keyboard>,
+        _keyboard: Option<&crate::application::Keyboard>,
     ) {
-        if let Some(keyboard) = keyboard {
-            if !self.ui.initial_editor_opened {
-                self.ui.initial_editor_opened = true;
-                if let Some(first_key) = keyboard.layout().keys.first() {
-                    self.editor.retarget(
-                        keyboard,
-                        crate::keymap_editor::EditTarget::new(0, first_key.row, first_key.col),
-                    );
-                }
-            }
-        }
-
         egui::Area::new(egui::Id::new("web_toolbar"))
             .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-16.0, 16.0))
             .show(ctx, |ui| {
-                if ui
-                    .button(egui::RichText::new(format!(
-                        "{} Settings",
-                        egui_phosphor::regular::GEAR
-                    )))
-                    .clicked()
-                {
-                    self.ui.settings_visible = !self.ui.settings_visible;
-                }
+                ui.horizontal(|ui| {
+                    let supported = crate::platform::web_hid::is_web_hid_supported();
+                    let btn = ui.add_enabled(
+                        supported,
+                        egui::Button::new(egui::RichText::new(format!(
+                            "{} Connect Keyboard",
+                            egui_phosphor::regular::PLUG
+                        ))),
+                    );
+                    if !supported {
+                        btn.on_hover_text(
+                            "WebHID is not supported in this browser. Please use Chrome or Edge.",
+                        );
+                    } else if btn.clicked() {
+                        self.request_web_hid_pairing();
+                    }
+
+                    if ui
+                        .button(egui::RichText::new(format!(
+                            "{} Settings",
+                            egui_phosphor::regular::GEAR
+                        )))
+                        .clicked()
+                    {
+                        self.ui.settings_visible = !self.ui.settings_visible;
+                    }
+                });
             });
     }
 

@@ -109,6 +109,24 @@ impl DeviceConnectionManager {
         }
     }
 
+    pub fn ui_wake(&self) -> &UiWake {
+        &self.ui_wake
+    }
+
+    pub fn add_device(&mut self, device: DiscoveredDevice) -> usize {
+        if let Some(pos) = self
+            .available_devices
+            .iter()
+            .position(|d| d.vid == device.vid && d.pid == device.pid)
+        {
+            self.available_devices[pos] = device;
+            pos
+        } else {
+            self.available_devices.push(device);
+            self.available_devices.len() - 1
+        }
+    }
+
     pub fn set_layout_file_path(&mut self, path: String) {
         self.layout_file_path = path;
     }
@@ -348,5 +366,28 @@ mod tests {
         assert!(matches!(mgr.connect(config), ConnectOutcome::Started));
         assert!(mgr.is_connecting());
         assert!(mgr.is_locked());
+    }
+
+    #[test]
+    fn test_add_device() {
+        let mut mgr = DeviceConnectionManager::new(vec![sample_device(false)], dummy_wake());
+        assert_eq!(mgr.available_devices().len(), 1);
+
+        let mut new_dev = sample_device(false);
+        new_dev.vid = 0xABCD;
+        new_dev.pid = 0x1234;
+        new_dev.base_name = "New Device".to_string();
+
+        let idx = mgr.add_device(new_dev.clone());
+        assert_eq!(idx, 1);
+        assert_eq!(mgr.available_devices().len(), 2);
+        assert_eq!(mgr.available_devices()[1].base_name, "New Device");
+
+        // Adding device with same vid/pid updates in place
+        new_dev.base_name = "Updated Device".to_string();
+        let idx2 = mgr.add_device(new_dev);
+        assert_eq!(idx2, 1);
+        assert_eq!(mgr.available_devices().len(), 2);
+        assert_eq!(mgr.available_devices()[1].base_name, "Updated Device");
     }
 }

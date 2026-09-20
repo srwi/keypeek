@@ -19,6 +19,31 @@ pub enum WindowPosition {
     BottomRight,
     Bottom,
     Top,
+    Center,
+}
+
+impl WindowPosition {
+    pub const ALL: [Self; 7] = [
+        Self::Center,
+        Self::Top,
+        Self::Bottom,
+        Self::TopLeft,
+        Self::TopRight,
+        Self::BottomLeft,
+        Self::BottomRight,
+    ];
+
+    pub fn anchor_and_offset(self, margin: f32) -> (egui::Align2, egui::Vec2) {
+        match self {
+            Self::TopLeft => (egui::Align2::LEFT_TOP, egui::vec2(margin, margin)),
+            Self::TopRight => (egui::Align2::RIGHT_TOP, egui::vec2(-margin, margin)),
+            Self::BottomLeft => (egui::Align2::LEFT_BOTTOM, egui::vec2(margin, -margin)),
+            Self::BottomRight => (egui::Align2::RIGHT_BOTTOM, egui::vec2(-margin, -margin)),
+            Self::Bottom => (egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -margin)),
+            Self::Top => (egui::Align2::CENTER_TOP, egui::vec2(0.0, margin)),
+            Self::Center => (egui::Align2::CENTER_CENTER, egui::Vec2::ZERO),
+        }
+    }
 }
 
 impl fmt::Display for WindowPosition {
@@ -33,6 +58,7 @@ impl fmt::Display for WindowPosition {
                 WindowPosition::BottomRight => "Bottom Right",
                 WindowPosition::Bottom => "Bottom",
                 WindowPosition::Top => "Top",
+                WindowPosition::Center => "Center",
             }
         )
     }
@@ -49,6 +75,7 @@ impl FromStr for WindowPosition {
             "Bottom Right" => Ok(WindowPosition::BottomRight),
             "Bottom" => Ok(WindowPosition::Bottom),
             "Top" => Ok(WindowPosition::Top),
+            "Center" => Ok(WindowPosition::Center),
             _ => Err(ParseSettingsError),
         }
     }
@@ -237,6 +264,9 @@ impl Default for Settings {
             size: 60,
             font_size_multiplier: 1.0,
             auto_fit_before_ellipsis: false,
+            #[cfg(target_arch = "wasm32")]
+            position: WindowPosition::Center,
+            #[cfg(not(target_arch = "wasm32"))]
             position: WindowPosition::BottomRight,
             timeout: 2000,
             activation_delay: 0,

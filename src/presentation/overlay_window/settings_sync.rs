@@ -22,24 +22,10 @@ impl OverlayApp {
     }
 
     pub(super) fn get_anchor_params(&self) -> (Align2, egui::Vec2) {
-        #[cfg(target_arch = "wasm32")]
-        {
-            (Align2::CENTER_TOP, egui::vec2(0.0, 24.0))
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            use crate::settings::WindowPosition::*;
-            let m = self.settings.active.margin as f32;
-            let (align, dx, dy) = match self.settings.active.position {
-                TopLeft => (Align2::LEFT_TOP, m, m),
-                TopRight => (Align2::RIGHT_TOP, -m, m),
-                BottomLeft => (Align2::LEFT_BOTTOM, m, -m),
-                BottomRight => (Align2::RIGHT_BOTTOM, -m, -m),
-                Bottom => (Align2::CENTER_BOTTOM, 0.0, -m),
-                Top => (Align2::CENTER_TOP, 0.0, m),
-            };
-            (align, egui::vec2(dx, dy))
-        }
+        self.settings
+            .active
+            .position
+            .anchor_and_offset(self.settings.active.margin as f32)
     }
 
     pub(super) fn overlay_visible(&self) -> bool {
