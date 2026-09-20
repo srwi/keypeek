@@ -91,6 +91,10 @@ impl Keyboard {
         self.session.supports_live_layout_switching()
     }
 
+    pub fn supports_multiple_layouts(&self) -> bool {
+        self.supports_live_layout_switching() && self.layout_names().len() > 1
+    }
+
     pub fn is_action_supported(&self, action: &KeySpec) -> bool {
         self.session.is_action_supported(action)
     }

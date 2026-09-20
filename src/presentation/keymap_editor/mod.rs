@@ -239,7 +239,53 @@ impl EditorState {
 }
 
 impl EditorState {
-    /// Draws the edit key window.
+    /// Prepares editor state for rendering: flushes pending saves, polls writes, and ensures lock.
+    fn prepare_frame(&mut self, ctx: &egui::Context, keyboard: &Keyboard) {
+        if self.closing && self.pending.is_none() && self.dirty {
+            self.start_save(keyboard);
+        }
+
+        self.poll_pending_write(ctx, keyboard);
+
+        if matches!(keyboard.write_support(), WriteSupport::Staged) && !self.closing {
+            self.ensure_lock(keyboard);
+        }
+    }
+
+    /// Renders the core editor body: error banner, layer switcher header, categories, and overlay.
+    pub fn draw_editor_content(
+        &mut self,
+        ui: &mut egui::Ui,
+        keyboard: &Keyboard,
+        profile: &dyn EditorProfile,
+        style: &crate::key_paint::KeyPaintStyle,
+        target: EditTarget,
+    ) {
+        if let Some(error) = &self.error {
+            ui.add_space(4.0);
+            ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
+        }
+
+        let is_enabled = self.overlay().is_none();
+        ui.add_enabled_ui(is_enabled, |ui| {
+            let target = self.draw_editor_header(ui, keyboard, target, style);
+
+            match keyboard.write_support() {
+                WriteSupport::None => {
+                    ui.add_space(8.0);
+                    ui.weak("This key cannot be edited in this version.");
+                }
+                WriteSupport::Immediate | WriteSupport::Staged => {
+                    ui.add_space(8.0);
+                    self.draw_editor_body(ui, keyboard, profile, target, style);
+                }
+            }
+        });
+
+        self.draw_editor_overlay(ui);
+    }
+
+    /// Draws the edit key window (used on desktop).
     pub fn draw_window(
         &mut self,
         ctx: &egui::Context,
@@ -251,65 +297,84 @@ impl EditorState {
             return;
         };
 
-        // Save unsaved changes before closing the window.
-        if self.closing && self.pending.is_none() && self.dirty {
-            self.start_save(keyboard);
-        }
-
-        self.poll_pending_write(ctx, keyboard);
-
-        if matches!(keyboard.write_support(), WriteSupport::Staged) && !self.closing {
-            self.ensure_lock(keyboard);
-        }
+        self.prepare_frame(ctx, keyboard);
 
         let closing = self.closing;
-        let title = if self.dirty {
-            "Edit key (Unsaved changes)"
-        } else {
-            "Edit key"
-        };
-        let mut window = Window::new(title)
+        let mut window = Window::new(self.title())
             .id(egui::Id::new("edit_key_window"))
             .resizable(true)
             .default_size(egui::vec2(440.0, 525.0))
             .min_size(egui::vec2(440.0, 525.0));
-        #[cfg(target_arch = "wasm32")]
-        {
-            window = window.default_pos(egui::pos2(
-                (ctx.viewport_rect().width() - 440.0).max(0.0) * 0.5,
-                380.0,
-            ));
-        }
+
         let mut open = true;
         if !closing {
             window = window.open(&mut open);
         }
         window.show(ctx, |ui| {
-            if let Some(error) = &self.error {
-                ui.add_space(4.0);
-                ui.colored_label(egui::Color32::from_rgb(220, 80, 80), error);
-            }
-
-            let is_enabled = self.overlay().is_none();
-            ui.add_enabled_ui(is_enabled, |ui| {
-                let target = self.draw_editor_header(ui, keyboard, target, style);
-
-                match keyboard.write_support() {
-                    WriteSupport::None => {
-                        ui.add_space(8.0);
-                        ui.weak("This key cannot be edited in this version.");
-                    }
-                    WriteSupport::Immediate | WriteSupport::Staged => {
-                        ui.add_space(8.0);
-                        self.draw_editor_body(ui, keyboard, profile, target, style);
-                    }
-                }
-            });
-
-            self.draw_editor_overlay(ui);
+            self.draw_editor_content(ui, keyboard, profile, style, target);
         });
 
-        if !open && self.request_close() {
+        if !open {
+            self.handle_close_request(keyboard);
+        }
+    }
+
+    /// Draws the edit key sidebar (used on WASM).
+    pub fn draw_sidebar(
+        &mut self,
+        ui: &mut egui::Ui,
+        keyboard: &Keyboard,
+        profile: &dyn EditorProfile,
+        style: &crate::key_paint::KeyPaintStyle,
+    ) {
+        let Some(target) = self.target else {
+            return;
+        };
+
+        self.prepare_frame(ui.ctx(), keyboard);
+
+        let closing = self.closing;
+        let mut close_requested = false;
+
+        egui::Panel::left(egui::Id::new("edit_key_sidebar"))
+            .resizable(true)
+            .default_size(450.0)
+            .min_size(340.0)
+            .show(ui, |ui| {
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    ui.heading(self.title());
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if !closing && ui.button(egui_phosphor::regular::X).clicked() {
+                            close_requested = true;
+                        }
+                    });
+                });
+                ui.add_space(4.0);
+                ui.separator();
+                ui.add_space(4.0);
+
+                self.draw_editor_content(ui, keyboard, profile, style, target);
+            });
+
+        if close_requested {
+            self.handle_close_request(keyboard);
+        }
+    }
+
+    /// Title string reflecting whether there are unsaved pending changes.
+    pub fn title(&self) -> &'static str {
+        if self.dirty {
+            "Edit key (Unsaved changes)"
+        } else {
+            "Edit key"
+        }
+    }
+
+    /// Attempts to close the editor; if successful, releases the hardware edit lock.
+    pub fn handle_close_request(&mut self, keyboard: &Keyboard) {
+        if self.request_close() {
             keyboard.release_edit_lock();
         }
     }

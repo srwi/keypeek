@@ -1,7 +1,6 @@
-//! Desktop-specific window orchestration, native file picker, and connection settings UI.
+//! Desktop-specific window orchestration, native file picker, and platform setup.
 
 use super::{OverlayApp, OverlayHost};
-use crate::ui_widgets::titled_group;
 
 /// Background clear color for desktop: transparent overlay or dimmed modal backdrop.
 pub fn clear_color(is_any_window_open: bool) -> egui::Rgba {
@@ -52,12 +51,43 @@ impl OverlayApp {
         self.sync_mouse_passthrough(host);
     }
 
-    /// No-op on desktop (connection UI is embedded inside Settings window).
-    pub(super) fn render_platform(
-        &mut self,
-        _ctx: &egui::Context,
-        _keyboard: Option<&crate::application::Keyboard>,
-    ) {
+    /// Draw a centered modal with `message` and an OK button that clears `slot`.
+    fn message_window(ctx: &egui::Context, title: &str, slot: &mut Option<String>) {
+        let Some(message) = slot.clone() else {
+            return;
+        };
+        egui::Window::new(title)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                ui.label(message);
+                ui.add_space(10.0);
+                if ui.button("OK").clicked() {
+                    *slot = None;
+                }
+            });
+    }
+
+    /// Renders the complete desktop interface: overlay window, key editor window,
+    /// settings window, and notification dialogs.
+    pub(super) fn render_desktop(&mut self, ctx: &egui::Context, host: &mut dyn OverlayHost) {
+        let connected = self.connection_mgr.connected_pair();
+        if let Some((keyboard, profile)) = &connected {
+            self.draw_overlay_window(ctx, keyboard, self.overlay_visible());
+            if self.editor.is_open() {
+                let style = self.paint_style(crate::keymap_editor::KEY_UNIT);
+                self.editor
+                    .draw_window(ctx, keyboard, profile.as_ref(), &style);
+            }
+        }
+
+        if self.ui.settings_visible {
+            self.draw_settings_window(ctx, host);
+        }
+
+        Self::message_window(ctx, "Error", &mut self.ui.settings_error);
+        Self::message_window(ctx, "Notice", &mut self.ui.settings_warning);
     }
 
     /// Triggers the native file dialog to pick a layout file.
@@ -74,131 +104,5 @@ impl OverlayApp {
 
         host.set_passthrough(mouse_passthrough);
         self.platform.mouse_passthrough = Some(mouse_passthrough);
-    }
-
-    /// Renders the Connection section inside KeyPeek Settings window on desktop.
-    pub(super) fn draw_connection_settings(&mut self, ui: &mut egui::Ui) {
-        titled_group(ui, "Connection", |ui| {
-            let reconnecting = self.connection_mgr.is_reconnecting();
-            // Keep the device/protocol pickers locked while connected or reconnecting.
-            let connection_locked = self.connection_mgr.is_locked();
-            let selected_device = self.connection_mgr.selected_device().cloned();
-            let selected_device_text = selected_device
-                .as_ref()
-                .map(|d| d.display_name())
-                .unwrap_or_else(|| "Select device...".to_string());
-
-            let control_spacing = ui.spacing().item_spacing.x;
-            const RIGHT_COLUMN_WIDTH: f32 = 100.0;
-
-            egui::Grid::new("connection_grid")
-                .num_columns(2)
-                .striped(true)
-                .spacing([20.0, 10.0])
-                .show(ui, |ui| {
-                    ui.label("Device");
-                    ui.add_enabled_ui(!connection_locked, |ui| {
-                        ui.horizontal(|ui| {
-                            let combo_width =
-                                (ui.available_width() - RIGHT_COLUMN_WIDTH - control_spacing)
-                                    .max(120.0);
-                            egui::ComboBox::from_id_salt("device_combo")
-                                .width(combo_width)
-                                .selected_text(selected_device_text.clone())
-                                .show_ui(ui, |ui| {
-                                    for idx in 0..self.connection_mgr.available_devices().len() {
-                                        let device = &self.connection_mgr.available_devices()[idx];
-                                        let selected = self.connection_mgr.selected_device_index()
-                                            == Some(idx);
-                                        if ui
-                                            .selectable_label(selected, device.display_name())
-                                            .clicked()
-                                        {
-                                            self.connection_mgr.select_device(idx);
-                                            self.ui.settings_error = None;
-                                        }
-                                    }
-                                    if self.connection_mgr.available_devices().is_empty() {
-                                        ui.weak("No devices found");
-                                    }
-                                });
-
-                            ui.allocate_ui_with_layout(
-                                egui::vec2(RIGHT_COLUMN_WIDTH, 20.0),
-                                egui::Layout::left_to_right(egui::Align::Center),
-                                |ui| {
-                                    let connect_in_progress = self.connection_mgr.is_connecting();
-                                    let can_connect = !connection_locked
-                                        && !connect_in_progress
-                                        && self.connection_mgr.selected_device_index().is_some();
-                                    let button_label = if reconnecting {
-                                        "Reconnecting..."
-                                    } else if connect_in_progress {
-                                        "Connecting..."
-                                    } else {
-                                        "Connect"
-                                    };
-                                    ui.add_enabled_ui(can_connect, |ui| {
-                                        if ui
-                                            .add_sized(
-                                                [RIGHT_COLUMN_WIDTH, 20.0],
-                                                egui::Button::new(button_label),
-                                            )
-                                            .clicked()
-                                        {
-                                            self.connect_from_ui();
-                                        }
-                                    });
-                                },
-                            );
-                        });
-                    });
-                    ui.end_row();
-
-                    ui.label("Layout");
-                    ui.horizontal(|ui| {
-                        let (layout_enabled, current_layout, layout_names) =
-                            if let Some(keyboard) = self.connection_mgr.connected_keyboard() {
-                                (
-                                    keyboard.supports_live_layout_switching(),
-                                    keyboard.active_layout_name(),
-                                    keyboard.layout_names(),
-                                )
-                            } else {
-                                (false, "Connect to device first".to_string(), Vec::new())
-                            };
-                        let layout_width =
-                            (ui.available_width() - RIGHT_COLUMN_WIDTH - control_spacing)
-                                .max(120.0);
-                        ui.add_enabled_ui(layout_enabled, |ui| {
-                            egui::ComboBox::from_id_salt("layout_combo")
-                                .width(layout_width)
-                                .selected_text(&current_layout)
-                                .show_ui(ui, |ui| {
-                                    for name in &layout_names {
-                                        let is_selected = name == &current_layout;
-                                        if ui.selectable_label(is_selected, name).clicked()
-                                            && !is_selected
-                                        {
-                                            if let Some(keyboard) =
-                                                self.connection_mgr.connected_keyboard()
-                                            {
-                                                if let Err(e) = keyboard.switch_layout(name) {
-                                                    self.ui.settings_error = Some(e);
-                                                } else {
-                                                    self.connection_mgr.set_preferred_layout_name(
-                                                        Some(name.clone()),
-                                                    );
-                                                }
-                                            }
-                                        }
-                                    }
-                                });
-                        });
-                        ui.allocate_space(egui::vec2(RIGHT_COLUMN_WIDTH, 20.0));
-                    });
-                    ui.end_row();
-                });
-        });
     }
 }

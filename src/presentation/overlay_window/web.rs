@@ -11,6 +11,8 @@ use crate::platform::web_hid::{
     trigger_web_file_picker, WebConnectOutcome, WebHidTransport,
 };
 use crate::protocols::DeviceError;
+use crate::settings::LegendMode;
+use crate::ui_widgets::{github_link, version_link};
 
 /// Background color for the browser canvas.
 pub fn clear_color() -> egui::Rgba {
@@ -186,54 +188,160 @@ impl OverlayApp {
         });
     }
 
-    /// Renders the web-specific chrome toolbar and modal dialogs.
-    pub(super) fn render_platform(
-        &mut self,
-        ctx: &egui::Context,
-        _keyboard: Option<&crate::application::Keyboard>,
-    ) {
-        self.render_web_chrome(ctx);
-        self.render_web_layout_modal(ctx);
-        self.render_zmk_telemetry_modal(ctx);
+    /// Renders the complete web interface: fixed top bar, resizable left sidebar for editing,
+    /// central keyboard overlay canvas, and modal dialogs.
+    pub(super) fn render_web(&mut self, ui: &mut egui::Ui) {
+        let connected = self.connection_mgr.connected_pair();
+        let keyboard_ref = connected.as_ref().map(|(k, _)| k.as_ref());
+
+        // 1. Fixed top panel for connection status and quick settings
+        self.render_web_top_bar(ui, keyboard_ref);
+
+        // 2. Resizable left sidebar for keymap editor (if open and connected)
+        if let Some((keyboard, profile)) = &connected {
+            if self.editor.is_open() {
+                let style = self.paint_style(crate::keymap_editor::KEY_UNIT);
+                self.editor
+                    .draw_sidebar(ui, keyboard, profile.as_ref(), &style);
+            }
+        }
+
+        // 3. Central panel for the keyboard overlay canvas or connection buttons
+        egui::CentralPanel::default().show(ui, |ui| {
+            if let Some((keyboard, _)) = &connected {
+                self.draw_overlay_canvas(ui, keyboard);
+            } else {
+                let v_pad = ((ui.available_height() - 80.0) * 0.45).max(20.0);
+                ui.add_space(v_pad);
+                ui.vertical_centered(|ui| {
+                    ui.label(
+                        egui::RichText::new("Connect a keyboard to view and edit layers")
+                            .size(15.0)
+                            .weak(),
+                    );
+                    ui.add_space(16.0);
+
+                    let id = ui.id().with("connect_buttons_row");
+                    let row_width: f32 = ui.data(|d| d.get_temp(id)).unwrap_or(270.0);
+                    let left_space = ((ui.available_width() - row_width) * 0.5).max(0.0);
+
+                    ui.horizontal(|ui| {
+                        if left_space > 0.0 {
+                            ui.add_space(left_space);
+                        }
+
+                        let hid_supported = is_web_hid_supported();
+                        let serial_supported =
+                            crate::platform::web_serial::is_web_serial_supported();
+
+                        let mut hid_btn = ui.add_enabled(
+                            hid_supported,
+                            egui::Button::new("Connect QMK / Vial"),
+                        );
+                        if !hid_supported {
+                            hid_btn = hid_btn.on_hover_text(
+                                "WebHID is not supported in this browser. Please use Chrome, Edge, or Opera.",
+                            );
+                        } else if hid_btn.clicked() {
+                            self.request_web_hid_pairing();
+                        }
+
+                        let mut serial_btn = ui.add_enabled(
+                            serial_supported,
+                            egui::Button::new("Connect ZMK"),
+                        );
+                        if !serial_supported {
+                            serial_btn = serial_btn.on_hover_text(
+                                "Web Serial is not supported in this browser. Please use Chrome, Edge, or Opera.",
+                            );
+                        } else if serial_btn.clicked() {
+                            self.request_web_serial_pairing();
+                        }
+
+                        let actual_width = serial_btn.rect.max.x - hid_btn.rect.min.x;
+                        if (actual_width - row_width).abs() > 1.0 {
+                            ui.data_mut(|d| d.insert_temp(id, actual_width));
+                        }
+                    });
+                });
+            }
+        });
+
+        // 4. Modal prompts
+        let ctx = ui.ctx().clone();
+        self.render_web_layout_modal(&ctx);
+        self.render_zmk_telemetry_modal(&ctx);
     }
 
-    /// Floating top-right toolbar for browser mode: Connect button and Settings toggle.
-    fn render_web_chrome(&mut self, ctx: &egui::Context) {
-        egui::Area::new(egui::Id::new("web_toolbar"))
-            .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-16.0, 16.0))
-            .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    let hid_supported = is_web_hid_supported();
-                    let serial_supported = crate::platform::web_serial::is_web_serial_supported();
+    /// Fixed top bar with title, layout switcher, legend mode, and status.
+    fn render_web_top_bar(
+        &mut self,
+        ui: &mut egui::Ui,
+        keyboard: Option<&crate::application::Keyboard>,
+    ) {
+        egui::Panel::top("web_top_bar").show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("KeyPeek").strong().size(15.0));
+                version_link(ui);
+                ui.separator();
+                github_link(ui);
 
-                    let hid_btn = ui.add_enabled(
-                        hid_supported,
-                        egui::Button::new(egui::RichText::new(format!(
-                            "{} Connect QMK / Vial",
-                            egui_phosphor::regular::PLUG
-                        ))),
-                    );
-                    if !hid_supported {
-                        hid_btn.on_hover_text(
-                            "WebHID is not supported in this browser. Please use Chrome, Edge, or Opera.",
-                        );
-                    } else if hid_btn.clicked() {
-                        self.request_web_hid_pairing();
+                // Live layout switching (only when multiple layouts are available)
+                if let Some(kbd) = keyboard {
+                    if kbd.supports_multiple_layouts() {
+                        ui.separator();
+                        let current_layout = kbd.active_layout_name();
+                        ui.label("Layout:");
+                        egui::ComboBox::from_id_salt("web_layout_combo")
+                            .selected_text(&current_layout)
+                            .show_ui(ui, |ui| {
+                                for name in kbd.layout_names() {
+                                    let is_selected = name == current_layout;
+                                    if ui.selectable_label(is_selected, &name).clicked()
+                                        && !is_selected
+                                    {
+                                        self.switch_layout(&name);
+                                    }
+                                }
+                            });
                     }
+                }
 
-                    let serial_btn = ui.add_enabled(
-                        serial_supported,
-                        egui::Button::new(egui::RichText::new(format!(
-                            "{} Connect ZMK",
-                            egui_phosphor::regular::LIGHTNING
-                        ))),
-                    );
-                    if !serial_supported {
-                        serial_btn.on_hover_text(
-                            "Web Serial is not supported in this browser. Please use Chrome, Edge, or Opera.",
+                // Right-aligned legends option, connection status, and alerts
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    // Legend mode selector (anchored to the far right)
+                    egui::ComboBox::from_id_salt("web_legend_mode")
+                        .selected_text(self.settings.draft.legend_mode.to_string())
+                        .show_ui(ui, |ui| {
+                            for mode in [
+                                LegendMode::Stacked,
+                                LegendMode::Single,
+                                LegendMode::SingleLive,
+                            ] {
+                                ui.selectable_value(
+                                    &mut self.settings.draft.legend_mode,
+                                    mode,
+                                    mode.to_string(),
+                                );
+                            }
+                        });
+                    ui.label("Legends:");
+
+                    if let Some(_kbd) = keyboard {
+                        ui.separator();
+                        let dev_name = self
+                            .connection_mgr
+                            .selected_device()
+                            .map(|d| d.display_name())
+                            .unwrap_or_else(|| "Connected".to_string());
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "{} {}",
+                                egui_phosphor::regular::KEYBOARD,
+                                dev_name
+                            ))
+                            .color(egui::Color32::LIGHT_GREEN),
                         );
-                    } else if serial_btn.clicked() {
-                        self.request_web_serial_pairing();
                     }
 
                     if let Some((device, _)) = &self.platform.pending_via {
@@ -249,75 +357,69 @@ impl OverlayApp {
                         }
                     }
 
-                    if ui
-                        .button(egui::RichText::new(format!(
-                            "{} Settings",
-                            egui_phosphor::regular::GEAR
-                        )))
-                        .clicked()
-                    {
-                        self.ui.settings_visible = !self.ui.settings_visible;
+                    // Inline dismissible alerts
+                    if let Some(err) = &self.ui.settings_error {
+                        if render_alert_chip(ui, err, "⚠", egui::Color32::LIGHT_RED) {
+                            self.ui.settings_error = None;
+                        }
+                    } else if let Some(notice) = &self.ui.settings_warning {
+                        if render_alert_chip(ui, notice, "ℹ", egui::Color32::KHAKI) {
+                            self.ui.settings_warning = None;
+                        }
                     }
                 });
             });
+        });
+
+        self.sync_visual_settings();
     }
 
     /// Centered modal asking for layout JSON when a VIA keyboard is connected.
     fn render_web_layout_modal(&mut self, ctx: &egui::Context) {
-        if let Some((device, _)) = &self.platform.pending_via {
-            let mut trigger_picker = false;
-            let mut dismiss = false;
+        let Some((device, _)) = &self.platform.pending_via else {
+            return;
+        };
 
-            egui::Window::new(format!("Layout Required — {}", device.base_name))
-                .collapsible(false)
-                .resizable(false)
-                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                .show(ctx, |ui| {
-                    ui.set_max_width(440.0);
-                    ui.vertical(|ui| {
-                        ui.label(
-                            "This keyboard uses the VIA protocol and does not store its layout \
-                             on the device.",
-                        );
-                        ui.label(
-                            "Please select its layout definition JSON file (VIA JSON or QMK info.json) \
-                             to complete the connection.",
-                        );
+        let mut trigger_picker = false;
+        let mut dismiss = false;
 
-                        if let Some(err) = &self.ui.settings_error {
-                            ui.add_space(4.0);
-                            ui.colored_label(egui::Color32::LIGHT_RED, format!("Error: {err}"));
-                        }
+        egui::Modal::new(egui::Id::new("web_layout_modal")).show(ctx, |ui| {
+            ui.set_max_width(400.0);
+            ui.heading(format!("Layout Required — {}", device.base_name));
+            ui.add_space(8.0);
+            ui.label(
+                "This keyboard uses the VIA protocol. Please select its layout definition JSON file to complete connection.",
+            );
 
-                        ui.add_space(10.0);
-                        ui.horizontal(|ui| {
-                            if ui
-                                .button(egui::RichText::new(format!(
-                                    "{} Select Layout JSON",
-                                    egui_phosphor::regular::FOLDER_OPEN
-                                )))
-                                .clicked()
-                            {
-                                trigger_picker = true;
-                            }
-
-                            if ui.button("Cancel").clicked() {
-                                dismiss = true;
-                            }
-                        });
-
-                        ui.add_space(6.0);
-                        ui.weak("Tip: Once loaded, this layout will be remembered for this keyboard.");
-                    });
-                });
-
-            if trigger_picker {
-                self.trigger_web_layout_file_picker();
+            if let Some(err) = &self.ui.settings_error {
+                ui.add_space(4.0);
+                ui.colored_label(egui::Color32::LIGHT_RED, format!("Error: {err}"));
             }
-            if dismiss {
-                self.platform.pending_via = None;
-                self.ui.settings_error = None;
-            }
+
+            ui.add_space(12.0);
+            ui.horizontal(|ui| {
+                if ui
+                    .button(egui::RichText::new(format!(
+                        "{} Select Layout JSON",
+                        egui_phosphor::regular::FOLDER_OPEN
+                    )))
+                    .clicked()
+                {
+                    trigger_picker = true;
+                }
+
+                if ui.button("Cancel").clicked() {
+                    dismiss = true;
+                }
+            });
+        });
+
+        if trigger_picker {
+            self.trigger_web_layout_file_picker();
+        }
+        if dismiss {
+            self.platform.pending_via = None;
+            self.ui.settings_error = None;
         }
     }
 
@@ -330,41 +432,29 @@ impl OverlayApp {
         let mut should_authorize = false;
         let mut should_skip = false;
 
-        egui::Window::new(egui::RichText::new("ZMK Connected").strong())
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-            .show(ctx, |ui| {
-                ui.set_max_width(420.0);
-                ui.add_space(4.0);
-                ui.label(
-                    "To enable real-time layer switching and live key press highlights, \
-                     authorize the keyboard's HID telemetry interface.",
-                );
-                ui.add_space(6.0);
-                ui.label(
-                    egui::RichText::new(
-                        "You can skip this if the KeyPeek companion firmware module has not been added to your keyboard yet.",
-                    )
-                    .weak()
-                    .italics(),
-                );
-                ui.add_space(14.0);
-                ui.horizontal(|ui| {
-                    if ui
-                        .button(egui::RichText::new(format!(
-                            "{} Authorize Telemetry (HID)",
-                            egui_phosphor::regular::BROADCAST
-                        )))
-                        .clicked()
-                    {
-                        should_authorize = true;
-                    }
-                    if ui.button("Skip").clicked() {
-                        should_skip = true;
-                    }
-                });
+        egui::Modal::new(egui::Id::new("zmk_telemetry_modal")).show(ctx, |ui| {
+            ui.set_max_width(400.0);
+            ui.heading("ZMK Connected");
+            ui.add_space(8.0);
+            ui.label(
+                "To enable real-time layer switching and live key highlights, authorize the keyboard's HID telemetry interface.",
+            );
+            ui.add_space(12.0);
+            ui.horizontal(|ui| {
+                if ui
+                    .button(egui::RichText::new(format!(
+                        "{} Authorize Telemetry",
+                        egui_phosphor::regular::BROADCAST
+                    )))
+                    .clicked()
+                {
+                    should_authorize = true;
+                }
+                if ui.button("Skip").clicked() {
+                    should_skip = true;
+                }
             });
+        });
 
         if should_skip {
             self.platform.pending_zmk_telemetry = None;
@@ -382,3 +472,12 @@ impl OverlayApp {
         }
     }
 }
+
+/// Renders a clickable dismiss chip in the top bar for notifications or errors.
+fn render_alert_chip(ui: &mut egui::Ui, text: &str, icon: &str, color: egui::Color32) -> bool {
+    ui.separator();
+    ui.button(egui::RichText::new(format!("{icon} {text} ✕")).color(color))
+        .on_hover_text("Click to dismiss")
+        .clicked()
+}
+

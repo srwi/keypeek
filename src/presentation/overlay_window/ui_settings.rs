@@ -1,6 +1,6 @@
 use super::{OverlayApp, OverlayHost};
 use crate::settings::{LayerMask, LegendMode, Settings, ThemeColor, ThemeSettings, WindowPosition};
-use crate::ui_widgets::titled_group;
+use crate::ui_widgets::{github_link, titled_group, version_link};
 use egui::Window;
 
 impl OverlayApp {
@@ -67,6 +67,115 @@ impl OverlayApp {
         }
     }
 
+    /// Renders the Connection section inside KeyPeek Settings window on desktop.
+    fn draw_connection_settings(&mut self, ui: &mut egui::Ui) {
+        titled_group(ui, "Connection", |ui| {
+            let reconnecting = self.connection_mgr.is_reconnecting();
+            // Keep the device/protocol pickers locked while connected or reconnecting.
+            let connection_locked = self.connection_mgr.is_locked();
+            let selected_device = self.connection_mgr.selected_device().cloned();
+            let selected_device_text = selected_device
+                .as_ref()
+                .map(|d| d.display_name())
+                .unwrap_or_else(|| "Select device...".to_string());
+
+            let control_spacing = ui.spacing().item_spacing.x;
+            const RIGHT_COLUMN_WIDTH: f32 = 100.0;
+
+            egui::Grid::new("connection_grid")
+                .num_columns(2)
+                .striped(true)
+                .spacing([20.0, 10.0])
+                .show(ui, |ui| {
+                    ui.label("Device");
+                    ui.add_enabled_ui(!connection_locked, |ui| {
+                        ui.horizontal(|ui| {
+                            let combo_width =
+                                (ui.available_width() - RIGHT_COLUMN_WIDTH - control_spacing)
+                                    .max(120.0);
+                            egui::ComboBox::from_id_salt("device_combo")
+                                .width(combo_width)
+                                .selected_text(selected_device_text.clone())
+                                .show_ui(ui, |ui| {
+                                    for idx in 0..self.connection_mgr.available_devices().len() {
+                                        let device = &self.connection_mgr.available_devices()[idx];
+                                        let selected = self.connection_mgr.selected_device_index()
+                                            == Some(idx);
+                                        if ui
+                                            .selectable_label(selected, device.display_name())
+                                            .clicked()
+                                        {
+                                            self.connection_mgr.select_device(idx);
+                                            self.ui.settings_error = None;
+                                        }
+                                    }
+                                    if self.connection_mgr.available_devices().is_empty() {
+                                        ui.weak("No devices found");
+                                    }
+                                });
+
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(RIGHT_COLUMN_WIDTH, 20.0),
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| {
+                                    let connect_in_progress = self.connection_mgr.is_connecting();
+                                    let can_connect = !connection_locked
+                                        && !connect_in_progress
+                                        && self.connection_mgr.selected_device_index().is_some();
+                                    let button_label = if reconnecting {
+                                        "Reconnecting..."
+                                    } else if connect_in_progress {
+                                        "Connecting..."
+                                    } else {
+                                        "Connect"
+                                    };
+                                    ui.add_enabled_ui(can_connect, |ui| {
+                                        if ui
+                                            .add_sized(
+                                                [RIGHT_COLUMN_WIDTH, 20.0],
+                                                egui::Button::new(button_label),
+                                            )
+                                            .clicked()
+                                        {
+                                            self.connect_from_ui();
+                                        }
+                                    });
+                                },
+                            );
+                        });
+                    });
+                    ui.end_row();
+
+                    if let Some(keyboard) = self.connection_mgr.connected_keyboard() {
+                        if keyboard.supports_multiple_layouts() {
+                            ui.label("Layout");
+                            ui.horizontal(|ui| {
+                                let layout_width =
+                                    (ui.available_width() - RIGHT_COLUMN_WIDTH - control_spacing)
+                                        .max(120.0);
+                                let current_layout = keyboard.active_layout_name();
+                                egui::ComboBox::from_id_salt("layout_combo")
+                                    .width(layout_width)
+                                    .selected_text(&current_layout)
+                                    .show_ui(ui, |ui| {
+                                        for name in keyboard.layout_names() {
+                                            let is_selected = name == current_layout;
+                                            if ui.selectable_label(is_selected, &name).clicked()
+                                                && !is_selected
+                                            {
+                                                self.switch_layout(&name);
+                                            }
+                                        }
+                                    });
+                                ui.allocate_space(egui::vec2(RIGHT_COLUMN_WIDTH, 20.0));
+                            });
+                            ui.end_row();
+                        }
+                    }
+                });
+        });
+    }
+
     pub(super) fn draw_settings_window(&mut self, ctx: &egui::Context, host: &mut dyn OverlayHost) {
         let mut open = self.ui.settings_visible;
 
@@ -80,7 +189,6 @@ impl OverlayApp {
             .collapsible(false)
             .resizable(false)
             .show(ctx, |ui| {
-                #[cfg(not(target_arch = "wasm32"))]
                 self.draw_connection_settings(ui);
 
                 titled_group(ui, "Overlay Appearance", |ui| {
@@ -240,16 +348,9 @@ impl OverlayApp {
 
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    ui.add(egui::Hyperlink::from_label_and_url(
-                        egui::RichText::new("github.com/srwi/keypeek").weak(),
-                        "https://github.com/srwi/keypeek",
-                    ));
+                    github_link(ui);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.add(egui::Hyperlink::from_label_and_url(
-                            egui::RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION")))
-                                .weak(),
-                            "https://github.com/srwi/keypeek/releases",
-                        ));
+                        version_link(ui);
                     });
                 });
             });

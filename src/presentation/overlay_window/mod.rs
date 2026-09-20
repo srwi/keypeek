@@ -12,6 +12,7 @@ mod desktop;
 mod settings_sync;
 mod state;
 mod ui_overlay;
+#[cfg(not(target_arch = "wasm32"))]
 mod ui_settings;
 #[cfg(target_arch = "wasm32")]
 mod web;
@@ -90,23 +91,7 @@ impl OverlayApp {
         }
     }
 
-    /// Draw a centered modal with `message` and an OK button that clears `slot`.
-    fn message_window(ctx: &egui::Context, title: &str, slot: &mut Option<String>) {
-        let Some(message) = slot.clone() else {
-            return;
-        };
-        egui::Window::new(title)
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .show(ctx, |ui| {
-                ui.label(message);
-                ui.add_space(10.0);
-                if ui.button("OK").clicked() {
-                    *slot = None;
-                }
-            });
-    }
+
 
     /// Requests the editor window to close, initiating a ZMK save first if changes
     /// are pending; otherwise closes immediately.
@@ -125,6 +110,18 @@ impl OverlayApp {
         self.editor.reset();
         if let Some(keyboard) = self.connection_mgr.connected_keyboard() {
             keyboard.release_edit_lock();
+        }
+    }
+
+    /// Switches the active keyboard layout, updating preferred layout state and capturing errors.
+    pub(crate) fn switch_layout(&mut self, name: &str) {
+        if let Some(keyboard) = self.connection_mgr.connected_keyboard() {
+            if let Err(e) = keyboard.switch_layout(name) {
+                self.ui.settings_error = Some(e);
+            } else {
+                self.connection_mgr
+                    .set_preferred_layout_name(Some(name.to_string()));
+            }
         }
     }
 
@@ -177,7 +174,7 @@ impl OverlayApp {
                 ConnectionEvent::Connected => {
                     self.ui.settings_error = None;
                     self.ui.settings_warning = None;
-                    self.persist_settings();
+                    self.sync_visual_settings();
                 }
                 ConnectionEvent::ConnectionFailed(e) => {
                     self.ui.settings_error = Some(e);
@@ -192,34 +189,27 @@ impl OverlayApp {
         self.update_platform(ctx, host);
     }
 
-    /// Render phase: paints visible overlay, editor, settings, and modal dialogs.
+    #[cfg(target_arch = "wasm32")]
+    pub fn ui(&mut self, ui: &mut egui::Ui, host: &mut dyn OverlayHost) {
+        let ctx = ui.ctx().clone();
+        self.update(&ctx, host);
+        if !self.connection_mgr.is_connected() && self.editor.is_open() {
+            self.close_editor();
+        }
+        self.render_web(ui);
+        self.schedule_overlay_repaint(&ctx);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn render(&mut self, ctx: &egui::Context, host: &mut dyn OverlayHost) {
-        let connected = self.connection_mgr.connected_pair();
-        if let Some((keyboard, profile)) = &connected {
-            // Clone the shared keyboard so drawing can mutate app state (the
-            // editor) without holding a borrow on `self.connection_mgr`.
-            self.draw_overlay_window(ctx, keyboard, self.overlay_visible());
-            if self.editor.is_open() {
-                let style = self.paint_style(crate::keymap_editor::KEY_UNIT);
-                self.editor
-                    .draw_window(ctx, keyboard, profile.as_ref(), &style);
-            }
-        } else if self.editor.is_open() {
-            // The connection dropped; close the editor. Unsaved ZMK changes
-            // died with the connection, so the dirty flag goes too.
+        if !self.connection_mgr.is_connected() && self.editor.is_open() {
             self.close_editor();
         }
 
-        self.render_platform(ctx, connected.as_ref().map(|(k, _)| k.as_ref()));
-
-        if self.ui.settings_visible {
-            self.draw_settings_window(ctx, host);
-        }
-
-        Self::message_window(ctx, "Error", &mut self.ui.settings_error);
-        Self::message_window(ctx, "Notice", &mut self.ui.settings_warning);
+        self.render_desktop(ctx, host);
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn ui(&mut self, ctx: &egui::Context, host: &mut dyn OverlayHost) {
         self.update(ctx, host);
         self.render(ctx, host);

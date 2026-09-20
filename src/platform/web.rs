@@ -92,9 +92,8 @@ impl eframe::App for WebApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        let ctx = ui.ctx().clone();
         let mut host = WebHost;
-        self.app.ui(&ctx, &mut host);
+        self.app.ui(ui, &mut host);
     }
 }
 
