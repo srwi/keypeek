@@ -87,6 +87,11 @@ const KEY_EVENT_PACKET: u8 = 0xF1;
 /// Decodes raw HID packets emitted by KeyPeek companion firmware modules
 /// (QMK/Vial `srwi/keypeek_layer_notify` and ZMK raw-HID adapter).
 pub fn decode_raw_hid_packet(response: &[u8]) -> Option<DeviceEvent> {
+    let response = if response.first() == Some(&0) && response.len() > 1 {
+        &response[1..]
+    } else {
+        response
+    };
     match response.first().copied() {
         Some(LAYER_STATE_PACKET) if response.len() >= 2 => {
             let size = response[1] as usize;
@@ -315,5 +320,18 @@ mod tests {
 
         let empty: [u8; 0] = [];
         assert_eq!(decode_raw_hid_packet(&empty), None);
+    }
+
+    #[test]
+    fn test_decode_with_leading_zero_report_id() {
+        let packet = vec![0x00, 0xF1, 3, 4, 1];
+        assert_eq!(
+            decode_raw_hid_packet(&packet),
+            Some(DeviceEvent::KeyPressed {
+                row: 3,
+                col: 4,
+                pressed: true,
+            })
+        );
     }
 }

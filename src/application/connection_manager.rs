@@ -290,6 +290,25 @@ impl DeviceConnectionManager {
 
         event
     }
+
+    pub fn set_connected(
+        &mut self,
+        keyboard: Arc<Keyboard>,
+        profile: Arc<dyn EditorProfile>,
+        reopen: Option<Arc<dyn Reopener>>,
+    ) {
+        self.pending_connect = None;
+        self.preferred_layout_name = Some(keyboard.active_layout_name());
+        self.reopen = reopen;
+        self.status = ConnectionStatus::Connected { keyboard, profile };
+        self.ever_connected = true;
+    }
+
+    pub fn disconnect(&mut self) {
+        self.status = ConnectionStatus::Disconnected;
+        self.pending_connect = None;
+        self.reopen = None;
+    }
 }
 
 #[cfg(test)]

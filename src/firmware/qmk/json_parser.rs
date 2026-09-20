@@ -93,7 +93,7 @@ pub fn parse_qmk_json_value(json: &Value) -> Result<KeyboardDefinition, Box<dyn 
     })
 }
 
-fn collect_layout_keys(layout: &Value) -> Result<Vec<Key>, Box<dyn Error>> {
+pub fn collect_layout_keys(layout: &Value) -> Result<Vec<Key>, Box<dyn Error>> {
     let layout = layout["layout"]
         .as_array()
         .ok_or_else(|| Box::<dyn Error>::from("No layout array found."))?;

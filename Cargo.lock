@@ -2718,6 +2718,7 @@ dependencies = [
  "egui-phosphor",
  "egui_extras",
  "egui_glow",
+ "futures-util",
  "gtk",
  "hidapi",
  "image",

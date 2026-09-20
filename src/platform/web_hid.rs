@@ -85,7 +85,7 @@ pub fn demux_input_report(
 #[cfg(target_arch = "wasm32")]
 pub struct WebHidTransport {
     device: web_sys::HidDevice,
-    event_rx: Mutex<mpsc::Receiver<DeviceEvent>>,
+    event_rx: Mutex<Option<mpsc::Receiver<DeviceEvent>>>,
     response_slot: Arc<Mutex<ResponseSlot>>,
 }
 
@@ -125,7 +125,7 @@ impl WebHidTransport {
 
         Ok(Self {
             device,
-            event_rx: Mutex::new(event_rx),
+            event_rx: Mutex::new(Some(event_rx)),
             response_slot,
         })
     }
@@ -135,15 +135,38 @@ impl WebHidTransport {
         &self.device
     }
 
-    /// Returns the receiver for demuxed `DeviceEvent`s (layers changed, key pressed).
-    pub fn event_receiver(&self) -> &Mutex<mpsc::Receiver<DeviceEvent>> {
-        &self.event_rx
+    /// Claims the receiver for demuxed `DeviceEvent`s (layers changed, key pressed).
+    pub fn take_event_receiver(&self) -> Result<mpsc::Receiver<DeviceEvent>, DeviceError> {
+        self.event_rx
+            .lock()
+            .unwrap()
+            .take()
+            .ok_or_else(|| DeviceError::Transport("Event receiver already claimed".into()))
+    }
+
+    /// Sends an output report without awaiting resolution (for non-blocking writes).
+    pub fn fire_and_forget_report(&self, data: &[u8]) {
+        let mut padded = vec![0u8; RAW_REPORT_SIZE];
+        let copy_len = data.len().min(RAW_REPORT_SIZE);
+        padded[..copy_len].copy_from_slice(&data[..copy_len]);
+
+        let uint8_array = js_sys::Uint8Array::new_with_length(RAW_REPORT_SIZE as u32);
+        uint8_array.copy_from(&padded);
+        if let Ok(promise) = self.device.send_report_with_u8_array(0, &uint8_array) {
+            wasm_bindgen_futures::spawn_local(async move {
+                let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
+            });
+        }
     }
 
     /// Asynchronously sends a raw output report (report ID 0) to the device.
     pub async fn send_report(&self, data: &[u8]) -> Result<(), DeviceError> {
-        let uint8_array = js_sys::Uint8Array::new_with_length(data.len() as u32);
-        uint8_array.copy_from(data);
+        let mut padded = vec![0u8; RAW_REPORT_SIZE];
+        let copy_len = data.len().min(RAW_REPORT_SIZE);
+        padded[..copy_len].copy_from_slice(&data[..copy_len]);
+
+        let uint8_array = js_sys::Uint8Array::new_with_length(RAW_REPORT_SIZE as u32);
+        uint8_array.copy_from(&padded);
         let promise = self
             .device
             .send_report_with_u8_array(0, &uint8_array)
@@ -161,16 +184,52 @@ impl WebHidTransport {
         }
     }
 
-    /// Sends a VIA command and awaits the corresponding response.
-    pub async fn command(&self, command_id: u8, payload: &[u8]) -> Result<Vec<u8>, DeviceError> {
+    /// Sends a VIA command and awaits the corresponding response with a timeout in milliseconds.
+    pub async fn command_timeout(
+        &self,
+        command_id: u8,
+        payload: &[u8],
+        timeout_ms: i32,
+    ) -> Result<Vec<u8>, DeviceError> {
+        // Clear any stale responses before sending a new command
+        self.response_slot.lock().unwrap().pending.clear();
+
         let mut report = vec![0u8; RAW_REPORT_SIZE];
         report[0] = command_id;
         let copy_len = payload.len().min(RAW_REPORT_SIZE - 1);
         report[1..1 + copy_len].copy_from_slice(&payload[..copy_len]);
 
         self.send_report(&report).await?;
-        self.read_response().await
+
+        use futures_util::future::{select, Either};
+        match select(
+            Box::pin(self.read_response()),
+            Box::pin(sleep_ms(timeout_ms)),
+        )
+        .await
+        {
+            Either::Left((resp, _)) => resp,
+            Either::Right(_) => Err(DeviceError::Transport(format!(
+                "Timed out waiting for response to command 0x{command_id:02X}"
+            ))),
+        }
     }
+
+    /// Sends a VIA command and awaits the corresponding response (with a 1000ms timeout).
+    pub async fn command(&self, command_id: u8, payload: &[u8]) -> Result<Vec<u8>, DeviceError> {
+        self.command_timeout(command_id, payload, 1000).await
+    }
+}
+
+/// Async timer utility that resolves after `ms` milliseconds using browser setTimeout.
+#[cfg(target_arch = "wasm32")]
+pub async fn sleep_ms(ms: i32) {
+    let promise = js_sys::Promise::new(&mut |resolve, _| {
+        if let Some(window) = web_sys::window() {
+            let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, ms);
+        }
+    });
+    let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -218,7 +277,7 @@ use crate::device_discovery::DiscoveredDevice;
 #[cfg(target_arch = "wasm32")]
 use crate::protocols::ConnectionSpec;
 #[cfg(target_arch = "wasm32")]
-use std::collections::HashMap;
+use crate::protocols::KeyboardProtocol;
 
 /// Prompts the user to select and pair a WebHID device matching QMK/VIA usage page (0xFF60).
 #[cfg(target_arch = "wasm32")]
@@ -277,27 +336,75 @@ pub async fn request_web_hid_device() -> Result<Option<web_sys::HidDevice>, Devi
     Ok(Some(device))
 }
 
-/// Requests a WebHID device from user gesture, opens it, registers [`WebHidTransport`],
-/// and returns the [`DiscoveredDevice`].
+
 #[cfg(target_arch = "wasm32")]
-pub async fn request_and_open_device(
+pub struct ConnectedWebDevice {
+    pub device: DiscoveredDevice,
+    pub keyboard: Arc<crate::application::Keyboard>,
+    pub profile: Arc<dyn crate::keymap_editor::EditorProfile>,
+}
+
+#[cfg(target_arch = "wasm32")]
+impl ConnectedWebDevice {
+    pub fn from_protocol(
+        device: DiscoveredDevice,
+        protocol: impl KeyboardProtocol + 'static,
+        overlay_config: crate::domain::visibility::OverlayConfig,
+        ui_wake: UiWake,
+    ) -> Result<Self, DeviceError> {
+        let layout_names = protocol.get_layout_definition().get_layout_names();
+        let selected_layout = layout_names
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "default".to_string());
+
+        let keyboard = crate::application::Keyboard::new(
+            Box::new(protocol),
+            selected_layout,
+            overlay_config,
+            ui_wake,
+            Arc::new(crate::firmware::qmk::QmkKeyPresenter),
+        )
+        .map_err(DeviceError::Protocol)?;
+
+        Ok(Self {
+            device,
+            keyboard: Arc::new(keyboard),
+            profile: Arc::new(crate::firmware::qmk::QmkEditorProfile),
+        })
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub enum WebConnectOutcome {
+    Connected(ConnectedWebDevice),
+    RequiresLayoutFile {
+        device: DiscoveredDevice,
+        transport: Arc<WebHidTransport>,
+    },
+}
+
+/// Requests a WebHID device from user gesture, opens it, connects the live QMK/Vial protocol,
+/// and returns the [`WebConnectOutcome`].
+#[cfg(target_arch = "wasm32")]
+pub async fn request_and_connect_device(
+    overlay_config: crate::domain::visibility::OverlayConfig,
     ui_wake: UiWake,
-) -> Result<Option<DiscoveredDevice>, DeviceError> {
-    let Some(device) = request_web_hid_device().await? else {
+) -> Result<Option<WebConnectOutcome>, DeviceError> {
+    let Some(raw_device) = request_web_hid_device().await? else {
         return Ok(None);
     };
 
-    let vid = device.vendor_id();
-    let pid = device.product_id();
-    let name = device.product_name();
+    let vid = raw_device.vendor_id();
+    let pid = raw_device.product_id();
+    let name = raw_device.product_name();
     let base_name = if name.trim().is_empty() {
         format!("USB Device ({vid:04X}:{pid:04X})")
     } else {
         name
     };
 
-    let transport = WebHidTransport::new(device, ui_wake)?;
-    register_paired_transport(vid, pid, transport);
+    let transport = Arc::new(WebHidTransport::new(raw_device, ui_wake.clone())?);
 
     let discovered = DiscoveredDevice {
         base_name,
@@ -309,25 +416,120 @@ pub async fn request_and_open_device(
         spec: ConnectionSpec::Vial { vid, pid },
     };
 
-    Ok(Some(discovered))
+    match crate::firmware::qmk::web::connect_web_qmk(
+        Arc::clone(&transport),
+        vid,
+        pid,
+        None,
+    )
+    .await?
+    {
+        crate::firmware::qmk::web::WebQmkOutcome::Connected(protocol) => {
+            let connected =
+                ConnectedWebDevice::from_protocol(discovered, protocol, overlay_config, ui_wake)?;
+            Ok(Some(WebConnectOutcome::Connected(connected)))
+        }
+        crate::firmware::qmk::web::WebQmkOutcome::RequiresLayoutFile => {
+            let mut dev = discovered;
+            dev.requires_layout_file = true;
+            dev.spec = ConnectionSpec::Via {
+                json_path: String::new(),
+            };
+            Ok(Some(WebConnectOutcome::RequiresLayoutFile {
+                device: dev,
+                transport,
+            }))
+        }
+    }
 }
 
+/// Connects a VIA keyboard over WebHID using a user-provided layout JSON string.
 #[cfg(target_arch = "wasm32")]
-static PAIRED_TRANSPORTS: Mutex<Option<HashMap<(u16, u16), WebHidTransport>>> = Mutex::new(None);
+pub async fn connect_via_with_layout(
+    device: DiscoveredDevice,
+    transport: Arc<WebHidTransport>,
+    layout_json: String,
+    overlay_config: crate::domain::visibility::OverlayConfig,
+    ui_wake: UiWake,
+) -> Result<ConnectedWebDevice, DeviceError> {
+    let vid = device.vid;
+    let pid = device.pid;
 
-/// Registers an active `WebHidTransport` for a given VID/PID so protocol adapters can claim it.
-#[cfg(target_arch = "wasm32")]
-pub fn register_paired_transport(vid: u16, pid: u16, transport: WebHidTransport) {
-    let mut guard = PAIRED_TRANSPORTS.lock().unwrap();
-    let map = guard.get_or_insert_with(HashMap::new);
-    map.insert((vid, pid), transport);
+    let outcome = crate::firmware::qmk::web::connect_web_qmk(
+        transport,
+        vid,
+        pid,
+        Some(&layout_json),
+    )
+    .await?;
+
+    match outcome {
+        crate::firmware::qmk::web::WebQmkOutcome::Connected(protocol) => {
+            ConnectedWebDevice::from_protocol(device, protocol, overlay_config, ui_wake)
+        }
+        crate::firmware::qmk::web::WebQmkOutcome::RequiresLayoutFile => {
+            Err(DeviceError::Protocol("Layout definition is required".into()))
+        }
+    }
 }
 
-/// Claims and removes a previously paired `WebHidTransport` for a given VID/PID.
+/// Opens the browser's native file chooser and sends (filename, text_content) to tx.
 #[cfg(target_arch = "wasm32")]
-pub fn take_paired_transport(vid: u16, pid: u16) -> Option<WebHidTransport> {
-    let mut guard = PAIRED_TRANSPORTS.lock().unwrap();
-    guard.as_mut().and_then(|map| map.remove(&(vid, pid)))
+pub fn trigger_web_file_picker(
+    tx: mpsc::Sender<Result<(String, String), String>>,
+    ui_wake: UiWake,
+) {
+    let window = match web_sys::window() {
+        Some(w) => w,
+        None => return,
+    };
+    let document = match window.document() {
+        Some(d) => d,
+        None => return,
+    };
+    let input: web_sys::HtmlInputElement = match document.create_element("input") {
+        Ok(el) => match el.dyn_into() {
+            Ok(inp) => inp,
+            Err(_) => return,
+        },
+        Err(_) => return,
+    };
+
+    input.set_type("file");
+    let _ = input.set_attribute("accept", ".json,application/json");
+
+    let input_clone = input.clone();
+    let tx_clone = tx.clone();
+    let wake = ui_wake.clone();
+    let closure = Closure::<dyn FnMut()>::new(move || {
+        if let Some(files) = input_clone.files() {
+            if let Some(file) = files.get(0) {
+                let filename = file.name();
+                let promise = file.text();
+                let tx_inner = tx_clone.clone();
+                let wake_inner = wake.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    match wasm_bindgen_futures::JsFuture::from(promise).await {
+                        Ok(js_val) => {
+                            if let Some(text) = js_val.as_string() {
+                                let _ = tx_inner.send(Ok((filename, text)));
+                            } else {
+                                let _ = tx_inner.send(Err("Failed to read file as text".into()));
+                            }
+                        }
+                        Err(e) => {
+                            let _ = tx_inner.send(Err(format!("File read error: {e:?}")));
+                        }
+                    }
+                    wake_inner.request_repaint();
+                });
+            }
+        }
+    });
+
+    input.set_onchange(Some(closure.as_ref().unchecked_ref()));
+    closure.forget();
+    input.click();
 }
 
 #[cfg(test)]

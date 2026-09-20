@@ -10,6 +10,8 @@ pub mod profile;
 pub mod via;
 #[cfg(feature = "hidapi")]
 pub mod vial;
+#[cfg(target_arch = "wasm32")]
+pub mod web;
 
 pub use presenter::QmkKeyPresenter;
 pub use profile::QmkEditorProfile;

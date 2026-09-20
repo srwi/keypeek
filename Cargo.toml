@@ -46,6 +46,7 @@ egui-file-dialog = "0.15.0"
 image = "0.25.10"
 lzma-rs = "0.3"
 web-time = "1.1.0"
+futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
 zmk-studio-api = { version = "0.6.0", default-features = false }
 
 # Desktop / native-only dependencies
@@ -98,7 +99,11 @@ web-sys = { version = "0.3.105", features = [
     "Element",
     "Event",
     "EventTarget",
+    "File",
+    "FileList",
     "HtmlCanvasElement",
+    "HtmlInputElement",
+    "Storage",
     "Window",
     "console",
     "Navigator",

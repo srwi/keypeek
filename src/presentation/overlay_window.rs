@@ -27,9 +27,19 @@ pub struct OverlayApp {
     #[cfg(target_arch = "wasm32")]
     pairing_rx: Option<
         std::sync::mpsc::Receiver<
-            Result<Option<DiscoveredDevice>, crate::protocols::DeviceError>,
+            Result<
+                Option<crate::platform::web_hid::WebConnectOutcome>,
+                crate::protocols::DeviceError,
+            >,
         >,
     >,
+    #[cfg(target_arch = "wasm32")]
+    pending_via: Option<(
+        DiscoveredDevice,
+        std::sync::Arc<crate::platform::web_hid::WebHidTransport>,
+    )>,
+    #[cfg(target_arch = "wasm32")]
+    web_file_rx: Option<std::sync::mpsc::Receiver<Result<(String, String), String>>>,
 }
 
 impl OverlayApp {
@@ -56,6 +66,10 @@ impl OverlayApp {
             editor: crate::keymap_editor::EditorState::new(),
             #[cfg(target_arch = "wasm32")]
             pairing_rx: None,
+            #[cfg(target_arch = "wasm32")]
+            pending_via: None,
+            #[cfg(target_arch = "wasm32")]
+            web_file_rx: None,
         }
     }
 
@@ -220,11 +234,17 @@ impl OverlayApp {
         #[cfg(target_arch = "wasm32")]
         if let Some(rx) = &self.pairing_rx {
             match rx.try_recv() {
-                Ok(Ok(Some(device))) => {
-                    let idx = self.connection_mgr.add_device(device.clone());
-                    self.connection_mgr.select_device(idx);
+                Ok(Ok(Some(crate::platform::web_hid::WebConnectOutcome::Connected(connected)))) => {
+                    self.handle_connected_web_device(connected);
+                    self.pairing_rx = None;
+                }
+                Ok(Ok(Some(crate::platform::web_hid::WebConnectOutcome::RequiresLayoutFile {
+                    device,
+                    transport,
+                }))) => {
                     self.ui.settings_error = None;
-                    self.ui.settings_warning = Some(format!("Paired: {}", device.base_name));
+                    self.ui.settings_warning = None;
+                    self.pending_via = Some((device, transport));
                     self.pairing_rx = None;
                 }
                 Ok(Ok(None)) => {
@@ -241,7 +261,42 @@ impl OverlayApp {
             }
         }
 
+        #[cfg(target_arch = "wasm32")]
+        if let Some(rx) = &self.web_file_rx {
+            match rx.try_recv() {
+                Ok(Ok((_filename, content))) => {
+                    self.web_file_rx = None;
+                    self.connect_pending_via_with_json(content);
+                }
+                Ok(Err(e)) => {
+                    self.ui.settings_error = Some(e);
+                    self.web_file_rx = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.web_file_rx = None;
+                }
+            }
+        }
+
         self.sync_mouse_passthrough(host);
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn handle_connected_web_device(
+        &mut self,
+        connected: crate::platform::web_hid::ConnectedWebDevice,
+    ) {
+        let idx = self.connection_mgr.add_device(connected.device.clone());
+        self.connection_mgr.select_device(idx);
+        self.connection_mgr.set_connected(
+            connected.keyboard,
+            connected.profile,
+            None,
+        );
+        self.ui.settings_error = None;
+        self.ui.settings_warning = None;
+        self.pending_via = None;
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -249,11 +304,47 @@ impl OverlayApp {
         let (tx, rx) = std::sync::mpsc::channel();
         self.pairing_rx = Some(rx);
         let ui_wake = self.connection_mgr.ui_wake().clone();
+        let overlay_config = self.overlay_config();
         wasm_bindgen_futures::spawn_local(async move {
-            let result = crate::platform::web_hid::request_and_open_device(ui_wake.clone()).await;
+            let result = crate::platform::web_hid::request_and_connect_device(
+                overlay_config,
+                ui_wake.clone(),
+            )
+            .await;
             let _ = tx.send(result);
             ui_wake.request_repaint();
         });
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn trigger_web_layout_file_picker(&mut self) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.web_file_rx = Some(rx);
+        let ui_wake = self.connection_mgr.ui_wake().clone();
+        crate::platform::web_hid::trigger_web_file_picker(tx, ui_wake);
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn connect_pending_via_with_json(&mut self, json_content: String) {
+        if let Some((device, transport)) = self.pending_via.clone() {
+            let (tx, rx) = std::sync::mpsc::channel();
+            self.pairing_rx = Some(rx);
+            let ui_wake = self.connection_mgr.ui_wake().clone();
+            let overlay_config = self.overlay_config();
+            wasm_bindgen_futures::spawn_local(async move {
+                let outcome = crate::platform::web_hid::connect_via_with_layout(
+                    device,
+                    transport,
+                    json_content,
+                    overlay_config,
+                    ui_wake.clone(),
+                )
+                .await
+                .map(|conn| Some(crate::platform::web_hid::WebConnectOutcome::Connected(conn)));
+                let _ = tx.send(outcome);
+                ui_wake.request_repaint();
+            });
+        }
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -267,12 +358,15 @@ impl OverlayApp {
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     let supported = crate::platform::web_hid::is_web_hid_supported();
+                    let is_connected = self.connection_mgr.is_connected();
+                    let btn_text = if is_connected {
+                        format!("{} Switch Keyboard", egui_phosphor::regular::PLUG)
+                    } else {
+                        format!("{} Connect Keyboard", egui_phosphor::regular::PLUG)
+                    };
                     let btn = ui.add_enabled(
                         supported,
-                        egui::Button::new(egui::RichText::new(format!(
-                            "{} Connect Keyboard",
-                            egui_phosphor::regular::PLUG
-                        ))),
+                        egui::Button::new(egui::RichText::new(btn_text)),
                     );
                     if !supported {
                         btn.on_hover_text(
@@ -280,6 +374,19 @@ impl OverlayApp {
                         );
                     } else if btn.clicked() {
                         self.request_web_hid_pairing();
+                    }
+
+                    if let Some((device, _)) = &self.pending_via {
+                        if ui
+                            .button(egui::RichText::new(format!(
+                                "{} Load Layout for {}",
+                                egui_phosphor::regular::FOLDER_OPEN,
+                                device.base_name
+                            )))
+                            .clicked()
+                        {
+                            self.trigger_web_layout_file_picker();
+                        }
                     }
 
                     if ui
@@ -303,6 +410,68 @@ impl OverlayApp {
     ) {
     }
 
+    #[cfg(target_arch = "wasm32")]
+    fn render_web_layout_modal(&mut self, ctx: &egui::Context) {
+        if let Some((device, _)) = &self.pending_via {
+            let mut trigger_picker = false;
+            let mut dismiss = false;
+
+            egui::Window::new(format!("Layout Required — {}", device.base_name))
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ctx, |ui| {
+                    ui.set_max_width(440.0);
+                    ui.vertical(|ui| {
+                        ui.label(
+                            "This keyboard uses the VIA protocol and does not store its layout \
+                             on the device.",
+                        );
+                        ui.label(
+                            "Please select its layout definition JSON file (VIA JSON or QMK info.json) \
+                             to complete the connection.",
+                        );
+
+                        if let Some(err) = &self.ui.settings_error {
+                            ui.add_space(4.0);
+                            ui.colored_label(egui::Color32::LIGHT_RED, format!("Error: {err}"));
+                        }
+
+                        ui.add_space(10.0);
+                        ui.horizontal(|ui| {
+                            if ui
+                                .button(egui::RichText::new(format!(
+                                    "{} Select Layout JSON",
+                                    egui_phosphor::regular::FOLDER_OPEN
+                                )))
+                                .clicked()
+                            {
+                                trigger_picker = true;
+                            }
+
+                            if ui.button("Cancel").clicked() {
+                                dismiss = true;
+                            }
+                        });
+
+                        ui.add_space(6.0);
+                        ui.weak("Tip: Once loaded, this layout will be remembered for this keyboard.");
+                    });
+                });
+
+            if trigger_picker {
+                self.trigger_web_layout_file_picker();
+            }
+            if dismiss {
+                self.pending_via = None;
+                self.ui.settings_error = None;
+            }
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn render_web_layout_modal(&mut self, _ctx: &egui::Context) {}
+
     /// Render phase: paints visible overlay, editor, settings, and modal dialogs.
     fn render(&mut self, ctx: &egui::Context, host: &mut dyn OverlayHost) {
         let connected = self.connection_mgr.connected_pair();
@@ -322,6 +491,7 @@ impl OverlayApp {
         }
 
         self.render_web_chrome(ctx, connected.as_ref().map(|(k, _)| k.as_ref()));
+        self.render_web_layout_modal(ctx);
 
         if self.ui.settings_visible {
             self.draw_settings_window(ctx, host);
