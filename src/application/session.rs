@@ -250,7 +250,7 @@ impl KeyboardSession {
     }
 
     #[cfg(test)]
-    pub fn new_mock(
+    pub fn new_test(
         command_tx: mpsc::Sender<KeymapCommand>,
         alive: Arc<AtomicBool>,
         write_support: WriteSupport,
@@ -424,14 +424,14 @@ mod tests {
 
     #[test]
     fn test_run_keymap_command_acquire_lock_and_save() {
-        let mut mock_protocol = crate::firmware::mock::driver::MockProtocol::connect().unwrap();
         let domain = crate::domain::keyboard::tests::create_test_domain();
+        let mut test_protocol = crate::test_utils::TestProtocol::default();
         let ui_wake = UiWake::default();
         let presenter = crate::key_presenter::StandardKeyPresenter;
 
         let (tx, rx) = mpsc::channel();
         run_keymap_command(
-            &mut mock_protocol,
+            &mut test_protocol,
             KeymapCommand::AcquireEditLock { respond: tx },
             &[],
             &domain,
@@ -442,7 +442,7 @@ mod tests {
 
         let (tx_save, rx_save) = mpsc::channel();
         run_keymap_command(
-            &mut mock_protocol,
+            &mut test_protocol,
             KeymapCommand::Save { respond: tx_save },
             &[],
             &domain,
@@ -456,7 +456,7 @@ mod tests {
     fn test_session_command_channel_disconnect() {
         let (cmd_tx, cmd_rx) = mpsc::channel();
         drop(cmd_rx); // Disconnect receiver
-        let session = KeyboardSession::new_mock(
+        let session = KeyboardSession::new_test(
             cmd_tx,
             Arc::new(AtomicBool::new(true)),
             WriteSupport::Immediate,

@@ -164,7 +164,7 @@ use crate::layout::KeyboardDefinition;
 pub enum WriteSupport {
     /// The protocol cannot write keymaps.
     None,
-    /// Every write persists at once (QMK/Vial/mock).
+    /// Every write persists at once (QMK/Vial).
     Immediate,
     /// Writes are staged in RAM until `save_keymap` persists them (ZMK).
     Staged,
@@ -249,7 +249,6 @@ pub enum ConnectionSpec {
         pid: u16,
         transport: ZmkTransportConfig,
     },
-    Mock,
 }
 
 #[cfg(test)]

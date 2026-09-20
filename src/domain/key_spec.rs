@@ -347,7 +347,7 @@ pub enum KeySpec {
 /// Identity of one layer as reported by the keyboard.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LayerInfo {
-    /// Stable layer id, used by write RPCs. Equals index for QMK/mock.
+    /// Stable layer id, used by write RPCs. Equals index for QMK.
     pub id: u32,
     /// User-facing layer name.
     pub name: Option<String>,

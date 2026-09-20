@@ -7,6 +7,9 @@ pub mod platform;
 pub mod presentation;
 pub mod protocols;
 
+#[cfg(test)]
+pub mod test_utils;
+
 pub use application::{connection, device_discovery, session, ui_wake};
 pub use domain::{key_matrix, key_spec, layout, visibility};
 pub use presentation::{

@@ -327,7 +327,7 @@ mod tests {
             driver_id: "test",
             protocol_label: "TestProto",
             requires_layout_file: requires_file,
-            spec: ConnectionSpec::Mock,
+            spec: crate::test_utils::test_spec(),
         }
     }
 

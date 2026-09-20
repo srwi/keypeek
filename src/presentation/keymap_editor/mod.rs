@@ -511,27 +511,8 @@ fn layer_button(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::firmware::mock::MockProtocol;
-    use crate::firmware::qmk::QmkEditorProfile;
     use crate::keymap_editor::draft::EditorSection;
-    use crate::protocols::KeyboardProtocol;
-
-    fn create_test_keyboard() -> Keyboard {
-        let protocol: Box<dyn KeyboardProtocol> = Box::new(MockProtocol::connect().unwrap());
-        let layout_name = protocol.get_layout_definition().layouts[0].name.clone();
-        Keyboard::new(
-            protocol,
-            layout_name,
-            crate::domain::visibility::OverlayConfig {
-                timeout_ms: 2000,
-                activation_delay_ms: 300,
-                visible_layers: u32::MAX,
-            },
-            crate::ui_wake::UiWake::new(std::sync::Arc::new(|| ())),
-            std::sync::Arc::new(QmkEditorProfile),
-        )
-        .unwrap()
-    }
+    use crate::test_utils::create_test_keyboard;
 
     #[test]
     fn retarget_on_closed_editor_selects_keycode_section() {

@@ -1,4 +1,3 @@
-pub mod mock;
 pub mod qmk;
 pub mod zmk;
 
@@ -20,18 +19,16 @@ pub trait FirmwareBundle: Send + Sync {
 
 pub static QMK_BUNDLE: qmk::QmkBundle = qmk::QmkBundle;
 pub static ZMK_BUNDLE: zmk::ZmkBundle = zmk::ZmkBundle;
-pub static MOCK_BUNDLE: mock::MockBundle = mock::MockBundle;
 
 /// Resolves the appropriate firmware bundle for a connection specification.
 pub fn bundle_for_spec(spec: &ConnectionSpec) -> &'static dyn FirmwareBundle {
     match spec {
         ConnectionSpec::Via { .. } | ConnectionSpec::Vial { .. } => &QMK_BUNDLE,
         ConnectionSpec::Zmk { .. } => &ZMK_BUNDLE,
-        ConnectionSpec::Mock => &MOCK_BUNDLE,
     }
 }
 
-pub static ALL_BUNDLES: [&'static dyn FirmwareBundle; 3] = [&ZMK_BUNDLE, &QMK_BUNDLE, &MOCK_BUNDLE];
+pub static ALL_BUNDLES: [&'static dyn FirmwareBundle; 2] = [&ZMK_BUNDLE, &QMK_BUNDLE];
 
 /// Returns all registered firmware bundles.
 pub fn all_bundles() -> &'static [&'static dyn FirmwareBundle] {

@@ -107,15 +107,13 @@ pub fn discover_devices(hid_devices: Vec<HidDeviceInfo>) -> Vec<DiscoveredDevice
     discover_devices_with(&mut ctx, &scanners)
 }
 
-/// Constructs a mock virtual keyboard descriptor.
-#[cfg(test)]
-pub fn mock_device() -> DiscoveredDevice {
-    crate::firmware::mock::mock_device()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn dummy_spec() -> ConnectionSpec {
+        crate::test_utils::test_spec()
+    }
 
     #[test]
     fn display_name_uses_protocol_label() {
@@ -126,17 +124,9 @@ mod tests {
             driver_id: "zmk",
             protocol_label: "ZMK BLE",
             requires_layout_file: false,
-            spec: ConnectionSpec::Mock,
+            spec: dummy_spec(),
         };
         assert_eq!(board.display_name(), "Board (ZMK BLE, 1234:ABCD)");
-    }
-
-    #[test]
-    fn mock_device_name_follows_the_same_shape_as_real_devices() {
-        assert_eq!(
-            mock_device().display_name(),
-            "Virtual Keyboard (Mock, F00D:F00D)"
-        );
     }
 
     #[test]
@@ -148,7 +138,7 @@ mod tests {
             driver_id: "vial",
             protocol_label: "Vial",
             requires_layout_file: false,
-            spec: ConnectionSpec::Mock,
+            spec: dummy_spec(),
         };
         let qmk_board = DiscoveredDevice {
             base_name: "Board".to_string(),
@@ -157,7 +147,7 @@ mod tests {
             driver_id: "via",
             protocol_label: "QMK",
             requires_layout_file: true,
-            spec: ConnectionSpec::Mock,
+            spec: dummy_spec(),
         };
         assert_eq!(vial_board.display_name(), "Board (Vial, 0000:0000)");
         assert_eq!(qmk_board.display_name(), "Board (QMK, 0A0B:0C0D)");
@@ -172,7 +162,7 @@ mod tests {
             driver_id: "zmk",
             protocol_label: "ZMK Serial",
             requires_layout_file: false,
-            spec: ConnectionSpec::Mock,
+            spec: dummy_spec(),
         };
         let ble = DiscoveredDevice {
             base_name: "Board".to_string(),
@@ -181,7 +171,7 @@ mod tests {
             driver_id: "zmk",
             protocol_label: "ZMK BLE",
             requires_layout_file: false,
-            spec: ConnectionSpec::Mock,
+            spec: dummy_spec(),
         };
         assert!(serial.display_name().contains("ZMK Serial"));
         assert!(ble.display_name().contains("ZMK BLE"));
@@ -216,7 +206,7 @@ mod tests {
                     driver_id: "via",
                     protocol_label: "QMK",
                     requires_layout_file: true,
-                    spec: ConnectionSpec::Mock,
+                    spec: dummy_spec(),
                 },
                 DiscoveredDevice {
                     base_name: "A Keyboard".to_string(),
@@ -225,7 +215,7 @@ mod tests {
                     driver_id: "via",
                     protocol_label: "QMK",
                     requires_layout_file: true,
-                    spec: ConnectionSpec::Mock,
+                    spec: dummy_spec(),
                 },
             ],
         });
@@ -240,7 +230,7 @@ mod tests {
                     driver_id: "vial",
                     protocol_label: "Vial",
                     requires_layout_file: false,
-                    spec: ConnectionSpec::Mock,
+                    spec: dummy_spec(),
                 },
                 DiscoveredDevice {
                     base_name: "C Keyboard".to_string(),
@@ -249,7 +239,7 @@ mod tests {
                     driver_id: "zmk",
                     protocol_label: "ZMK",
                     requires_layout_file: false,
-                    spec: ConnectionSpec::Mock,
+                    spec: dummy_spec(),
                 },
             ],
         });

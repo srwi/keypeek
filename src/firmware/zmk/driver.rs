@@ -215,7 +215,7 @@ mod tests {
     use zmk_studio_api::BehaviorRole;
 
     impl ZmkLayout {
-        fn mock(supported_behaviors: HashSet<BehaviorRole>) -> Arc<Self> {
+        fn test_new(supported_behaviors: HashSet<BehaviorRole>) -> Arc<Self> {
             Arc::new(Self {
                 definition: KeyboardDefinition {
                     vid: 0x1234,
@@ -240,9 +240,12 @@ mod tests {
         supported_behaviors.insert(BehaviorRole::KeyPress);
         supported_behaviors.insert(BehaviorRole::KeyToggle);
 
-        let layout = ZmkLayout::mock(supported_behaviors);
-        let proto =
-            ZmkProtocol::from_parts(layout, ZmkTransport::SerialPort("mock".to_string()), None);
+        let layout = ZmkLayout::test_new(supported_behaviors);
+        let proto = ZmkProtocol::from_parts(
+            layout,
+            ZmkTransport::SerialPort("test_port".to_string()),
+            None,
+        );
 
         let filter = proto.action_filter().expect("filter should be present");
 
@@ -266,14 +269,14 @@ mod tests {
 
     #[test]
     fn test_zmk_subscribe_events_with_mock_transport() {
-        let layout = ZmkLayout::mock(HashSet::new());
+        let layout = ZmkLayout::test_new(HashSet::new());
         let mock_transport = crate::protocols::MockHidTransport::new();
         // Queue an input packet: 0xF1, row=2, col=3, pressed=true
         mock_transport.push_incoming(vec![0xF1, 2, 3, 1]);
 
         let mut proto = ZmkProtocol::from_parts(
             layout,
-            ZmkTransport::SerialPort("mock".to_string()),
+            ZmkTransport::SerialPort("test_port".to_string()),
             Some(Box::new(mock_transport)),
         );
 
