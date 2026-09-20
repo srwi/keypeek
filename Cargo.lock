@@ -2708,7 +2708,7 @@ dependencies = [
 
 [[package]]
 name = "keypeek"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "console_error_panic_hook",
  "directories",
@@ -4322,7 +4322,9 @@ dependencies = [
 
 [[package]]
 name = "qmk-via-api"
-version = "0.9.0"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "076ffe03dc8323104dcf3c2587d51a7413eb9d5708dc070c00f7f3f2f0fb6e5a"
 dependencies = [
  "hidapi",
  "itertools 0.15.0",
@@ -4864,9 +4866,9 @@ dependencies = [
 
 [[package]]
 name = "serialport"
-version = "4.10.0"
+version = "4.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a2f4ac56b5d3af3c40fbbee17be96d532cba02fa5853926aacdb77d926272ab"
+checksum = "6ba5f8f29aa20853c4e3e85a33ec580eb66be1f057142e77a333834a318bacf2"
 dependencies = [
  "bitflags 2.13.0",
  "cfg-if",
@@ -7204,7 +7206,9 @@ checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
 
 [[package]]
 name = "zmk-studio-api"
-version = "0.6.0"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee5a8e4303fae7dc421de12c033adabe5501ecfd001f9d577ed8359d77b1a3d2"
 dependencies = [
  "bluest",
  "futures",

@@ -5,7 +5,7 @@ description = "Keyboard layer overlay for VIA, Vial, and ZMK"
 authors = ["Stephan Rumswinkel"]
 repository = "https://github.com/srwi/keypeek"
 readme = "README.md"
-version = "0.10.0"
+version = "0.11.0"
 edition = "2021"
 
 [lib]
@@ -38,7 +38,7 @@ rust-ini = "0.21.3"
 egui = "0.36.1"
 eframe = { version = "0.36.1", features = ["glow"] }
 egui_extras = { version = "0.36.1", features = ["all_loaders"] }
-qmk-via-api = { version = "0.9.0", default-features = false }
+qmk-via-api = { version = "0.10.0", default-features = false }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 egui-phosphor = "0.13.0"
@@ -49,7 +49,7 @@ web-time = "1.1.0"
 futures-util = { version = "0.3", default-features = false, features = ["alloc", "channel"] }
 futures-channel = "0.3"
 prost = "0.14"
-zmk-studio-api = { version = "0.6.0", default-features = false }
+zmk-studio-api = { version = "0.6.1", default-features = false }
 
 # Desktop / native-only dependencies
 directories = { version = "6.0.0", optional = true }
@@ -161,6 +161,3 @@ auto_link_exclude_list = [
     "libsqlite3.so*", "liblcms2.so*", "libicu*.so*",
 ]
 
-[patch.crates-io]
-qmk-via-api = { path = "../rust-via-api" }
-zmk-studio-api = { path = "../zmk-studio-api" }
