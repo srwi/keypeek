@@ -155,12 +155,7 @@ pub fn create_test_keyboard() -> Keyboard {
 pub fn create_test_domain() -> KeyboardDomain {
     let definition = default_test_definition();
     let layout = definition.get_layout("Default").unwrap();
-    let matrix = KeyMatrix::from_snapshot(
-        default_test_snapshot(),
-        4,
-        4,
-        &StandardKeyPresenter,
-    );
+    let matrix = KeyMatrix::from_snapshot(default_test_snapshot(), 4, 4, &StandardKeyPresenter);
     let config = OverlayConfig {
         timeout_ms: 2000,
         activation_delay_ms: 300,

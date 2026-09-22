@@ -75,12 +75,7 @@ impl WebApp {
         let ui_wake = UiWake::new(Arc::new(move || ctx.request_repaint()));
         let settings_requested = Arc::new(AtomicBool::new(false));
         let settings_store = Arc::new(MemorySettingsStore::default());
-        let app = OverlayApp::new(
-            settings_requested,
-            ui_wake,
-            settings_store,
-            Vec::new(),
-        );
+        let app = OverlayApp::new(settings_requested, ui_wake, settings_store, Vec::new());
 
         Self { app }
     }

@@ -42,11 +42,7 @@ pub fn titled_group<R>(
 /// Renders a hyperlink pointing to the KeyPeek GitHub repository.
 pub fn github_link(ui: &mut egui::Ui) -> egui::Response {
     ui.add(egui::Hyperlink::from_label_and_url(
-        egui::RichText::new(format!(
-            "{} GitHub",
-            egui_phosphor::regular::GITHUB_LOGO
-        ))
-        .weak(),
+        egui::RichText::new(format!("{} GitHub", egui_phosphor::regular::GITHUB_LOGO)).weak(),
         "https://github.com/srwi/keypeek",
     ))
 }

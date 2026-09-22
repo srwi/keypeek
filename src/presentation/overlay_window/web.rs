@@ -385,7 +385,7 @@ impl OverlayApp {
 
         egui::Modal::new(egui::Id::new("web_layout_modal")).show(ctx, |ui| {
             ui.set_max_width(400.0);
-            ui.heading(format!("Layout Required — {}", device.base_name));
+            ui.heading(format!("Layout Required for {}", device.base_name));
             ui.add_space(8.0);
             ui.label(
                 "This keyboard uses the VIA protocol. Please select its layout definition JSON file to complete connection.",
@@ -480,4 +480,3 @@ fn render_alert_chip(ui: &mut egui::Ui, text: &str, icon: &str, color: egui::Col
         .on_hover_text("Click to dismiss")
         .clicked()
 }
-

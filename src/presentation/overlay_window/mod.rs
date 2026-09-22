@@ -91,8 +91,6 @@ impl OverlayApp {
         }
     }
 
-
-
     /// Requests the editor window to close, initiating a ZMK save first if changes
     /// are pending; otherwise closes immediately.
     #[allow(dead_code)]
@@ -180,8 +178,7 @@ impl OverlayApp {
                     self.ui.settings_error = Some(e);
                 }
                 ConnectionEvent::Disconnected => {
-                    self.ui.settings_warning = Some("Device disconnected".into());
-                    self.request_close_editor();
+                    self.close_editor();
                 }
             }
         }
