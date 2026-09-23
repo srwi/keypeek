@@ -208,6 +208,12 @@ impl DesktopOverlayApp {
                 ConnectionEvent::Disconnected => {
                     self.close_editor();
                 }
+                ConnectionEvent::DeviceLocked(dev) => {
+                    self.ui.set_error(dev.lock_message());
+                }
+                ConnectionEvent::RequiresLayoutFile(_) => {
+                    self.pick_layout_file();
+                }
             }
         }
 

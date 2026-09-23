@@ -6,7 +6,9 @@ use web_time::Instant;
 
 use super::state::{SettingsState, UiState};
 use super::ui_overlay::OverlayView;
-use crate::application::connection_manager::{ConnectionEvent, DeviceConnectionManager};
+use crate::application::connection_manager::{
+    ConnectionEvent, ConnectionState, DeviceConnectionManager,
+};
 use crate::application::Keyboard;
 use crate::device_discovery::DiscoveredDevice;
 use crate::platform::web::ConnectedWebDevice;
@@ -165,6 +167,12 @@ impl WebOverlayApp {
                 ConnectionEvent::Disconnected => {
                     self.close_editor();
                 }
+                ConnectionEvent::DeviceLocked(dev) => {
+                    self.ui.set_error(dev.lock_message());
+                }
+                ConnectionEvent::RequiresLayoutFile(_) => {
+                    self.trigger_web_layout_file_picker();
+                }
             }
         }
 
@@ -185,19 +193,26 @@ impl WebOverlayApp {
                 Ok(Ok(Some(WebConnectOutcome::RequiresLayoutFile { device, transport }))) => {
                     self.ui.settings_error = None;
                     self.ui.settings_warning = None;
+                    self.connection_mgr.set_requires_layout_file(device.clone());
                     self.pending_via = Some((device, transport));
                     self.pairing_rx = None;
                 }
                 Ok(Ok(None)) => {
                     self.pairing_rx = None;
+                    if self.connection_mgr.is_connecting() {
+                        self.connection_mgr.disconnect();
+                    }
                 }
-                Ok(Err(e)) => {
-                    self.ui.settings_error = Some(e.to_string());
+                Ok(Err(err)) => {
+                    self.connection_mgr.handle_device_error(&err);
                     self.pairing_rx = None;
                 }
                 Err(mpsc::TryRecvError::Empty) => {}
                 Err(mpsc::TryRecvError::Disconnected) => {
                     self.pairing_rx = None;
+                    if self.connection_mgr.is_connecting() {
+                        self.connection_mgr.disconnect();
+                    }
                 }
             }
         }
@@ -249,6 +264,7 @@ impl WebOverlayApp {
 
     /// Prompts user to pair a WebHID device.
     pub fn request_web_hid_pairing(&mut self) {
+        self.connection_mgr.set_connecting();
         let (tx, rx) = mpsc::channel();
         self.pairing_rx = Some(rx);
         let ui_wake = self.connection_mgr.ui_wake().clone();
@@ -262,6 +278,7 @@ impl WebOverlayApp {
 
     /// Prompts user to connect a ZMK Studio keyboard over Web Serial.
     pub fn request_web_serial_pairing(&mut self) {
+        self.connection_mgr.set_connecting();
         let (tx, rx) = mpsc::channel();
         self.pairing_rx = Some(rx);
         let ui_wake = self.connection_mgr.ui_wake().clone();
@@ -290,6 +307,7 @@ impl WebOverlayApp {
         let Some((device, transport)) = self.pending_via.take() else {
             return;
         };
+        self.connection_mgr.set_connecting();
         let (tx, rx) = mpsc::channel();
         self.pairing_rx = Some(rx);
         let ui_wake = self.connection_mgr.ui_wake().clone();
@@ -499,7 +517,9 @@ impl WebOverlayApp {
                         );
                     }
 
-                    if let Some((device, _)) = &self.pending_via {
+                    if let ConnectionState::RequiresLayoutFile { device } =
+                        self.connection_mgr.state()
+                    {
                         if ui
                             .button(egui::RichText::new(format!(
                                 "{} Load Layout for {}",
@@ -512,7 +532,19 @@ impl WebOverlayApp {
                         }
                     }
 
-                    if let Some(err) = &self.ui.settings_error {
+                    if let ConnectionState::Locked { device } = self.connection_mgr.state() {
+                        let msg = format!(
+                            "{} is locked. Unlock it on the keyboard.",
+                            device.base_name
+                        );
+                        if render_alert_chip(ui, &msg, "🔒", egui::Color32::KHAKI) {
+                            self.connection_mgr.disconnect();
+                        }
+                    } else if let ConnectionState::Error(err) = self.connection_mgr.state() {
+                        if render_alert_chip(ui, err, "!", egui::Color32::LIGHT_RED) {
+                            self.connection_mgr.clear_error();
+                        }
+                    } else if let Some(err) = &self.ui.settings_error {
                         if render_alert_chip(ui, err, "!", egui::Color32::LIGHT_RED) {
                             self.ui.settings_error = None;
                         }
@@ -530,7 +562,9 @@ impl WebOverlayApp {
 
     /// Modal prompt asking for VIA layout JSON.
     fn render_web_layout_modal(&mut self, ctx: &egui::Context) {
-        let Some((device, _)) = &self.pending_via else {
+        let ConnectionState::RequiresLayoutFile { device } =
+            self.connection_mgr.state().clone()
+        else {
             return;
         };
 
@@ -573,6 +607,7 @@ impl WebOverlayApp {
         }
         if dismiss {
             self.pending_via = None;
+            self.connection_mgr.disconnect();
             self.ui.settings_error = None;
         }
     }

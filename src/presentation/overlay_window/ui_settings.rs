@@ -71,9 +71,7 @@ impl DesktopOverlayApp {
     /// Draws the connection section in desktop settings.
     fn draw_connection_settings(&mut self, ui: &mut egui::Ui) {
         titled_group(ui, "Connection", |ui| {
-            let reconnecting = self.connection_mgr.is_reconnecting();
-            // Lock device picker while connected or reconnecting.
-            let connection_locked = self.connection_mgr.is_locked();
+            let can_select = self.connection_mgr.can_select_device();
             let selected_device = self.connection_mgr.selected_device().cloned();
             let selected_device_text = selected_device
                 .as_ref()
@@ -89,7 +87,7 @@ impl DesktopOverlayApp {
                 .spacing([20.0, 10.0])
                 .show(ui, |ui| {
                     ui.label("Device");
-                    ui.add_enabled_ui(!connection_locked, |ui| {
+                    ui.add_enabled_ui(can_select, |ui| {
                         ui.horizontal(|ui| {
                             let combo_width =
                                 (ui.available_width() - RIGHT_COLUMN_WIDTH - control_spacing)
@@ -119,17 +117,13 @@ impl DesktopOverlayApp {
                                 egui::vec2(RIGHT_COLUMN_WIDTH, 20.0),
                                 egui::Layout::left_to_right(egui::Align::Center),
                                 |ui| {
-                                    let connect_in_progress = self.connection_mgr.is_connecting();
-                                    let can_connect = !connection_locked
+                                    let connect_in_progress =
+                                        self.connection_mgr.is_connecting();
+                                    let can_connect = can_select
                                         && !connect_in_progress
                                         && self.connection_mgr.selected_device_index().is_some();
-                                    let button_label = if reconnecting {
-                                        "Reconnecting..."
-                                    } else if connect_in_progress {
-                                        "Connecting..."
-                                    } else {
-                                        "Connect"
-                                    };
+                                    let button_label =
+                                        self.connection_mgr.state().connect_button_label();
                                     ui.add_enabled_ui(can_connect, |ui| {
                                         if ui
                                             .add_sized(

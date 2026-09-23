@@ -24,6 +24,27 @@ impl DiscoveredDevice {
             self.base_name, self.protocol_label, self.vid, self.pid
         )
     }
+
+    /// User-friendly message explaining that the keyboard is locked and how to unlock it.
+    pub fn lock_message(&self) -> String {
+        format!(
+            "Device '{}' is locked. Please unlock it on the keyboard (e.g. with its unlock key combination) and try again.",
+            self.base_name
+        )
+    }
+
+    /// Creates a generic fallback device descriptor when device details are unknown.
+    pub fn anonymous() -> Self {
+        Self {
+            base_name: "Keyboard".to_string(),
+            vid: 0,
+            pid: 0,
+            driver_id: "unknown",
+            protocol_label: "unknown",
+            requires_layout_file: false,
+            spec: ConnectionSpec::Vial { vid: 0, pid: 0 },
+        }
+    }
 }
 
 /// Generic, protocol-agnostic snapshot of an attached USB HID interface.

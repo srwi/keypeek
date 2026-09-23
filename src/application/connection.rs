@@ -13,17 +13,18 @@ pub struct ConnectionRequest {
 }
 
 impl ConnectionRequest {
-    fn open_protocol(&self) -> Result<Box<dyn KeyboardProtocol>, String> {
-        let result = match &self.reopen {
+    fn open_protocol(&self) -> Result<Box<dyn KeyboardProtocol>, DeviceError> {
+        match &self.reopen {
             Some(reopener) => reopener.reopen(),
             None => crate::firmware::connect_protocol(&self.spec),
-        };
-        result.map_err(|e| format_connect_error(&self.spec, &e))
+        }
     }
 
-    fn pick_layout_name(&self, layout_names: &[String]) -> Result<String, String> {
+    fn pick_layout_name(&self, layout_names: &[String]) -> Result<String, DeviceError> {
         if layout_names.is_empty() {
-            return Err("Device did not provide any layouts".to_string());
+            return Err(DeviceError::Protocol(
+                "Device did not provide any layouts".to_string(),
+            ));
         }
 
         if let Some(name) = &self.layout_name {
@@ -36,13 +37,6 @@ impl ConnectionRequest {
     }
 }
 
-fn format_connect_error(_spec: &ConnectionSpec, error: &DeviceError) -> String {
-    match error {
-        DeviceError::DeviceLocked => error.to_string(),
-        _ => format!("Failed to connect to device: {error}"),
-    }
-}
-
 pub struct ConnectedState {
     pub keyboard: Keyboard,
     pub reopen: Option<Arc<dyn Reopener>>,
@@ -50,7 +44,7 @@ pub struct ConnectedState {
 }
 
 pub struct ConnectionTask {
-    rx: mpsc::Receiver<Result<ConnectedState, String>>,
+    rx: mpsc::Receiver<Result<ConnectedState, DeviceError>>,
 }
 
 impl ConnectionTask {
@@ -71,13 +65,13 @@ impl ConnectionTask {
         Self { rx }
     }
 
-    pub fn try_finish(&self) -> Option<Result<ConnectedState, String>> {
+    pub fn try_finish(&self) -> Option<Result<ConnectedState, DeviceError>> {
         match self.rx.try_recv() {
             Ok(result) => Some(result),
             Err(TryRecvError::Empty) => None,
-            Err(TryRecvError::Disconnected) => {
-                Some(Err("Background connection task failed".to_string()))
-            }
+            Err(TryRecvError::Disconnected) => Some(Err(DeviceError::Transport(
+                "Background connection task failed".to_string(),
+            ))),
         }
     }
 }
@@ -85,7 +79,7 @@ impl ConnectionTask {
 pub fn build_connected_state(
     request: ConnectionRequest,
     ui_wake: UiWake,
-) -> Result<ConnectedState, String> {
+) -> Result<ConnectedState, DeviceError> {
     let bundle = crate::firmware::bundle_for_spec(&request.spec);
     let editor_profile = bundle.create_profile();
     let presenter = bundle.create_presenter();
@@ -103,7 +97,7 @@ pub fn build_connected_state(
         ui_wake,
         presenter,
     )
-    .map_err(|e| format!("Failed to create keyboard: {e}"))?;
+    .map_err(|e| DeviceError::Protocol(format!("Failed to create keyboard: {e}")))?;
 
     Ok(ConnectedState {
         keyboard,

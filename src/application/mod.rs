@@ -9,7 +9,7 @@ pub mod ui_wake;
 
 pub use connection::{ConnectionRequest, ConnectionTask};
 pub use connection_manager::{
-    ConnectOutcome, ConnectionEvent, ConnectionStatus, DeviceConnectionManager,
+    ConnectOutcome, ConnectionEvent, ConnectionState, ConnectionStatus, DeviceConnectionManager,
 };
 pub use device_discovery::{
     discover_devices, DeviceDriverScanner, DiscoveredDevice, DiscoveryContext, HidDeviceInfo,
