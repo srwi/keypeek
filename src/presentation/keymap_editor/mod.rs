@@ -178,8 +178,7 @@ impl EditorState {
         self.error = Some(error.into());
     }
 
-    /// Requests window close. If the session has unsaved changes, starts a save operation
-    /// before closing. Returns `true` if closed immediately.
+    /// Requests to close the window. Saves unsaved changes first. Returns `true` if closed immediately.
     pub fn request_close(&mut self) -> bool {
         self.error = None;
         if self.dirty {
@@ -191,17 +190,17 @@ impl EditorState {
         }
     }
 
-    /// Returns `true` if the editor window is currently open (targeting a key).
+    /// Returns `true` if the editor window is open.
     pub fn is_open(&self) -> bool {
         self.target.is_some()
     }
 
-    /// Layer index of the currently targeted key, if any.
+    /// Target key layer index, if set.
     pub fn pinned_layer(&self) -> Option<usize> {
         self.target.as_ref().map(|t| t.layer_index)
     }
 
-    /// Returns `true` if the currently targeted key matches the given matrix position.
+    /// Returns `true` if the target key matches the matrix position.
     pub fn is_key_targeted(&self, row: usize, col: usize) -> bool {
         self.target
             .as_ref()
@@ -209,10 +208,6 @@ impl EditorState {
     }
 
     /// Sets the target key and loads its current binding into the draft.
-    ///
-    /// When opening the editor (no active target), the section containing the key's
-    /// current action is selected. When the editor is already open, the active view
-    /// (section and search query) stays unchanged.
     pub fn retarget(&mut self, keyboard: &Keyboard, target: EditTarget) {
         if self.closing {
             return;
@@ -372,14 +367,14 @@ impl EditorState {
         }
     }
 
-    /// Attempts to close the editor; if successful, releases the hardware edit lock.
+    /// Closes the editor and releases the edit lock.
     pub fn handle_close_request(&mut self, keyboard: &Keyboard) {
         if self.request_close() {
             keyboard.release_edit_lock();
         }
     }
 
-    /// Applies an action if it is different from the target's current binding.
+    /// Writes an action if it differs from current binding.
     pub(super) fn commit_action(
         &mut self,
         keyboard: &Keyboard,
@@ -391,7 +386,7 @@ impl EditorState {
         }
     }
 
-    /// Applies a staged binding if it is complete and different from the current key.
+    /// Writes a staged binding if complete and different from current key.
     pub(super) fn commit_staged(
         &mut self,
         keyboard: &Keyboard,
@@ -403,7 +398,7 @@ impl EditorState {
         }
     }
 
-    /// Draws the header row with layer switcher buttons spanning the full width.
+    /// Draws layer switcher buttons across the top row.
     fn draw_editor_header(
         &mut self,
         ui: &mut egui::Ui,
@@ -449,8 +444,8 @@ impl EditorState {
         };
 
         let (msg, is_spinner, is_retry) = match overlay {
-            EditorOverlay::Saving => ("Saving…", true, false),
-            EditorOverlay::AcquiringLock => ("Connecting…", true, false),
+            EditorOverlay::Saving => ("Saving...", true, false),
+            EditorOverlay::AcquiringLock => ("Connecting...", true, false),
             EditorOverlay::Failed => ("Connection failed", false, true),
         };
 
@@ -482,7 +477,7 @@ impl EditorState {
         self.start_task(PendingKind::Save, keyboard.save_keymap());
     }
 
-    /// Acquires the hardware edit lock if idle.
+    /// Acquires the hardware edit lock when idle.
     fn ensure_lock(&mut self, keyboard: &Keyboard) {
         if self.lock_state != EditLockState::Idle || self.pending.is_some() {
             return;
@@ -491,7 +486,7 @@ impl EditorState {
         self.start_task(PendingKind::AcquireLock, keyboard.acquire_edit_lock());
     }
 
-    /// Sends a write command to the device, or queues it if an operation is in progress.
+    /// Sends a write command, or queues it if a task is running.
     pub(super) fn apply_write(&mut self, keyboard: &Keyboard, target: EditTarget, action: KeySpec) {
         if self.pending.is_some() {
             self.queued = Some((target, action));
@@ -501,7 +496,7 @@ impl EditorState {
         self.start_task(PendingKind::Set, receiver);
     }
 
-    /// Polls active background operations and processes queued write commands.
+    /// Polls background tasks and handles queued writes.
     fn poll_pending_write(&mut self, ctx: &egui::Context, keyboard: &Keyboard) {
         let Some(task) = &self.pending else {
             return;

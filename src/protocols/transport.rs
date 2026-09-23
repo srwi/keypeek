@@ -1,4 +1,4 @@
-//! Raw hardware transport abstractions for USB/BLE HID devices.
+//! Hardware transport interface for USB and BLE HID devices.
 
 use super::DeviceError;
 use std::time::Duration;
@@ -8,30 +8,16 @@ use std::collections::VecDeque;
 #[cfg(test)]
 use std::sync::{Arc, Mutex};
 
-/// Port interface for communicating with raw HID device endpoints.
-///
-/// Implemented by native desktop USB HID adapters (via `hidapi`), browser WebHID
-/// adapters in WebAssembly builds, and in-memory mock transports for unit testing.
+/// Interface for raw HID device endpoints.
 pub trait RawHidTransport: Send {
     /// Writes raw output report bytes to the HID device.
     fn write_output_report(&mut self, data: &[u8]) -> Result<(), DeviceError>;
 
     /// Reads an incoming input report with the specified timeout.
-    ///
-    /// Returns:
-    /// - `Ok(Some(bytes))` if a packet was received.
-    /// - `Ok(None)` if no packet was received within the timeout.
-    /// - `Err(DeviceError)` if a transport I/O error occurred.
     fn read_input_report(&mut self, timeout: Duration) -> Result<Option<Vec<u8>>, DeviceError>;
 }
 
-/// In-memory mock implementation of [`RawHidTransport`] for unit testing.
-///
-/// Supports queuing incoming packets to be returned by `read_input_report`,
-/// and recording outgoing packets written by `write_output_report`.
-/// Cloning a `MockHidTransport` shares the same underlying queues, allowing
-/// tests to inspect written reports or push incoming reports while the transport
-/// is passed to a background thread or protocol instance.
+/// In-memory mock transport for testing.
 #[cfg(test)]
 #[derive(Default, Debug, Clone)]
 pub struct MockHidTransport {

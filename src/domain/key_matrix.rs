@@ -21,9 +21,7 @@ impl KeyMatrix {
         cols: usize,
         presenter: &dyn KeyPresenter,
     ) -> Self {
-        // Unnamed layers stay empty strings so the label fallback inside
-        // `behavior_to_layout_key` applies, exactly as the ZMK protocol passes
-        // names today.
+        // Unnamed layers default to empty strings.
         let layer_names: Vec<String> = snapshot
             .layers
             .iter()
@@ -65,8 +63,7 @@ impl KeyMatrix {
         &self.layers
     }
 
-    /// The rendered label. `None` covers both an absent binding slot and a
-    /// transparent binding (fall-through to lower layers).
+    /// Rendered label. Returns `None` for missing slots and transparent keys.
     pub fn get_key(&self, layer: usize, row: usize, col: usize) -> Option<&LayoutKey> {
         self.keys
             .get(layer)
@@ -110,8 +107,7 @@ impl KeyMatrix {
         }
     }
 
-    /// Determines the effective layer for the key at `(row, col)` given current
-    /// momentary and default layer bitmasks, taking layer transparency into account.
+    /// Finds the effective layer for `(row, col)` considering layer transparency.
     pub fn effective_layer(
         &self,
         layer_state: u32,
@@ -137,8 +133,7 @@ impl KeyMatrix {
         (0, active_layer_above)
     }
 
-    /// `HELD_MOD_SHIFT`/`HELD_MOD_RALT` bits OR'd over every pressed key's
-    /// `mod_mask`.
+    /// Bitwise OR of modifier masks for all currently pressed keys.
     pub fn held_mod_mask(
         &self,
         layout_keys: &[crate::domain::layout::Key],

@@ -1,6 +1,4 @@
-//! Key presentation abstraction and implementations.
-//!
-//! Converts semantic [`KeySpec`] domain objects into visual [`LayoutKey`] structures.
+//! Key presentation layer. Converts [`KeySpec`] domain objects into visual [`LayoutKey`] items.
 
 use crate::hid_labels::Modifiers;
 use crate::key_spec::{
@@ -10,13 +8,12 @@ use crate::key_spec::{
 };
 use crate::layout_key::{behavior_names, BorderStyle, KeycodeKind, Label, LayoutKey};
 
-/// Abstraction for rendering a semantic [`KeySpec`] into a visual [`LayoutKey`].
+/// Converts a [`KeySpec`] into a visual [`LayoutKey`].
 pub trait KeyPresenter: Send + Sync {
     fn present_key(&self, spec: &KeySpec, layer_names: &[String]) -> Option<LayoutKey>;
 }
 
-/// Baseline key presenter providing standard presentation for generic HID keys,
-/// modifiers, layers, and hardware controls across firmware families.
+/// Standard key presenter for generic HID keys, modifiers, and hardware controls.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct StandardKeyPresenter;
 
@@ -26,7 +23,7 @@ impl KeyPresenter for StandardKeyPresenter {
     }
 }
 
-/// Baseline implementation of key presentation.
+/// Standard presentation logic for key specifications.
 pub fn present_standard_key(spec: &KeySpec, layer_names: &[String]) -> Option<LayoutKey> {
     match spec {
         KeySpec::Transparent => None,

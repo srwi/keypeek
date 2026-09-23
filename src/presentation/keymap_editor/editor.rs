@@ -1,7 +1,6 @@
-//! Unified keymap editor central panel and category rendering.
+//! Keymap editor body and category rendering.
 //!
-//! Draws key candidate grids, parameter controls, and sidebar categories
-//! driven directly by domain [`KeySpec`] capabilities.
+//! Renders key candidate grids, parameters, and sidebar categories based on [`KeySpec`].
 
 use super::draft::{EditorSection, KeyDraft};
 use super::picker::{

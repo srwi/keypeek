@@ -170,22 +170,20 @@ pub enum WriteSupport {
     Staged,
 }
 
-/// Which firmware vocabulary the device's users are familiar with, for UI
+/// Communicates with a keyboard device.
 pub trait KeyboardProtocol: Send {
     fn get_layout_definition(&self) -> &KeyboardDefinition;
 
     fn read_keymap(&self) -> Result<crate::key_spec::KeymapSnapshot, DeviceError>;
 
-    /// Subscribes to live layer-state and key-press events emitted by the device.
-    /// The adapter manages its own background reading and keepalive heartbeats.
+    /// Subscribes to layer-state and key-press events from the device.
     fn subscribe_events(&mut self) -> Result<mpsc::Receiver<DeviceEvent>, DeviceError>;
 
     fn write_support(&self) -> WriteSupport {
         WriteSupport::None
     }
 
-    /// Writes one binding. `layer` carries the stable ZMK layer id (`layer_index`
-    /// is the position in the layer list, which QMK keys off instead).
+    /// Writes one key binding.
     fn set_key(
         &mut self,
         _layer: &crate::key_spec::LayerInfo,
@@ -197,13 +195,12 @@ pub trait KeyboardProtocol: Send {
         Err(DeviceError::Unsupported("write not supported".to_string()))
     }
 
-    /// ZMK: persist pending writes. Immediate protocols: `Ok(())`.
+    /// Persists pending writes to flash storage.
     fn save_keymap(&mut self) -> Result<(), DeviceError> {
         Ok(())
     }
 
-    /// Acquires an exclusive write lock ahead of key writes (e.g. ZMK Studio unlock).
-    /// Protocols without locking are ready immediately.
+    /// Acquires an exclusive write lock before key writes.
     fn acquire_edit_lock(&mut self) -> Result<(), DeviceError> {
         Ok(())
     }
@@ -219,7 +216,7 @@ pub trait KeyboardProtocol: Send {
         None
     }
 
-    /// Whether the layout can be switched while connected.
+    /// Returns whether the layout can be switched while connected.
     fn supports_live_layout_switching(&self) -> bool {
         false
     }

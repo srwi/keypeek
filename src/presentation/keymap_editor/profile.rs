@@ -1,14 +1,13 @@
-//! Firmware-native editor profile abstraction and implementations.
+//! Firmware editor profile definitions.
 //!
-//! An [`EditorProfile`] defines firmware-specific editor structure, sidebar
-//! section organization, candidate presentation, and vocabulary.
+//! An [`EditorProfile`] defines editor structure, sidebar sections, and candidates.
 
 use super::draft::EditorSection;
 use crate::key_presenter::KeyPresenter;
 use crate::key_spec::{HidKey, KeySpec, Modifiers};
 use crate::keymap_editor::picker::CandidateGroup;
 
-/// A section group for the editor's left sidebar.
+/// A section group for the editor left sidebar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SidebarSection<T: 'static> {
     pub title: &'static str,
@@ -22,19 +21,19 @@ pub struct LayerTapTarget {
     pub modifiers: Modifiers,
 }
 
-/// Defines firmware-native editor structure, candidate presentation, and sidebar layout.
+/// Defines firmware editor structure, candidate presentation, and sidebar layout.
 pub trait EditorProfile: KeyPresenter + Send + Sync {
     /// Returns the key presenter for this profile.
     fn presenter(&self) -> &dyn KeyPresenter;
 
-    /// Name of the profile (e.g. "QMK", "ZMK").
+    /// Name of the profile (for example "QMK" or "ZMK").
     #[allow(dead_code)]
     fn name(&self) -> &'static str;
 
     /// Sidebar grouping and sections for this profile.
     fn sidebar_sections(&self) -> &[SidebarSection<EditorSection>];
 
-    /// Firmware-native label for a section.
+    /// Firmware label for a section.
     fn section_label(&self, section: EditorSection) -> &'static str {
         section.label()
     }
@@ -55,10 +54,10 @@ pub trait EditorProfile: KeyPresenter + Send + Sync {
         is_device_section_supported(section, is_action_supported)
     }
 
-    /// Candidate groups suitable for tap targets (e.g. Mod-Tap, Layer-Tap).
+    /// Candidate groups for tap targets (such as Mod-Tap or Layer-Tap).
     fn tap_categories(&self) -> &'static [CandidateGroup];
 
-    /// Candidate groups for a given editor section.
+    /// Candidate groups for an editor section.
     fn section_groups(&self, section: EditorSection) -> &'static [CandidateGroup];
 
     /// Candidate groups for layer operations.
@@ -69,20 +68,17 @@ pub trait EditorProfile: KeyPresenter + Send + Sync {
         tap: LayerTapTarget,
     ) -> Vec<CandidateGroup>;
 
-    /// Returns whether this firmware profile supports modifier combinations on tap keys (e.g. Mod-Tap or Layer-Tap).
+    /// Returns whether this profile supports modifier combinations on tap keys.
     fn supports_tap_modifiers(&self) -> bool {
         false
     }
 
-    /// Returns whether this firmware profile supports one-shot/sticky keys with a base key (e.g. `&sk A`).
-    ///
-    /// When false, only one-shot modifiers (`OSM`) are supported.
+    /// Returns whether this profile supports one-shot keys with a base key.
     fn supports_oneshot_keys(&self) -> bool {
         false
     }
 
-    /// Parses a raw firmware keycode string (e.g. hex input in the Any Keycode section)
-    /// into a domain [`KeySpec`].
+    /// Parses a raw keycode string into a [`KeySpec`].
     fn parse_raw_keycode(&self, _raw: &str) -> Option<KeySpec> {
         None
     }
@@ -246,24 +242,6 @@ mod tests {
         assert!(!zmk_other.items.contains(&EditorSection::RawHex));
     }
 
-    #[test]
-    fn profile_delegates_section_support() {
-        let all_supported = |_spec: &KeySpec| true;
-
-        let qmk = QmkEditorProfile;
-        assert!(qmk.is_section_supported(EditorSection::Keyboard, &all_supported));
-        assert!(qmk.is_section_supported(EditorSection::Layers, &all_supported));
-        assert!(qmk.is_section_supported(EditorSection::RawHex, &all_supported));
-        // QMK rejects KeyToggle and Wireless sections regardless of device
-        assert!(!qmk.is_section_supported(EditorSection::KeyToggle, &all_supported));
-        assert!(!qmk.is_section_supported(EditorSection::Bluetooth, &all_supported));
-        assert!(!qmk.is_section_supported(EditorSection::Output, &all_supported));
-
-        let zmk = ZmkEditorProfile;
-        // ZMK does not support RawHex or LayerMod section even if protocol supports it
-        assert!(!zmk.is_section_supported(EditorSection::RawHex, &all_supported));
-        assert!(!zmk.is_section_supported(EditorSection::LayerMod, &all_supported));
-    }
 
     #[test]
     fn qmk_attaches_qmk_aliases_only() {

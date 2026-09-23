@@ -108,19 +108,19 @@ impl HidKey {
 /// How a layer activation behaves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum LayerActivation {
-    /// Layer is active only while key is held (e.g. QMK `MO`, ZMK `&mo`).
+    /// Active only while key is held (for example QMK `MO`, ZMK `&mo`).
     Momentary,
-    /// Key clicks on and off (e.g. QMK `TG`, ZMK `&tog`).
+    /// Toggles layer state on each press (for example QMK `TG`, ZMK `&tog`).
     Toggle,
-    /// Switches to layer and turns off other active layers (e.g. QMK `TO`, ZMK `&to`).
+    /// Switches to layer and clears other active layers (for example QMK `TO`, ZMK `&to`).
     To,
-    /// Layer activates for the next single keypress, then reverts (e.g. QMK `OSL`, ZMK `&sl`).
+    /// Activates layer for the next single keypress, then reverts (for example QMK `OSL`, ZMK `&sl`).
     Sticky,
-    /// Layer activates momentarily while applying modifiers (e.g. QMK `LM(layer, mod)`).
+    /// Momentary layer activation that also applies modifiers (for example QMK `LM(layer, mod)`).
     LayerMod(Modifiers),
-    /// Default layer switch (e.g. QMK `DF`).
+    /// Switches the default layer (for example QMK `DF`).
     Default,
-    /// Tap-toggle: tap N times to toggle, hold for momentary (e.g. QMK `TT(layer)`).
+    /// Tap to toggle, hold for momentary activation (for example QMK `TT(layer)`).
     TapToggle,
 }
 
@@ -290,30 +290,30 @@ pub struct CustomBinding {
     pub param2: Option<CustomParam>,
 }
 
-/// Normalized, firmware-agnostic description of an assigned key.
+/// Firmware-independent key assignment description.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum KeySpec {
-    /// Transparent slot (falls through to lower layers).
+    /// Transparent slot that falls through to lower layers.
     Transparent,
-    /// Unbound key / no-op.
+    /// Unbound key or no-op.
     None,
-    /// Standard key press with optional modifiers (e.g. `Ctrl+A`).
+    /// Standard key press with optional modifiers (for example `Ctrl+A`).
     KeyPress {
         key: HidKey,
         modifiers: Modifiers,
     },
-    /// Key toggle (locks key in pressed state until toggled again).
+    /// Key toggle that stays pressed until toggled again.
     KeyToggle {
         key: HidKey,
         modifiers: Modifiers,
     },
-    /// Tap produces a key with optional modifiers, holding activates a layer (e.g. `LT(1, KC_SPC)`).
+    /// Tap sends key with modifiers; hold activates a layer (for example `LT(1, KC_SPC)`).
     LayerTap {
         layer: u8,
         tap: HidKey,
         tap_modifiers: Modifiers,
     },
-    /// Tap produces a key with optional modifiers, holding acts as a modifier (e.g. `MT(MOD_LCTL, KC_ENT)`).
+    /// Tap sends key with modifiers; hold acts as a modifier (for example `MT(MOD_LCTL, KC_ENT)`).
     ModTap {
         hold: Modifiers,
         tap: HidKey,
@@ -324,7 +324,7 @@ pub enum KeySpec {
         layer: u8,
         activation: LayerActivation,
     },
-    /// One-shot / sticky modifier or key.
+    /// One-shot or sticky modifier or key.
     StickyKey {
         key: Option<HidKey>,
         modifiers: Modifiers,
@@ -333,14 +333,14 @@ pub enum KeySpec {
     CapsWord,
     KeyRepeat,
     GraveEscape,
-    /// Hardware & connectivity controls
+    /// Hardware and connectivity controls
     Bluetooth(BluetoothAction),
     Output(OutputTarget),
     Power(PowerAction),
     Lighting(LightingAction),
     Audio(AudioAction),
     Mouse(MouseAction),
-    /// Vendor/firmware-specific user extensions
+    /// Vendor-specific custom extensions
     Custom(CustomBinding),
 }
 

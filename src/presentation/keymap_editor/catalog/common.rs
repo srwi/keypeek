@@ -1,8 +1,6 @@
-//! Reusable candidate key builders for keymap editor profiles.
+//! Common candidate key builders for keymap editor profiles.
 //!
-//! Provides firmware-neutral builders for constructing key candidate groups
-//! represented as pure [`KeySpec`] domain objects. Profiles provide their
-//! own usage sets and firmware-specific aliases.
+//! Provides builders for key candidate groups represented as [`KeySpec`] objects.
 
 use crate::hid_labels::Modifiers;
 use crate::key_presenter::KeyPresenter;
@@ -18,7 +16,7 @@ pub fn action_candidate(spec: KeySpec, names: &[&str], presenter: &dyn KeyPresen
     Candidate::from_action(spec, presenter, &[]).with_search_tokens(names.iter().copied())
 }
 
-/// Attaches standard friendly aliases (e.g. "enter", "ctrl", "esc") to keyboard usages.
+/// Attaches common search aliases to keyboard usages.
 pub fn attach_friendly_keyboard_aliases(cand: Candidate, id: u16) -> Candidate {
     let aliases: &[&str] = match id {
         0x28 => &["enter", "return"],

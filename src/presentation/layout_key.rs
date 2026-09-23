@@ -1,7 +1,7 @@
-/// Symbols for the four modifier keys. macOS uses native glyphs (⌃ ⇧ ⌥ ⌘);
-/// Windows/Linux keep ⇧ for Shift but use shrinkable text names for the rest.
+/// Symbols for the four modifier keys. macOS uses native glyphs;
+/// Windows/Linux keep arrow glyph for Shift but use text names for the rest.
 pub mod modifier_symbols {
-    /// Full/short display names for a modifier (same glyph for both on glyph modifiers).
+    /// Full and short display names for a modifier.
     pub struct ModName {
         pub full: &'static str,
         pub short: &'static str,
@@ -59,7 +59,7 @@ pub mod modifier_symbols {
         name: "Super",
     };
 
-    /// Chord separator: macOS packs glyphs tightly (⌃⇧⌥⌘); elsewhere "+" separates text names.
+    /// Chord separator: macOS packs glyphs together; other platforms use "+" between names.
     #[cfg(target_os = "macos")]
     const MOD_SEP: &str = "";
     #[cfg(not(target_os = "macos"))]
@@ -72,8 +72,7 @@ pub mod modifier_symbols {
             && chars.next().is_none()
     }
 
-    /// Build a standalone modifier key: glyph modifiers go in `symbol`, text names in `tap`.
-    /// `mod_mask` is `HELD_MOD_SHIFT`/`HELD_MOD_RALT`, or 0. See their doc comments.
+    /// Builds a modifier key definition.
     pub fn modifier_key(m: &ModName, mod_mask: u16) -> super::LayoutKey {
         let is_sym = is_glyph(m.full);
         super::LayoutKey {
@@ -89,7 +88,7 @@ pub mod modifier_symbols {
         }
     }
 
-    /// Combined label for a set of held modifiers (e.g. "Ctrl+⇧"), with a short form to shrink.
+    /// Combined label for a set of held modifiers, with a short form.
     pub fn glyphs(ctrl: bool, shift: bool, alt: bool, gui: bool) -> super::Label {
         let mut full: Vec<&str> = Vec::new();
         let mut short: Vec<&str> = Vec::new();
@@ -113,8 +112,7 @@ pub mod modifier_symbols {
     }
 }
 
-/// Behavior display names for the top strip, as `(full, short)` pairs. Shared by
-/// the ZMK and QMK label producers so both render the same wording.
+/// Behavior display names for the top strip as (full, short) pairs.
 pub mod behavior_names {
     use super::Label;
 
@@ -138,8 +136,6 @@ pub mod behavior_names {
         };
     }
 
-    // Only behaviors that get a top-strip legend live here; pure layer-switch
-    // behaviors are shown by their border alone and need no entry.
     behavior_name!(MOD_TAP, "Mod-Tap", "MT");
     behavior_name!(ONE_SHOT_MOD, "One-Shot Mod", "OSM");
     behavior_name!(STICKY_KEY, "Sticky Key", "SK");
@@ -158,20 +154,15 @@ pub enum KeycodeKind {
     Special,
 }
 
-/// Outline style hinting *how* a layer activates: persistent changes get a solid
-/// outline, sticky/one-shot get a striped one, momentary keeps the default border.
-/// Behaviors that activate a layer the same way deliberately share a style.
+/// Outline style that shows how a layer activates.
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub enum BorderStyle {
-    /// Default thin border: plain keys, non-layer behaviors, and momentary/while-held
-    /// layer keys (momentary / layer-tap / layer-mod / layer-tap-toggle).
+    /// Default border for regular keys and momentary layer keys.
     #[default]
     None,
-    /// Solid, medium-width outline: the layer change persists after release
-    /// (toggle / to-layer / default-layer).
+    /// Solid outline for persistent layer changes (toggle, to-layer, default-layer).
     Solid,
-    /// Striped outline: the layer stays active for one keypress, then reverts
-    /// (one-shot / sticky layer).
+    /// Dashed outline for temporary layer changes (one-shot or sticky layer).
     Dashed,
 }
 
@@ -204,20 +195,14 @@ impl Label {
     }
 }
 
-/// `mod_mask` bit for a key that acts as a live Shift source while held (a
-/// standalone Shift key, or the hold side of a Shift-carrying Mod-Tap/
-/// One-Shot-Mod/Layer-Mod). The Single-legend live preview uses it to detect
-/// "Shift is currently held", independent of the keyboard's protocol.
+/// Bit flag for keys that activate Shift while held.
 pub const HELD_MOD_SHIFT: u16 = 0x01;
-/// Same as `HELD_MOD_SHIFT`, but for RAlt (the layout's Level-3 shift, on
-/// layouts that define one).
+/// Bit flag for keys that activate RAlt while held.
 pub const HELD_MOD_RALT: u16 = 0x02;
 
-/// `mod_mask` contribution of a *plain* Alt key (`KC_LALT` / ZMK `LEFT_ALT`).
-/// On macOS both left and right Alt are Option, a genuine text-producing
-/// Level-3 shift (⌥G → ©), so plain Alt triggers the live RAlt preview too.
-/// On Windows/Linux plain Alt is purely a shortcut modifier and contributes
-/// nothing.
+/// `mod_mask` contribution of a plain Alt key (`KC_LALT` / ZMK `LEFT_ALT`).
+/// On macOS both Alt keys act as Option (level-3 shift), so plain Alt triggers
+/// the live RAlt preview. On other platforms plain Alt contributes nothing.
 #[cfg(target_os = "macos")]
 pub const PLAIN_ALT_MOD_MASK: u16 = HELD_MOD_RALT;
 #[cfg(not(target_os = "macos"))]
@@ -235,23 +220,16 @@ pub struct LayoutKey {
     /// for Layer-Tap). `None` when there is no argument.
     pub argument: Option<Label>,
 
-    /// Shifted character shown above `tap` (e.g. "!" for KC_1), and in
-    /// Single-legend mode, what's shown instead of `tap` while Shift is held.
+    /// Shifted character shown above `tap`, or in place of `tap` while Shift is held.
     pub shifted: Option<String>,
 
-    /// RAlt-shifted character (e.g. "[" for a German RAlt+8), same role
-    /// as `shifted` but for RAlt. Only ever set alongside `shifted` (both come
-    /// from the same OS-layout resolution pass over a symbol/digit key).
+    /// RAlt-shifted character, shown while RAlt is held.
     pub ralt: Option<String>,
 
-    /// Character produced under Shift+RAlt (e.g. "ˇ" for a German
-    /// RAlt+Shift+9), same role as `ralt` but with Shift additionally held.
-    /// Only set alongside `ralt`, from the same resolution pass.
+    /// Character produced when both Shift and RAlt are held.
     pub ralt_shifted: Option<String>,
 
-    /// `HELD_MOD_SHIFT`/`HELD_MOD_RALT` bits (OR'd) this key contributes
-    /// while physically held. `None` for keys that are not a modifier
-    /// source. Read by the Single-legend live preview, ignored otherwise.
+    /// Modifier mask bit flags contributed while key is held. None for non-modifier keys.
     pub mod_mask: Option<u16>,
 
     /// Symbol/icon for the key (using Phosphor icon font)
@@ -260,7 +238,7 @@ pub struct LayoutKey {
     /// Visual classification for coloring
     pub kind: KeycodeKind,
 
-    /// Layer this key activates (for MO, LT, TO, etc.) - used for coloring
+    /// Layer this key activates (used for coloring).
     pub layer_ref: Option<u8>,
 
     /// Outline style hinting how this key activates a layer. `None` for plain keys.

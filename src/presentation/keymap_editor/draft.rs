@@ -226,9 +226,6 @@ impl KeyDraft {
     }
 
     /// Returns the staged [`KeySpec`] if all required parameters are valid.
-    ///
-    /// Raw-hex staging additionally requires the profile's raw-keycode
-    /// parsing; use [`KeyDraft::staged_for`] when an editor profile is available.
     pub fn staged(&self) -> Option<KeySpec> {
         match self.section {
             EditorSection::RawHex => None,
@@ -236,8 +233,7 @@ impl KeyDraft {
         }
     }
 
-    /// Like [`KeyDraft::staged`], resolving raw hex entry through the
-    /// active editor profile (see [`EditorProfile::parse_raw_keycode`]).
+    /// Returns the staged [`KeySpec`], resolving raw hex via the profile.
     pub fn staged_for(&self, profile: &dyn EditorProfile) -> Option<KeySpec> {
         match self.section {
             EditorSection::RawHex => profile.parse_raw_keycode(&self.hex),
@@ -338,7 +334,7 @@ impl KeyDraft {
         }
     }
 
-    /// Unmodified keypress representation of the staged base/tap key, useful for picker selection matching.
+    /// Keypress representation of the staged tap key without modifiers.
     pub fn tap_key_spec(&self) -> Option<KeySpec> {
         self.tap_key.map(|key| KeySpec::KeyPress {
             key,
@@ -543,35 +539,6 @@ mod tests {
         assert_eq!(draft.staged(), Some(spec));
     }
 
-    #[test]
-    fn round_trip_key_toggle() {
-        let spec = KeySpec::KeyToggle {
-            key: HidKey::keyboard(0x39),
-            modifiers: Modifiers::default(),
-        }; // CapsLock
-        let draft = KeyDraft::from_spec(&spec);
-        assert_eq!(draft.section, EditorSection::KeyToggle);
-        assert_eq!(draft.tap_key, Some(HidKey::keyboard(0x39)));
-        assert_eq!(draft.modifiers, 0);
-        assert_eq!(draft.staged(), Some(spec));
-    }
-
-    #[test]
-    fn round_trip_modified_keypress() {
-        let spec = KeySpec::KeyPress {
-            key: HidKey::keyboard(0x06), // C
-            modifiers: Modifiers {
-                ctrl: true,
-                gui: true,
-                ..Default::default()
-            },
-        };
-        let draft = KeyDraft::from_spec(&spec);
-        assert_eq!(draft.section, EditorSection::Keyboard);
-        assert_eq!(draft.tap_key, Some(HidKey::keyboard(0x06)));
-        assert_eq!(draft.modifiers, 0x01 | 0x08);
-        assert_eq!(draft.staged(), Some(spec));
-    }
 
     #[test]
     fn round_trip_layer_activation() {

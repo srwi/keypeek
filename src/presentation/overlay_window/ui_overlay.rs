@@ -14,7 +14,7 @@ impl OverlayApp {
         size: f32,
         hit_test_enabled: bool,
     ) {
-        // Pinned while the editor is targeting a specific layer; otherwise automatic (active).
+        // Pinned while editor targets a specific layer; otherwise follows active layer.
         let pinned = self.editor.pinned_layer();
         let style = self.paint_style(size);
 
@@ -25,8 +25,7 @@ impl OverlayApp {
         let overlay_rect = overlay_space.1;
         let window_pos = overlay_rect.min;
 
-        // Route pointer input through egui so a click on a key under an
-        // overlapping settings window is not misread.
+        // Route pointer input through egui to prevent misreading clicks under settings.
         let overlay_response = ui.interact(
             overlay_rect,
             ui.id().with("overlay_keys"),
@@ -35,9 +34,7 @@ impl OverlayApp {
 
         let mut hovered_key: Option<(usize, usize, usize)> = None;
 
-        // Only walk the matrix for live modifier state when the preview can
-        // actually use it; same reasoning as `is_key_pressed` elsewhere.
-        // A pinned layer renders flat, so the live preview does not apply.
+        // Modifier state only applies to live preview on non-pinned layers.
         let live_preview_active =
             pinned.is_none() && self.settings.active.legend_mode == LegendMode::SingleLive;
         let shift_held = live_preview_active && keyboard.is_shift_held();
@@ -49,8 +46,7 @@ impl OverlayApp {
                 None => keyboard.get_effective_key_layer(key.row, key.col),
             };
 
-            // A pinned transparent binding (a slot with no label) renders as a
-            // dimmed empty key; an absent slot is a plain empty key.
+            // Pinned transparent slot renders dimmed empty; absent slot is plain empty.
             let transparent = pinned.is_some()
                 && keyboard
                     .get_action(effective_layer as usize, key.row, key.col)
@@ -89,14 +85,12 @@ impl OverlayApp {
             let angle = key.r.to_radians();
             let center = rect.center();
 
-            // Only keys with an existing binding slot are clickable; a
-            // transparent slot counts, an absent one does not.
+            // Only keys with a binding slot can be clicked.
             let clickable = hit_test_enabled
                 && keyboard
                     .get_action(effective_layer as usize, key.row, key.col)
                     .is_some();
-            // Hover tests the visible key face: `paint` shrinks the raw
-            // cell by its 0.06*unit margin before drawing.
+            // Test visible face (shrunk by 0.06 unit margin).
             let face = rect.shrink(0.06 * size);
             let hovered = clickable
                 && overlay_response

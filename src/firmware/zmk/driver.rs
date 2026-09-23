@@ -171,8 +171,8 @@ impl KeyboardProtocol for ZmkProtocol {
             )));
         }
 
-        // ZMK's matrix is 1×N: the column is the key position, and the write
-        // RPC addresses layers by their stable id.
+        // ZMK matrix is 1xN: column is key position, and write
+        // RPC addresses layers by stable id.
         self.with_session(|session| session.set_key(layer.id, col as i32, behavior))?;
         self.update_cached_action(layer_index, row, col, spec.clone());
         Ok(())

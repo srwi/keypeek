@@ -400,13 +400,13 @@ impl Settings {
     }
 }
 
-/// Persistent storage port for application settings.
+/// Storage interface for application settings.
 pub trait SettingsStore: Send + Sync {
     fn load(&self) -> Settings;
     fn save(&self, settings: &Settings) -> Result<(), String>;
 }
 
-/// In-memory settings store, useful for tests, fallbacks, and environments without disk access.
+/// In-memory settings store for tests and environments without disk access.
 #[derive(Debug)]
 pub struct MemorySettingsStore {
     settings: RwLock<Settings>,

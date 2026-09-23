@@ -1,4 +1,4 @@
-//! WebHID-specific UI chrome, pairing flows, and event orchestration.
+//! Web UI chrome, device pairing, and event orchestration.
 
 use std::sync::mpsc;
 use std::sync::Arc;
@@ -19,7 +19,7 @@ pub fn clear_color() -> egui::Rgba {
     egui::Rgba::from_rgb(0.118, 0.118, 0.180)
 }
 
-/// Web-specific state holding active async channels and pending VIA connection data.
+/// Web platform state holding async channels and pending connection data.
 #[derive(Default)]
 pub struct WebPlatform {
     pub(crate) pairing_rx: Option<mpsc::Receiver<Result<Option<WebConnectOutcome>, DeviceError>>>,
@@ -42,7 +42,7 @@ impl OverlayApp {
         clear_color()
     }
 
-    /// Update phase for Web: polls WebHID and Web Serial pairing channels and file picker channels.
+    /// Web update step: polls pairing channels and file picker channels.
     pub(super) fn update_platform(&mut self, _ctx: &egui::Context, _host: &mut dyn OverlayHost) {
         if let Some(rx) = &self.platform.pairing_rx {
             match rx.try_recv() {
@@ -112,10 +112,10 @@ impl OverlayApp {
         }
     }
 
-    /// WebHID does not use blocking file dialogs; pending layouts use the modal.
+    /// WebHID does not use blocking file dialogs.
     pub(super) fn pick_layout_file(&mut self) {}
 
-    /// Finalizes connection when a WebHID device successfully connects.
+    /// Completes connection when a web device connects.
     pub(super) fn handle_connected_web_device(&mut self, connected: ConnectedWebDevice) {
         let idx = self.connection_mgr.add_device(connected.device.clone());
         self.connection_mgr.select_device(idx);
@@ -126,7 +126,7 @@ impl OverlayApp {
         self.platform.pending_via = None;
     }
 
-    /// Dispatches an async browser HID permission request to pair a device.
+    /// Prompts user to pair a WebHID device.
     pub fn request_web_hid_pairing(&mut self) {
         let (tx, rx) = mpsc::channel();
         self.platform.pairing_rx = Some(rx);
@@ -139,7 +139,7 @@ impl OverlayApp {
         });
     }
 
-    /// Dispatches an async browser Web Serial permission request to connect to a ZMK Studio keyboard.
+    /// Prompts user to connect a ZMK Studio keyboard over Web Serial.
     pub fn request_web_serial_pairing(&mut self) {
         let (tx, rx) = mpsc::channel();
         self.platform.pairing_rx = Some(rx);
@@ -156,7 +156,7 @@ impl OverlayApp {
         });
     }
 
-    /// Triggers browser native file chooser for VIA layout JSON files.
+    /// Opens the browser file chooser for VIA layout JSON files.
     pub fn trigger_web_layout_file_picker(&mut self) {
         let (tx, rx) = mpsc::channel();
         self.platform.web_file_rx = Some(rx);
@@ -164,7 +164,7 @@ impl OverlayApp {
         trigger_web_file_picker(tx, ui_wake);
     }
 
-    /// Connects a pending VIA device once its layout JSON content has been selected.
+    /// Connects a pending VIA device with the selected layout JSON.
     pub fn connect_pending_via_with_json(&mut self, json_content: String) {
         let Some((device, transport)) = self.platform.pending_via.take() else {
             return;
@@ -188,8 +188,7 @@ impl OverlayApp {
         });
     }
 
-    /// Renders the complete web interface: fixed top bar, resizable left sidebar for editing,
-    /// central keyboard overlay canvas, and modal dialogs.
+    /// Renders the web interface: top bar, editor sidebar, overlay canvas, and modals.
     pub(super) fn render_web(&mut self, ui: &mut egui::Ui) {
         let connected = self.connection_mgr.connected_pair();
         let keyboard_ref = connected.as_ref().map(|(k, _)| k.as_ref());
@@ -273,7 +272,7 @@ impl OverlayApp {
         self.render_zmk_telemetry_modal(&ctx);
     }
 
-    /// Fixed top bar with title, layout switcher, legend mode, and status.
+    /// Top bar with title, layout switcher, legend mode, and status.
     fn render_web_top_bar(
         &mut self,
         ui: &mut egui::Ui,
@@ -286,7 +285,7 @@ impl OverlayApp {
                 ui.separator();
                 github_link(ui);
 
-                // Live layout switching (only when multiple layouts are available)
+                // Layout switching (shown when multiple layouts exist).
                 if let Some(kbd) = keyboard {
                     if kbd.supports_multiple_layouts() {
                         ui.separator();
@@ -307,9 +306,8 @@ impl OverlayApp {
                     }
                 }
 
-                // Right-aligned legends option, connection status, and alerts
+                // Controls, connection status, and alerts on the right.
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    // Legend mode selector (anchored to the far right)
                     egui::ComboBox::from_id_salt("web_legend_mode")
                         .selected_text(self.settings.draft.legend_mode.to_string())
                         .show_ui(ui, |ui| {
@@ -357,13 +355,12 @@ impl OverlayApp {
                         }
                     }
 
-                    // Inline dismissible alerts
                     if let Some(err) = &self.ui.settings_error {
-                        if render_alert_chip(ui, err, "⚠", egui::Color32::LIGHT_RED) {
+                        if render_alert_chip(ui, err, "!", egui::Color32::LIGHT_RED) {
                             self.ui.settings_error = None;
                         }
                     } else if let Some(notice) = &self.ui.settings_warning {
-                        if render_alert_chip(ui, notice, "ℹ", egui::Color32::KHAKI) {
+                        if render_alert_chip(ui, notice, "i", egui::Color32::KHAKI) {
                             self.ui.settings_warning = None;
                         }
                     }
@@ -374,7 +371,7 @@ impl OverlayApp {
         self.sync_visual_settings();
     }
 
-    /// Centered modal asking for layout JSON when a VIA keyboard is connected.
+    /// Modal prompt asking for VIA layout JSON.
     fn render_web_layout_modal(&mut self, ctx: &egui::Context) {
         let Some((device, _)) = &self.platform.pending_via else {
             return;
@@ -423,7 +420,7 @@ impl OverlayApp {
         }
     }
 
-    /// Modal prompt asking to authorize WebHID companion telemetry for a newly connected ZMK keyboard.
+    /// Modal prompt asking to authorize WebHID companion telemetry for ZMK.
     fn render_zmk_telemetry_modal(&mut self, ctx: &egui::Context) {
         if self.platform.pending_zmk_telemetry.is_none() {
             return;
@@ -473,10 +470,10 @@ impl OverlayApp {
     }
 }
 
-/// Renders a clickable dismiss chip in the top bar for notifications or errors.
+/// Renders a clickable chip in the top bar to dismiss notifications or errors.
 fn render_alert_chip(ui: &mut egui::Ui, text: &str, icon: &str, color: egui::Color32) -> bool {
     ui.separator();
-    ui.button(egui::RichText::new(format!("{icon} {text} ✕")).color(color))
+    ui.button(egui::RichText::new(format!("{icon} {text} x")).color(color))
         .on_hover_text("Click to dismiss")
         .clicked()
 }

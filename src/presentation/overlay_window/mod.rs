@@ -102,8 +102,7 @@ impl OverlayApp {
         }
     }
 
-    /// Closes the editor window immediately and releases any open write lock on the
-    /// connected keyboard, if one is present.
+    /// Closes the editor window and releases any device write lock.
     pub(crate) fn close_editor(&mut self) {
         self.editor.reset();
         if let Some(keyboard) = self.connection_mgr.connected_keyboard() {
@@ -111,7 +110,7 @@ impl OverlayApp {
         }
     }
 
-    /// Switches the active keyboard layout, updating preferred layout state and capturing errors.
+    /// Switches the active keyboard layout and saves the preferred layout name.
     pub(crate) fn switch_layout(&mut self, name: &str) {
         if let Some(keyboard) = self.connection_mgr.connected_keyboard() {
             if let Err(e) = keyboard.switch_layout(name) {
@@ -123,7 +122,7 @@ impl OverlayApp {
         }
     }
 
-    /// Wakes the UI up when the overlay is due to appear or disappear on its own.
+    /// Schedules a repaint when the overlay visibility timer expires.
     fn schedule_overlay_repaint(&self, ctx: &egui::Context) {
         if self.is_any_window_open() {
             return;
@@ -140,21 +139,17 @@ impl OverlayApp {
 }
 
 impl OverlayApp {
-    /// Backdrop color the host clears to before egui paints: dimmed while either
-    /// the settings or keymap editor window is open, otherwise transparent so only
-    /// the overlay is visible (or canvas color on web).
+    /// Background color before egui paints.
     pub fn clear_color(&self) -> egui::Rgba {
         self.platform_clear_color()
     }
 
-    /// A [`KeyPaintStyle`] tuned for the given unit size (pixels per key-unit):
-    /// `active.size`-scaled keys on the overlay, miniature ones in pickers.
+    /// Creates a paint style for the specified key size.
     pub(crate) fn paint_style(&self, unit: f32) -> crate::key_paint::KeyPaintStyle {
         crate::key_paint::KeyPaintStyle::from_settings(&self.settings.active).with_unit(unit)
     }
 
-    /// Update phase: processes requests, background task completions, dialog updates,
-    /// and window passthrough state before any UI rendering occurs.
+    /// Updates state, handles background tasks, and processes input before drawing.
     fn update(&mut self, ctx: &egui::Context, host: &mut dyn OverlayHost) {
         if let Some(keyboard) = self.connection_mgr.connected_keyboard() {
             keyboard.poll();

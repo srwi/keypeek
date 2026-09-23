@@ -1,7 +1,7 @@
-//! Extensible device discovery for keyboards using protocol-provided scanners.
+//! Keyboard device discovery.
 //!
-//! Orchestrates discovery across registered [`DeviceDriverScanner`] implementations,
-//! managing shared transport snapshots (e.g. USB HID devices) and conflict resolution.
+//! Scans for devices using registered [`DeviceDriverScanner`] implementations,
+//! sharing transport snapshots (for example USB HID devices) across scanners.
 
 use crate::protocols::ConnectionSpec;
 use std::collections::HashSet;

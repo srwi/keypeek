@@ -67,11 +67,11 @@ impl OverlayApp {
         }
     }
 
-    /// Renders the Connection section inside KeyPeek Settings window on desktop.
+    /// Draws the connection section in desktop settings.
     fn draw_connection_settings(&mut self, ui: &mut egui::Ui) {
         titled_group(ui, "Connection", |ui| {
             let reconnecting = self.connection_mgr.is_reconnecting();
-            // Keep the device/protocol pickers locked while connected or reconnecting.
+            // Lock device picker while connected or reconnecting.
             let connection_locked = self.connection_mgr.is_locked();
             let selected_device = self.connection_mgr.selected_device().cloned();
             let selected_device_text = selected_device

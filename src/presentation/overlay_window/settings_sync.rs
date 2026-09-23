@@ -4,7 +4,7 @@ use crate::domain::visibility::OverlayConfig;
 use egui::Align2;
 
 impl OverlayApp {
-    /// The active settings as the overlay timing values `Keyboard` runs on.
+    /// Active overlay timing and layer configuration.
     pub(super) fn overlay_config(&self) -> OverlayConfig {
         OverlayConfig {
             timeout_ms: self.settings.active.timeout,
@@ -13,8 +13,7 @@ impl OverlayApp {
         }
     }
 
-    /// Commits modified draft settings to active settings, updates connected keyboard config,
-    /// and persists on WASM.
+    /// Commits modified draft settings to active settings and updates connected keyboard config.
     pub(super) fn sync_visual_settings(&mut self) {
         if self.settings.commit_draft() {
             if let Some(keyboard) = self.connection_mgr.connected_keyboard() {

@@ -1,26 +1,26 @@
 use std::time::Duration;
 use web_time::Instant;
 
-/// The active layers as seen through the visible-layer bitmask (bit `i` selects layer
-/// `i`; see `Settings::visible_layers`).
+/// Active layers seen through the visible-layer bitmask.
+/// Bit `i` selects layer `i` (see `Settings::visible_layers`).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ActiveLayers {
     /// A selected layer above the base layer is held.
     Selected,
-    /// An active layer is masked out.
+    /// An active layer is hidden by the mask.
     Excluded,
-    /// Nothing is masked out and no selected layer is held, so the timeout decides how
-    /// long the overlay lingers.
+    /// No selected layer is held and nothing is masked out.
+    /// The timeout controls how long the overlay stays visible.
     Base,
 }
 
 impl ActiveLayers {
     pub fn classify(layer_state: u32, default_layer_state: u32, visible_layers: u32) -> Self {
-        // The base layer is always active underneath the momentary and default layers.
+        // The base layer is always active below momentary and default layers.
         let active = layer_state | default_layer_state | 1;
 
-        // Holding the base layer is not a reason to keep the overlay up; the timeout
-        // governs that instead, so it never counts as a selected layer.
+        // Holding the base layer does not keep the overlay visible.
+        // The timeout controls base layer visibility instead.
         let held_visible = layer_state & visible_layers & !1 != 0;
         let any_hidden = active & !visible_layers != 0;
         match (held_visible, any_hidden) {
@@ -31,19 +31,19 @@ impl ActiveLayers {
     }
 }
 
-/// The overlay's tuning knobs, all changeable while connected.
+/// Overlay timing and layer filter settings.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct OverlayConfig {
-    /// How long the overlay lingers once no selected layer is held; negative never hides.
+    /// Time in ms the overlay stays visible after layer release. Negative values keep it visible.
     pub timeout_ms: i64,
-    /// How long a layer has to be held before the overlay appears.
+    /// Time in ms a layer must be held before the overlay appears.
     pub activation_delay_ms: u32,
-    /// Bit `i` keeps the overlay up while layer `i` is active; see `ActiveLayers`.
+    /// Bit `i` keeps the overlay visible while layer `i` is active.
     pub visible_layers: u32,
 }
 
-/// The stretch of time the overlay is shown for: from `from` until `until`, where `None`
-/// keeps it up until the layer state changes again.
+/// Time interval during which the overlay is visible.
+/// `until = None` keeps the overlay visible until the layer state changes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct VisibilityWindow {
     pub from: Instant,
@@ -51,7 +51,7 @@ pub struct VisibilityWindow {
 }
 
 impl VisibilityWindow {
-    /// An empty window, keeping the overlay hidden until the next layer state arrives.
+    /// Hidden window until the next layer state update.
     pub fn hidden(now: Instant) -> Self {
         Self {
             from: now,
@@ -63,7 +63,7 @@ impl VisibilityWindow {
         now >= self.from && self.until.is_none_or(|until| now < until)
     }
 
-    /// How long until the overlay appears or disappears on its own.
+    /// Time until the overlay visibility state changes.
     pub fn changes_in(&self, now: Instant) -> Option<Duration> {
         let next = if now < self.from {
             Some(self.from)
@@ -74,7 +74,7 @@ impl VisibilityWindow {
     }
 }
 
-/// The window a freshly arrived layer state puts the overlay in.
+/// Computes the new visibility window when layer state changes.
 pub fn next_visibility_window(
     active: ActiveLayers,
     previous: ActiveLayers,
@@ -82,13 +82,12 @@ pub fn next_visibility_window(
     now: Instant,
     config: OverlayConfig,
 ) -> VisibilityWindow {
-    // A held layer whose activation delay has not elapsed yet.
+    // True if a layer is held but its activation delay has not elapsed.
     let pending = now < current.from;
 
     match active {
         ActiveLayers::Selected => VisibilityWindow {
-            // A window still arming or already up keeps its start: layers added mid-hold
-            // must not restart the countdown, nor blink a visible overlay away.
+            // Keep existing start time if already arming or visible.
             from: if pending || current.is_visible(now) {
                 current.from
             } else {
@@ -97,8 +96,8 @@ pub fn next_visibility_window(
             until: None,
         },
         ActiveLayers::Excluded => VisibilityWindow::hidden(now),
-        // Neither leaving an excluded layer nor releasing a layer before its activation
-        // delay elapsed may surface the base layer.
+        // Do not show the base layer when leaving an excluded layer
+        // or releasing before the activation delay elapses.
         ActiveLayers::Base if previous == ActiveLayers::Excluded || pending => {
             VisibilityWindow::hidden(now)
         }

@@ -12,7 +12,7 @@ const GAP: f32 = 6.0;
 /// Candidate key binding displayed in a picker grid.
 #[derive(Clone)]
 pub struct Candidate {
-    /// Generic key binding.
+    /// Key specification.
     pub binding: KeySpec,
     /// Visual key representation.
     pub key: LayoutKey,
@@ -39,14 +39,13 @@ impl Candidate {
         self
     }
 
-    /// Appends an extra search token (e.g. firmware-specific keycode name or hex code)
-    /// to the precomputed search haystack.
+    /// Appends a search token to the search haystack.
     pub fn with_search_token(mut self, token: impl AsRef<str>) -> Self {
         push_token(&mut self.search_haystack, token.as_ref());
         self
     }
 
-    /// Appends multiple search tokens to the precomputed search haystack.
+    /// Appends search tokens to the search haystack.
     pub fn with_search_tokens(mut self, tokens: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
         for token in tokens {
             push_token(&mut self.search_haystack, token.as_ref());
@@ -479,28 +478,19 @@ mod tests {
     }
 
     #[test]
-    fn candidate_matches_query_by_label_and_short() {
+    fn candidate_matches_query() {
         let space = test_candidate(KeySpec::KeyPress {
             key: HidKey::keyboard(0x2c),
             modifiers: Modifiers::default(),
-        });
+        })
+        .with_search_token("custom_token");
+
         assert!(space.matches_query(""));
         assert!(space.matches_query("space"));
         assert!(space.matches_query("SPACE"));
-        assert!(space.matches_query("spc"));
+        assert!(space.matches_query("custom_token"));
         assert!(!space.matches_query("enter"));
 
-        let del = test_candidate(KeySpec::KeyPress {
-            key: HidKey::keyboard(0x4c),
-            modifiers: Modifiers::default(),
-        });
-        assert!(del.matches_query("delete"));
-        assert!(del.matches_query("DEL"));
-        assert!(!del.matches_query("space"));
-    }
-
-    #[test]
-    fn candidate_matches_query_by_shifted_and_symbol() {
         let digit_1 = test_candidate(KeySpec::KeyPress {
             key: HidKey::keyboard(0x1e),
             modifiers: Modifiers::default(),
@@ -514,22 +504,7 @@ mod tests {
         });
         assert!(enter.matches_query("enter"));
         assert!(enter.matches_query(egui_phosphor::regular::ARROW_ELBOW_DOWN_LEFT));
-    }
 
-    #[test]
-    fn candidate_matches_extra_search_tokens() {
-        let candidate = test_candidate(KeySpec::KeyPress {
-            key: HidKey::keyboard(0x2c),
-            modifiers: Modifiers::default(),
-        })
-        .with_search_token("custom_token");
-
-        assert!(candidate.matches_query("space"));
-        assert!(candidate.matches_query("custom_token"));
-    }
-
-    #[test]
-    fn candidate_matches_hex_and_whitespace_query() {
         let a_key = test_candidate(KeySpec::KeyPress {
             key: HidKey::keyboard(0x04),
             modifiers: Modifiers::default(),

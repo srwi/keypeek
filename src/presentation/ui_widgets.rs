@@ -39,7 +39,7 @@ pub fn titled_group<R>(
     ret.inner.inner
 }
 
-/// Renders a hyperlink pointing to the KeyPeek GitHub repository.
+/// Shows a link to the KeyPeek GitHub repository.
 pub fn github_link(ui: &mut egui::Ui) -> egui::Response {
     ui.add(egui::Hyperlink::from_label_and_url(
         egui::RichText::new(format!("{} GitHub", egui_phosphor::regular::GITHUB_LOGO)).weak(),
@@ -47,7 +47,7 @@ pub fn github_link(ui: &mut egui::Ui) -> egui::Response {
     ))
 }
 
-/// Renders a hyperlink displaying the current package version and linking to releases.
+/// Shows a link to KeyPeek GitHub releases.
 pub fn version_link(ui: &mut egui::Ui) -> egui::Response {
     ui.add(egui::Hyperlink::from_label_and_url(
         egui::RichText::new(format!("v{}", env!("CARGO_PKG_VERSION"))).weak(),
