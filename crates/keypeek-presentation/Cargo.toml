@@ -1,0 +1,29 @@
+[package]
+name = "keypeek-presentation"
+description = "Shared egui painters, keymap editor, key presenters, and presentation window views for KeyPeek"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["desktop"]
+desktop = ["directories"]
+directories = ["dep:directories"]
+
+[dependencies]
+keypeek-core = { workspace = true }
+keypeek-protocol = { workspace = true, default-features = false }
+egui = { workspace = true }
+egui-phosphor = { workspace = true }
+egui-file-dialog = { workspace = true }
+rust-ini = { workspace = true }
+web-time = { workspace = true }
+
+# Desktop / native-only dependencies
+directories = { workspace = true, optional = true }
+
+[dev-dependencies]
+keypeek-protocol = { workspace = true, features = ["test-utils"] }
+

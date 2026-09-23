@@ -1,0 +1,13 @@
+[package]
+name = "keypeek-core"
+description = "Pure domain models, layout geometry, matrix, and visibility state machine for KeyPeek"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+web-time = { workspace = true }
+egui-phosphor = { workspace = true }

@@ -40,13 +40,13 @@ jobs:
       - name: Build AppImage
         run: |
           cp resources/icon.png icon.png
-          cargo appimage
+          cargo appimage -p keypeek-desktop
         env:
           APPIMAGE_EXTRACT_AND_RUN: 1
 
       - name: Get version
         id: get_version
-        run: echo "VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')" >> $GITHUB_OUTPUT
+        run: echo "VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name=="keypeek-desktop") | .version')" >> $GITHUB_OUTPUT
 
       - name: Rename AppImage
         run: |
@@ -84,7 +84,7 @@ jobs:
       - name: Get version
         id: get_version
         run: |
-          $version = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages[0].version
+          $version = ((cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages | Where-Object { $_.name -eq 'keypeek-desktop' }).version
           echo "VERSION=$version" >> $env:GITHUB_OUTPUT
 
       - name: Rename binary
@@ -130,11 +130,11 @@ jobs:
         run: cargo install cargo-bundle
 
       - name: Build app bundle
-        run: cargo bundle --release --target ${{ matrix.target }}
+        run: cargo bundle --release -p keypeek-desktop --target ${{ matrix.target }}
 
       - name: Get version
         id: get_version
-        run: echo "VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')" >> $GITHUB_OUTPUT
+        run: echo "VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name=="keypeek-desktop") | .version')" >> $GITHUB_OUTPUT
 
       - name: Build ZIP
         run: |

@@ -1,0 +1,27 @@
+[package]
+name = "keypeek-web"
+description = "WebAssembly client for KeyPeek running in browser via WebHID and WebSerial"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+keypeek-protocol = { workspace = true, default-features = false }
+keypeek-presentation = { workspace = true, default-features = false }
+eframe = { workspace = true }
+egui = { workspace = true }
+egui_extras = { workspace = true }
+egui-phosphor = { workspace = true }
+web-time = { workspace = true }
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+js-sys = { workspace = true }
+web-sys = { workspace = true }
+console_error_panic_hook = { workspace = true }
+log = { workspace = true }
+

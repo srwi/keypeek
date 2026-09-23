@@ -1,0 +1,83 @@
+[package]
+name = "keypeek-desktop"
+description = "Native desktop overlay application and window runner for KeyPeek"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "keypeek"
+path = "src/main.rs"
+
+[dependencies]
+keypeek-protocol = { workspace = true, features = ["desktop"] }
+keypeek-presentation = { workspace = true, features = ["desktop"] }
+eframe = { workspace = true }
+egui = { workspace = true }
+egui_extras = { workspace = true }
+tray-icon = { workspace = true }
+image = { workspace = true }
+web-time = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+winit = { version = "0.30.13", features = ["x11"] }
+egui_glow = "0.36.1"
+xkbcommon = { workspace = true }
+x11rb = { version = "0.14.0", features = ["allow-unsafe-code"] }
+smithay-client-toolkit = "0.21.1"
+wayland-client = "0.31.15"
+wayland-egl = "0.32.11"
+khronos-egl = { version = "6", features = ["static"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+winit = "0.30.13"
+objc2-app-kit = { version = "0.3", features = ["NSResponder", "NSView", "NSWindow"] }
+raw-window-handle = "0.6"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+raw-window-handle = "0.6"
+windows = { workspace = true, features = [
+    "Devices_Bluetooth",
+    "Devices_Radios",
+    "Foundation",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+    "Win32_Foundation",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }
+winreg = "0.56.0"
+
+[target.'cfg(target_os = "windows")'.build-dependencies]
+winresource = { workspace = true }
+
+[package.metadata.bundle]
+name = "KeyPeek"
+identifier = "dev.srwi.keypeek"
+osx_info_plist_exts = ["../../resources/macos-info-plist-ext.xml"]
+
+[package.metadata.appimage]
+auto_link = true
+auto_link_exclude_list = [
+    "ld-linux*", "libc.so*", "libm.so*", "libdl.so*", "libpthread.so*", "librt.so*",
+    "libgcc_s.so*", "libstdc++.so*",
+    "libgtk-3.so*", "libgdk-3.so*", "libgdk_pixbuf-2.0.so*", "libgio-2.0.so*",
+    "libgobject-2.0.so*", "libglib-2.0.so*", "libgmodule-2.0.so*",
+    "libX11.so*", "libXi.so*", "libXext.so*", "libXfixes.so*", "libXcursor.so*",
+    "libXdamage.so*", "libXcomposite.so*", "libXrandr.so*", "libXinerama.so*",
+    "libXrender.so*", "libXau.so*", "libXdmcp.so*", "libxcb*.so*",
+    "libwayland-*.so*", "libEGL.so*", "libGLdispatch.so*", "libepoxy.so*",
+    "libxkbcommon.so*",
+    "libpango*.so*", "libcairo*.so*", "libharfbuzz.so*", "libfribidi.so*",
+    "libfontconfig.so*", "libfreetype.so*", "libthai.so*", "libdatrie.so*",
+    "libgraphite2.so*", "libpixman-1.so*", "libpng16.so*",
+    "libatk*.so*", "libatspi.so*", "libcloudproviders.so*", "libtinysparql*.so*",
+    "libglycin*.so*",
+    "libudev.so*", "libsystemd.so*", "libdbus-1.so*", "libmount.so*", "libblkid.so*",
+    "libffi.so*", "libpcre2*.so*", "libz.so*", "libbz2.so*", "libbrotli*.so*",
+    "libseccomp.so*", "libexpat.so*", "libjson-glib*.so*", "libxml2.so*",
+    "libsqlite3.so*", "liblcms2.so*", "libicu*.so*",
+]

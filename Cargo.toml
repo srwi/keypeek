@@ -1,96 +1,58 @@
-[package]
-name = "keypeek"
-license = "GPL-3.0-only"
-description = "Keyboard layer overlay for VIA, Vial, and ZMK"
-authors = ["Stephan Rumswinkel"]
-repository = "https://github.com/srwi/keypeek"
-readme = "README.md"
+[workspace]
+resolver = "2"
+members = [
+    "crates/keypeek-core",
+    "crates/keypeek-protocol",
+    "crates/keypeek-presentation",
+    "crates/keypeek-desktop",
+    "crates/keypeek-web",
+]
+default-members = ["crates/keypeek-desktop"]
+
+[workspace.package]
 version = "0.11.0"
 edition = "2021"
+authors = ["Stephan Rumswinkel"]
+license = "GPL-3.0-only"
+repository = "https://github.com/srwi/keypeek"
 
-[lib]
-name = "keypeek"
-crate-type = ["cdylib", "rlib"]
+[workspace.dependencies]
+keypeek-core = { path = "crates/keypeek-core" }
+keypeek-protocol = { path = "crates/keypeek-protocol", default-features = false }
+keypeek-presentation = { path = "crates/keypeek-presentation", default-features = false }
+keypeek-desktop = { path = "crates/keypeek-desktop" }
+keypeek-web = { path = "crates/keypeek-web" }
 
-[[bin]]
-name = "keypeek"
-path = "src/main.rs"
-required-features = ["desktop"]
-
-[features]
-default = ["desktop"]
-desktop = [
-    "directories",
-    "tray-icon",
-    "hidapi",
-    "serialport",
-    "qmk-via-api/hidapi",
-    "zmk-studio-api/serial",
-    "zmk-studio-api/ble",
-]
-directories = ["dep:directories"]
-tray-icon = ["dep:tray-icon"]
-hidapi = ["dep:hidapi"]
-serialport = ["dep:serialport"]
-
-[dependencies]
-rust-ini = "0.21.3"
-egui = "0.36.1"
-eframe = { version = "0.36.1", features = ["glow"] }
-egui_extras = { version = "0.36.1", features = ["all_loaders"] }
-qmk-via-api = { version = "0.10.0", default-features = false }
+# Serialization & async
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
-egui-phosphor = "0.13.0"
-egui-file-dialog = "0.15.0"
-image = "0.25.10"
-lzma-rs = "0.3"
 web-time = "1.1.0"
 futures-util = { version = "0.3", default-features = false, features = ["alloc", "channel"] }
 futures-channel = "0.3"
 prost = "0.14"
+lzma-rs = "0.3"
+qmk-via-api = { version = "0.10.0", default-features = false }
 zmk-studio-api = { version = "0.6.1", default-features = false }
 
-# Desktop / native-only dependencies
-directories = { version = "6.0.0", optional = true }
-tray-icon = { version = "0.24.2", optional = true }
-hidapi = { version = "2.6.5", features = ["macos-shared-device"], optional = true }
-serialport = { version = "4.10.0", optional = true }
+# GUI & Graphics
+egui = "0.36.1"
+eframe = { version = "0.36.1", features = ["glow"] }
+egui_extras = { version = "0.36.1", features = ["all_loaders"] }
+egui-phosphor = "0.13.0"
+egui-file-dialog = "0.15.0"
+image = "0.25.10"
+rust-ini = "0.21.3"
 
-[target.'cfg(target_os = "linux")'.dependencies]
-gtk = "0.18"
-winit = { version = "0.30.13", features = ["x11"] }
-egui_glow = "0.36.1"
-xkbcommon = "0.9.0"
-x11rb = { version = "0.14.0", features = ["allow-unsafe-code"] }
-smithay-client-toolkit = "0.21.1"
-wayland-client = "0.31.15"
-wayland-egl = "0.32.11"
-khronos-egl = { version = "6", features = ["static"] }
-
-[target.'cfg(target_os = "macos")'.dependencies]
-winit = "0.30.13"
-objc2-app-kit = { version = "0.3", features = ["NSResponder", "NSView", "NSWindow"] }
-raw-window-handle = "0.6"
-
-[target.'cfg(target_os = "windows")'.dependencies]
-raw-window-handle = "0.6"
-windows = { version = "0.62.2", features = [
-    "Devices_Bluetooth",
-    "Devices_Radios",
-    "Foundation",
-    "Win32_Graphics_Dwm",
-    "Win32_Graphics_Gdi",
-    "Win32_Foundation",
-    "Win32_UI_Input_KeyboardAndMouse",
-    "Win32_UI_WindowsAndMessaging",
-] }
-winreg = "0.56.0"
-
-[target.'cfg(target_os = "windows")'.build-dependencies]
+# Desktop native dependencies
+directories = "6.0.0"
+tray-icon = "0.24.2"
+hidapi = { version = "2.6.5", features = ["macos-shared-device"] }
+serialport = "4.10.0"
 winresource = "0.1.31"
+windows = "0.62.2"
+xkbcommon = "0.9.0"
 
-[target.'cfg(target_arch = "wasm32")'.dependencies]
+# Web dependencies
 wasm-bindgen = "0.2.128"
 wasm-bindgen-futures = "0.4.78"
 js-sys = "0.3.105"
@@ -126,38 +88,3 @@ web-sys = { version = "0.3.105", features = [
 ] }
 console_error_panic_hook = "0.1.7"
 log = "0.4.33"
-
-[package.metadata.bundle]
-name = "KeyPeek"
-identifier = "dev.srwi.keypeek"
-osx_info_plist_exts = ["resources/macos-info-plist-ext.xml"]
-
-[package.metadata.appimage]
-# Bundle only libxdo: it's the one dependency that is NOT part of every
-# mainstream distro's base desktop stack (Ubuntu/Fedora/Arch etc. all ship
-# GTK/X11/Wayland/Mesa already, but libxdo comes from the niche `xdotool`
-# project and is often missing or has a different soname). Everything else
-# stays excluded so we don't ship a second copy of GTK/Mesa/X11 that could
-# clash with the host's graphics drivers and theme integration.
-auto_link = true
-auto_link_exclude_list = [
-    "ld-linux*", "libc.so*", "libm.so*", "libdl.so*", "libpthread.so*", "librt.so*",
-    "libgcc_s.so*", "libstdc++.so*",
-    "libgtk-3.so*", "libgdk-3.so*", "libgdk_pixbuf-2.0.so*", "libgio-2.0.so*",
-    "libgobject-2.0.so*", "libglib-2.0.so*", "libgmodule-2.0.so*",
-    "libX11.so*", "libXi.so*", "libXext.so*", "libXfixes.so*", "libXcursor.so*",
-    "libXdamage.so*", "libXcomposite.so*", "libXrandr.so*", "libXinerama.so*",
-    "libXrender.so*", "libXau.so*", "libXdmcp.so*", "libxcb*.so*",
-    "libwayland-*.so*", "libEGL.so*", "libGLdispatch.so*", "libepoxy.so*",
-    "libxkbcommon.so*",
-    "libpango*.so*", "libcairo*.so*", "libharfbuzz.so*", "libfribidi.so*",
-    "libfontconfig.so*", "libfreetype.so*", "libthai.so*", "libdatrie.so*",
-    "libgraphite2.so*", "libpixman-1.so*", "libpng16.so*",
-    "libatk*.so*", "libatspi.so*", "libcloudproviders.so*", "libtinysparql*.so*",
-    "libglycin*.so*",
-    "libudev.so*", "libsystemd.so*", "libdbus-1.so*", "libmount.so*", "libblkid.so*",
-    "libffi.so*", "libpcre2*.so*", "libz.so*", "libbz2.so*", "libbrotli*.so*",
-    "libseccomp.so*", "libexpat.so*", "libjson-glib*.so*", "libxml2.so*",
-    "libsqlite3.so*", "liblcms2.so*", "libicu*.so*",
-]
-

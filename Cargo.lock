@@ -2707,41 +2707,33 @@ dependencies = [
 ]
 
 [[package]]
-name = "keypeek"
+name = "keypeek-core"
 version = "0.11.0"
 dependencies = [
- "console_error_panic_hook",
- "directories",
+ "egui-phosphor",
+ "serde",
+ "web-time",
+]
+
+[[package]]
+name = "keypeek-desktop"
+version = "0.11.0"
+dependencies = [
  "eframe",
  "egui 0.36.1",
- "egui-file-dialog",
- "egui-phosphor",
  "egui_extras",
  "egui_glow",
- "futures-channel",
- "futures-util",
  "gtk",
- "hidapi",
  "image",
- "js-sys",
+ "keypeek-presentation",
+ "keypeek-protocol",
  "khronos-egl",
- "log",
- "lzma-rs",
  "objc2-app-kit 0.3.2",
- "prost",
- "qmk-via-api",
  "raw-window-handle",
- "rust-ini",
- "serde",
- "serde_json",
- "serialport",
  "smithay-client-toolkit 0.21.1",
  "tray-icon",
- "wasm-bindgen",
- "wasm-bindgen-futures",
  "wayland-client",
  "wayland-egl",
- "web-sys",
  "web-time",
  "windows 0.62.2",
  "winit",
@@ -2749,7 +2741,65 @@ dependencies = [
  "winresource",
  "x11rb 0.14.0",
  "xkbcommon 0.9.0",
+]
+
+[[package]]
+name = "keypeek-presentation"
+version = "0.11.0"
+dependencies = [
+ "directories",
+ "egui 0.36.1",
+ "egui-file-dialog",
+ "egui-phosphor",
+ "keypeek-core",
+ "keypeek-protocol",
+ "rust-ini",
+ "web-time",
+]
+
+[[package]]
+name = "keypeek-protocol"
+version = "0.11.0"
+dependencies = [
+ "egui-phosphor",
+ "futures-channel",
+ "futures-util",
+ "hidapi",
+ "js-sys",
+ "keypeek-core",
+ "log",
+ "lzma-rs",
+ "prost",
+ "qmk-via-api",
+ "serde",
+ "serde_json",
+ "serialport",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "web-time",
+ "windows 0.62.2",
+ "xkbcommon 0.9.0",
  "zmk-studio-api",
+]
+
+[[package]]
+name = "keypeek-web"
+version = "0.11.0"
+dependencies = [
+ "console_error_panic_hook",
+ "eframe",
+ "egui 0.36.1",
+ "egui-phosphor",
+ "egui_extras",
+ "js-sys",
+ "keypeek-presentation",
+ "keypeek-protocol",
+ "log",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "web-time",
 ]
 
 [[package]]
