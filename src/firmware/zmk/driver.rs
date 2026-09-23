@@ -208,7 +208,7 @@ impl KeyboardProtocol for ZmkProtocol {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hid_labels::Modifiers;
+    use crate::key_spec::Modifiers;
     use crate::key_spec::{CustomBinding, CustomKind, HidKey};
     use std::collections::HashSet;
     use std::sync::Mutex;

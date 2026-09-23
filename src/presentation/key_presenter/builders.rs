@@ -1,3 +1,6 @@
+//! Presentation visual builders for [`LayoutKey`] and modifier representations.
+
+use crate::key_spec::Modifiers;
 use crate::layout_key::{BorderStyle, KeycodeKind, Label, LayoutKey};
 
 /// Pure layer-switch key: the target layer is the centered label and `border`
@@ -65,8 +68,6 @@ pub fn one_shot_mod_key(
         ..Default::default()
     }
 }
-
-pub use crate::key_spec::Modifiers;
 
 impl Modifiers {
     pub fn label(&self) -> Label {

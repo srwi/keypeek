@@ -1,4 +1,4 @@
-use crate::hid_labels::mod_combo_key;
+use crate::key_presenter::mod_combo_key;
 use crate::layout_key::{Label, LayoutKey};
 use zmk_studio_api::HidUsage;
 

@@ -1,6 +1,6 @@
 //! Codec translating between ZMK Studio [`Behavior`] and domain [`KeySpec`].
 
-use crate::hid_labels::Modifiers;
+use crate::key_spec::Modifiers;
 use crate::key_spec::{
     BacklightAction, BluetoothAction, CustomBinding, CustomKind, CustomParam, HidKey, KeySpec,
     LayerActivation, LightingAction, MouseAction, MouseButton, OutputTarget, PowerAction,

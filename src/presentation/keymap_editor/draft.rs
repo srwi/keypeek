@@ -4,7 +4,7 @@
 //! to and from [`KeySpec`].
 
 use super::profile::{EditorProfile, LayerTapTarget};
-use crate::hid_labels::Modifiers;
+use crate::key_spec::Modifiers;
 use crate::key_spec::{BacklightAction, HidKey, KeySpec, LayerActivation, LightingAction};
 
 /// Unified sidebar sections for key categories.

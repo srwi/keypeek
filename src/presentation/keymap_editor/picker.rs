@@ -469,7 +469,7 @@ pub fn modifier_toggle_grid(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hid_labels::Modifiers;
+    use crate::key_spec::Modifiers;
     use crate::key_presenter::StandardKeyPresenter;
     use crate::key_spec::HidKey;
 

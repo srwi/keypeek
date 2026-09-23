@@ -308,7 +308,7 @@ fn mod_mask_to_glyphs(m: u8) -> Label {
 
 fn layer_tap_layout_key(layer_id: u32, tap: HidUsage, behavior: Option<Label>) -> LayoutKey {
     let tap_key = hid_usage_to_layout_key(tap);
-    crate::hid_labels::layer_tap_key(layer_id as u8, tap_key, behavior)
+    crate::key_presenter::layer_tap_key(layer_id as u8, tap_key, behavior)
 }
 
 fn hold_tap_layout_key(hold: HidUsage, tap: HidUsage, behavior: Option<Label>) -> LayoutKey {
@@ -323,7 +323,7 @@ fn hold_tap_layout_key(hold: HidUsage, tap: HidUsage, behavior: Option<Label>) -
     } else {
         hold_key.tap
     };
-    crate::hid_labels::mod_tap_key(tap_key, hold_label, hold_key.mod_mask, behavior)
+    crate::key_presenter::mod_tap_key(tap_key, hold_label, hold_key.mod_mask, behavior)
 }
 
 fn custom_layout_key(
@@ -419,7 +419,7 @@ fn param_summary(
 /// Build a pure layer-switch key: the target layer is the centered label and
 /// `border` is the sole indicator; there are no legend strips.
 fn layer_layout_key(border: BorderStyle, layer_id: u32, layer_names: &[String]) -> LayoutKey {
-    crate::hid_labels::layer_switch_key(
+    crate::key_presenter::layer_switch_key(
         layer_id as u8,
         layer_arg_label(layer_names, layer_id),
         border,

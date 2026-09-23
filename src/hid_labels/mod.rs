@@ -1,12 +1,7 @@
-pub mod builders;
 pub mod consumer;
 pub mod keyboard;
 pub mod os_layout;
 pub mod system;
-
-pub use builders::{
-    layer_switch_key, layer_tap_key, mod_combo_key, mod_tap_key, one_shot_mod_key, Modifiers,
-};
 
 pub use consumer::hid_consumer_key;
 pub use keyboard::hid_keyboard_key;

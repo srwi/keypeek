@@ -7,7 +7,7 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
     match QmkKeycode::from_u16(keycode_bytes) {
         QmkKeycode::ModCombo { mods, keycode } => {
             let base = get_basic_layout_key(keycode as u16);
-            Some(crate::hid_labels::mod_combo_key(
+            Some(crate::key_presenter::mod_combo_key(
                 0x07,
                 keycode as u16,
                 crate::firmware::qmk::codec::from_qmk_mask(mods),
@@ -16,7 +16,7 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
         }
         QmkKeycode::ModTap { mods, keycode } => {
             let tap_key = get_basic_layout_key(keycode as u16).unwrap_or_default();
-            Some(crate::hid_labels::mod_tap_key(
+            Some(crate::key_presenter::mod_tap_key(
                 tap_key,
                 mod_mask_to_label(mods),
                 held_mod_mask(mods),
@@ -32,14 +32,14 @@ pub fn get_advanced_layout_key(keycode_bytes: u16) -> Option<LayoutKey> {
             border: BorderStyle::None,
             ..Default::default()
         }),
-        QmkKeycode::OneShotMod(mods) => Some(crate::hid_labels::one_shot_mod_key(
+        QmkKeycode::OneShotMod(mods) => Some(crate::key_presenter::one_shot_mod_key(
             mod_mask_to_label(mods),
             held_mod_mask(mods),
             Some(behavior_names::ONE_SHOT_MOD.label()),
         )),
         QmkKeycode::LayerTap { layer, keycode } => {
             let tap_key = get_basic_layout_key(keycode as u16).unwrap_or_default();
-            Some(crate::hid_labels::layer_tap_key(layer, tap_key, None))
+            Some(crate::key_presenter::layer_tap_key(layer, tap_key, None))
         }
         _ => None,
     }

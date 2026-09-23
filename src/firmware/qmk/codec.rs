@@ -1,6 +1,6 @@
 //! Codec translating between QMK keycodes and domain [`KeySpec`].
 
-use crate::hid_labels::Modifiers;
+use crate::key_spec::Modifiers;
 use crate::key_spec::{
     AudioAction, BacklightAction, CustomBinding, CustomKind, HidKey, KeySpec, LayerActivation,
     LightingAction, MouseAction, MouseButton, PowerAction, RgbAction, RgbMatrixAction,

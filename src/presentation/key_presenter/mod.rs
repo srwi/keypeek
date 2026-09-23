@@ -1,10 +1,12 @@
 //! Key presentation layer. Converts [`KeySpec`] domain objects into visual [`LayoutKey`] items.
 
-use crate::hid_labels::Modifiers;
+pub mod builders;
+pub use builders::*;
+
 use crate::key_spec::{
     AudioAction, BacklightAction, BluetoothAction, CustomKind, CustomParam, KeySpec,
-    LayerActivation, LightingAction, MouseAction, MouseButton, OutputTarget, PowerAction,
-    RgbAction, RgbMatrixAction,
+    LayerActivation, LightingAction, Modifiers, MouseAction, MouseButton, OutputTarget,
+    PowerAction, RgbAction, RgbMatrixAction,
 };
 use crate::layout_key::{behavior_names, BorderStyle, KeycodeKind, Label, LayoutKey};
 
@@ -43,9 +45,7 @@ pub fn present_standard_key(spec: &KeySpec, layer_names: &[String]) -> Option<La
                     })
                 })
             } else {
-                Some(crate::hid_labels::mod_combo_key(
-                    key.page, key.id, *modifiers, base,
-                ))
+                Some(mod_combo_key(key.page, key.id, *modifiers, base))
             }
         }
 
@@ -57,7 +57,7 @@ pub fn present_standard_key(spec: &KeySpec, layer_names: &[String]) -> Option<La
                     ..Default::default()
                 })
             } else {
-                crate::hid_labels::mod_combo_key(key.page, key.id, *modifiers, base)
+                mod_combo_key(key.page, key.id, *modifiers, base)
             };
             layout.behavior = Some(behavior_names::KEY_TOGGLE.label());
             Some(layout)
@@ -72,9 +72,9 @@ pub fn present_standard_key(spec: &KeySpec, layer_names: &[String]) -> Option<La
             let tap_key = if tap_modifiers.is_empty() {
                 base.unwrap_or_default()
             } else {
-                crate::hid_labels::mod_combo_key(tap.page, tap.id, *tap_modifiers, base)
+                mod_combo_key(tap.page, tap.id, *tap_modifiers, base)
             };
-            Some(crate::hid_labels::layer_tap_key(*layer, tap_key, None))
+            Some(layer_tap_key(*layer, tap_key, None))
         }
 
         KeySpec::ModTap {
@@ -86,10 +86,10 @@ pub fn present_standard_key(spec: &KeySpec, layer_names: &[String]) -> Option<La
             let tap_key = if tap_modifiers.is_empty() {
                 base.unwrap_or_default()
             } else {
-                crate::hid_labels::mod_combo_key(tap.page, tap.id, *tap_modifiers, base)
+                mod_combo_key(tap.page, tap.id, *tap_modifiers, base)
             };
             let mask = hold.to_held_mod_mask();
-            Some(crate::hid_labels::mod_tap_key(
+            Some(mod_tap_key(
                 tap_key,
                 hold.label(),
                 (mask != 0).then_some(mask),
@@ -114,7 +114,7 @@ pub fn present_standard_key(spec: &KeySpec, layer_names: &[String]) -> Option<La
                 .filter(|n| !n.is_empty())
                 .map(|n| Label::new(n.as_str()))
                 .unwrap_or_else(|| Label::new(format!("L{}", layer)));
-            let mut key = crate::hid_labels::layer_switch_key(*layer, name_label, border);
+            let mut key = layer_switch_key(*layer, name_label, border);
             if let LayerActivation::LayerMod(mods) = activation {
                 key.argument = argument;
                 let mask = mods.to_held_mod_mask();
@@ -135,7 +135,7 @@ pub fn present_standard_key(spec: &KeySpec, layer_names: &[String]) -> Option<La
             }
             None => {
                 let mask = modifiers.to_held_mod_mask();
-                Some(crate::hid_labels::one_shot_mod_key(
+                Some(one_shot_mod_key(
                     modifiers.label(),
                     (mask != 0).then_some(mask),
                     Some(behavior_names::ONE_SHOT_MOD.label()),
@@ -503,12 +503,12 @@ pub fn resolve_custom_named_key(
             } else {
                 hold_key.tap
             };
-            crate::hid_labels::mod_tap_key(tap_key, hold_label, hold_key.mod_mask, Some(name))
+            mod_tap_key(tap_key, hold_label, hold_key.mod_mask, Some(name))
         }
         (Some(CustomParam::Layer(layer_id)), Some(CustomParam::Key(tap))) => {
             let tap_key =
                 crate::hid_labels::hid_usage_to_layout_key(tap.page, tap.id).unwrap_or_default();
-            crate::hid_labels::layer_tap_key(layer_id, tap_key, Some(name))
+            layer_tap_key(layer_id, tap_key, Some(name))
         }
         (Some(CustomParam::Key(key)), None) | (None, Some(CustomParam::Key(key))) => {
             let mut k =
@@ -517,7 +517,7 @@ pub fn resolve_custom_named_key(
             k
         }
         (Some(CustomParam::Layer(layer_id)), None) | (None, Some(CustomParam::Layer(layer_id))) => {
-            let mut k = crate::hid_labels::layer_switch_key(
+            let mut k = layer_switch_key(
                 layer_id,
                 layer_names
                     .get(layer_id as usize)
