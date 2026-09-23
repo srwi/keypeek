@@ -1,9 +1,10 @@
-use super::{OverlayApp, OverlayHost};
+use super::DesktopOverlayApp;
+use crate::presentation::OverlayHost;
 use crate::settings::{LayerMask, LegendMode, Settings, ThemeColor, ThemeSettings, WindowPosition};
 use crate::ui_widgets::{github_link, titled_group, version_link};
 use egui::Window;
 
-impl OverlayApp {
+impl DesktopOverlayApp {
     /// The color button that ends every theme row, right-aligned in the row.
     fn theme_color_button(ui: &mut egui::Ui, color: &mut ThemeColor) {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

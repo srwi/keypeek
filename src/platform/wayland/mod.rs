@@ -51,7 +51,7 @@ use wayland_client::{
 use egui_glow::glow;
 
 use crate::device_discovery::DiscoveredDevice;
-use crate::overlay_window::OverlayApp;
+use crate::overlay_window::DesktopOverlayApp;
 use crate::presentation::OverlayHost;
 use crate::settings::SettingsStore;
 use crate::ui_wake::UiWake;
@@ -91,7 +91,7 @@ struct WaylandApp {
     pointer: Option<WlPointer>,
 
     egui_ctx: egui::Context,
-    app: OverlayApp,
+    app: DesktopOverlayApp,
     _tray: super::tray::Tray,
     input: InputState,
 
@@ -177,7 +177,7 @@ pub fn run(
             ui_wake.request_repaint();
         })
     });
-    let app = OverlayApp::new(settings_requested, ui_wake, settings_store, devices);
+    let app = DesktopOverlayApp::new(settings_requested, ui_wake, settings_store, devices);
 
     let mut state = WaylandApp {
         registry_state: RegistryState::new(&globals),

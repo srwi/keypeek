@@ -90,7 +90,7 @@ pub enum EditorOverlay {
     Failed,
 }
 
-/// Editor window state, owned by `OverlayApp`.
+/// Editor window state, owned by application coordinators (`DesktopOverlayApp` / `WebOverlayApp`).
 pub struct EditorState {
     /// Active target key, or `None` when the window is closed.
     pub target: Option<EditTarget>,
@@ -136,6 +136,14 @@ impl EditorState {
     /// Resets the editor state to default values.
     pub fn reset(&mut self) {
         *self = Self::default();
+    }
+
+    /// Resets the editor state and releases the keyboard edit lock if a keyboard is provided.
+    pub fn close(&mut self, keyboard: Option<&Keyboard>) {
+        self.reset();
+        if let Some(kbd) = keyboard {
+            kbd.release_edit_lock();
+        }
     }
 
     /// Returns the active blocking overlay state, if any.
@@ -310,7 +318,7 @@ impl EditorState {
         });
 
         if !open {
-            self.handle_close_request(keyboard);
+            self.handle_close_request(Some(keyboard));
         }
     }
 
@@ -354,7 +362,7 @@ impl EditorState {
             });
 
         if close_requested {
-            self.handle_close_request(keyboard);
+            self.handle_close_request(Some(keyboard));
         }
     }
 
@@ -367,10 +375,16 @@ impl EditorState {
         }
     }
 
-    /// Closes the editor and releases the edit lock.
-    pub fn handle_close_request(&mut self, keyboard: &Keyboard) {
+    /// Requests to close the editor, releasing edit lock if closed immediately.
+    /// Returns `true` if closed immediately.
+    pub fn handle_close_request(&mut self, keyboard: Option<&Keyboard>) -> bool {
         if self.request_close() {
-            keyboard.release_edit_lock();
+            if let Some(kbd) = keyboard {
+                kbd.release_edit_lock();
+            }
+            true
+        } else {
+            false
         }
     }
 

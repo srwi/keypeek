@@ -1,5 +1,5 @@
 use crate::device_discovery::DiscoveredDevice;
-use crate::overlay_window::OverlayApp;
+use crate::overlay_window::DesktopOverlayApp;
 use crate::presentation::OverlayHost;
 use crate::settings::SettingsStore;
 use crate::ui_wake::UiWake;
@@ -22,7 +22,7 @@ impl OverlayHost for EframeHost<'_> {
 }
 
 struct EframeApp {
-    app: OverlayApp,
+    app: DesktopOverlayApp,
     _tray: super::tray::Tray,
     // Undecorated transparent windows don't reliably honor `with_maximized`, so we
     // size to the monitor explicitly once known. Linux never WM-maximizes at all,
@@ -213,7 +213,7 @@ fn run_inner(
             super::add_phosphor_to_fonts(&mut fonts);
             cc.egui_ctx.set_fonts(fonts);
 
-            let app = OverlayApp::new(settings_requested, ui_wake, settings_store, devices);
+            let app = DesktopOverlayApp::new(settings_requested, ui_wake, settings_store, devices);
             Ok(Box::new(EframeApp {
                 app,
                 _tray: tray_icon,

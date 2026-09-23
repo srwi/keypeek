@@ -1,8 +1,7 @@
-use crate::overlay_window::OverlayApp;
+use crate::overlay_window::WebOverlayApp;
 use crate::presentation::OverlayHost;
 use crate::settings::MemorySettingsStore;
 use crate::ui_wake::UiWake;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -60,7 +59,7 @@ impl ConnectedWebDevice {
 }
 
 pub struct WebApp {
-    app: OverlayApp,
+    app: WebOverlayApp,
 }
 
 impl WebApp {
@@ -73,9 +72,8 @@ impl WebApp {
 
         let ctx = cc.egui_ctx.clone();
         let ui_wake = UiWake::new(Arc::new(move || ctx.request_repaint()));
-        let settings_requested = Arc::new(AtomicBool::new(false));
         let settings_store = Arc::new(MemorySettingsStore::default());
-        let app = OverlayApp::new(settings_requested, ui_wake, settings_store, Vec::new());
+        let app = WebOverlayApp::new(ui_wake, settings_store);
 
         Self { app }
     }
