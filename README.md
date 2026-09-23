@@ -3,14 +3,23 @@
 <a href="https://ko-fi.com/stephanrwi"><img src="https://img.shields.io/static/v1?label=Buy%20me%20a%20coffee&message=%E2%98%95&logo=Ko-fi&color=%23FF5E5B"/></a>
 <a href="https://paypal.me/rumswinkel"><img src="https://img.shields.io/static/v1?label=Donate&message=%E2%9D%A4&logo=PayPal&color=%23009cde"/></a>
 
-KeyPeek provides a live on-screen overlay with an integrated keymap editor for your keyboard. The overlay updates instantly to mirror active base and momentary layers, which is especially useful when learning complex layouts or using boards with missing legends. Keys can be remapped directly from the overlay, sending keycode and behavior updates to the device on the fly. KeyPeek currently supports QMK, Vial, and ZMK keyboards.
+KeyPeek provides real-time layout visualization and an integrated keymap editor for QMK, Vial, and ZMK keyboards, running in two ways:
+
+- **Desktop app:** Designed for active daily use. A live on-screen overlay that mirrors base and momentary layers in real time (especially useful when learning complex layouts or using boards with missing legends), with the ability to tweak keys directly without interrupting your workflow.
+- **Web app:** A zero-install browser editor (via WebHID/Web Serial) focused on inspecting layouts and remapping keys, sending keycode and behavior updates to the device on the fly from any computer.
+
+<p align="center">
+  <a href="https://github.com/srwi/keypeek/releases"><strong>Get desktop app</strong></a> &nbsp;|&nbsp; <a href="https://srwi.github.io/keypeek/"><strong>Open web app</strong></a>
+</p>
 
 <img src=".github/assets/demo.gif" alt="KeyPeek in action">
 
 ## Setup
 
-KeyPeek requires a small firmware module because stock QMK/Vial/ZMK firmware does not expose live layer-change events.
-The module adds that event stream over the device connection, so the overlay stays in sync with your active layers in real time.
+Using the desktop overlay requires a small firmware change because stock QMK, Vial, and ZMK firmware do not expose live layer-change events. The module adds this event stream over the device connection so the overlay stays in sync with your active layers in real time while typing.
+
+> [!NOTE]
+> If you only plan to use KeyPeek for keymap editing, this firmware modification is not needed.
 
 ### QMK and Vial
 
@@ -109,7 +118,8 @@ KeyPeek will read layout and keymap directly from the device for ZMK without req
 
 ### Connecting
 
-Devices are scanned when the app starts. For QMK you will be prompted to select the `keyboard_info.json` generated from your keymap when you connect. For Vial and ZMK, just select the connected device from the dropdown, since they provide layout information directly.
+- **Desktop:** Devices are scanned when the app starts. For QMK you will be prompted to select the `keyboard_info.json` generated from your keymap when you connect. For Vial and ZMK, just select the connected device from the dropdown, since they provide layout information directly.
+- **Web (WASM):** In a browser supporting WebHID and Web Serial (such as Chrome or Edge), select your keyboard using the browser pairing dialog.
 
 ### Keymap Editor
 
