@@ -193,7 +193,9 @@ impl DesktopOverlayApp {
 
         if let Some(event) = self
             .connection_mgr
-            .update(self.settings.overlay_config(), |d| ctx.request_repaint_after(d))
+            .update(self.settings.overlay_config(), |d| {
+                ctx.request_repaint_after(d)
+            })
         {
             match event {
                 ConnectionEvent::Connected => {
@@ -239,12 +241,7 @@ impl DesktopOverlayApp {
     }
 
     /// Renders the overlay in an egui Window.
-    pub fn draw_overlay_window(
-        &mut self,
-        ctx: &egui::Context,
-        keyboard: &Keyboard,
-        visible: bool,
-    ) {
+    pub fn draw_overlay_window(&mut self, ctx: &egui::Context, keyboard: &Keyboard, visible: bool) {
         let anchor_params = self.get_anchor_params();
         let mut window_open = visible;
         let hit_test_enabled = self.is_any_window_open();

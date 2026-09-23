@@ -154,3 +154,93 @@ fn hex_to_u16(hex_string: &str) -> Result<u16, ParseIntError> {
     let cleaned_hex = hex_string.trim_start_matches("0x");
     u16::from_str_radix(cleaned_hex, 16)
 }
+
+/// Parses a layout JSON string, supporting both VIA/Vial KLE format and QMK info.json format.
+pub fn parse_layout_json_str(
+    content: &str,
+    vid: u16,
+    pid: u16,
+) -> Result<KeyboardDefinition, crate::protocols::DeviceError> {
+    use crate::protocols::DeviceError;
+
+    let json: serde_json::Value = serde_json::from_str(content)
+        .map_err(|e| DeviceError::Protocol(format!("Invalid layout JSON: {e}")))?;
+
+    // 1. VIA / Vial definition format: has "matrix" and "layouts"
+    if let Some(_matrix) = json.get("matrix") {
+        if let Some(layouts) = json.get("layouts") {
+            // Case 1a: layouts.keymap is direct array
+            if layouts.get("keymap").and_then(|v| v.as_array()).is_some() {
+                return super::kle_parser::parse_vial_definition(&json, vid, pid).map_err(|e| {
+                    DeviceError::Protocol(format!("Failed to parse VIA/Vial definition: {e}"))
+                });
+            }
+            // Case 1b: layouts.keymap.layout is array (VIA v3)
+            if let Some(keymap) = layouts.get("keymap") {
+                if let Some(layout_arr) = keymap.get("layout").and_then(|v| v.as_array()) {
+                    let mut modified_json = json.clone();
+                    modified_json["layouts"]["keymap"] =
+                        serde_json::Value::Array(layout_arr.clone());
+                    return super::kle_parser::parse_vial_definition(&modified_json, vid, pid)
+                        .map_err(|e| {
+                            DeviceError::Protocol(format!("Failed to parse VIA definition: {e}"))
+                        });
+                }
+            }
+        }
+    }
+
+    // 2. QMK info.json format: has "layouts"
+    if let Some(layouts_obj) = json.get("layouts").and_then(|v| v.as_object()) {
+        if let Ok(def) = parse_qmk_json_value(&json) {
+            return Ok(def);
+        }
+
+        // Fallback: parse layouts without requiring matrix_pins or usb in JSON
+        let mut parsed_layouts = Vec::new();
+        let mut max_row = 0;
+        let mut max_col = 0;
+
+        for (layout_name, raw_layout) in layouts_obj {
+            if let Ok(keys) = collect_layout_keys(raw_layout) {
+                for key in &keys {
+                    max_row = max_row.max(key.row);
+                    max_col = max_col.max(key.col);
+                }
+                if !keys.is_empty() {
+                    parsed_layouts.push(crate::layout::KeyboardLayout {
+                        name: layout_name.clone(),
+                        keys,
+                    });
+                }
+            }
+        }
+
+        if !parsed_layouts.is_empty() {
+            let rows = json
+                .get("matrix")
+                .and_then(|m| m.get("rows"))
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+                .unwrap_or(max_row + 1);
+            let cols = json
+                .get("matrix")
+                .and_then(|m| m.get("cols"))
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+                .unwrap_or(max_col + 1);
+
+            return Ok(KeyboardDefinition {
+                vid,
+                pid,
+                rows,
+                cols,
+                layouts: parsed_layouts,
+            });
+        }
+    }
+
+    Err(DeviceError::Protocol(
+        "Unrecognized layout format. Expected a VIA layout JSON or QMK info.json.".to_string(),
+    ))
+}

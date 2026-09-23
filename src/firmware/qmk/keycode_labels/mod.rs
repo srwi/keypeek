@@ -10,5 +10,3 @@ pub use keycode_label::try_resolve_qmk_key;
 pub use advanced::get_advanced_layout_key;
 #[cfg(test)]
 pub use basic::get_basic_layout_key;
-#[cfg(test)]
-pub use keycode_label::qmk_to_layout_key;

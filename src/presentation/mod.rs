@@ -18,5 +18,5 @@ pub use overlay_window::{draw_overlay_keys, OverlayView};
 #[cfg(not(target_arch = "wasm32"))]
 pub use overlay_window::{DesktopApp, DesktopOverlayApp, OverlayApp};
 #[cfg(target_arch = "wasm32")]
-pub use overlay_window::{WebApp, WebOverlayApp, OverlayApp};
+pub use overlay_window::{OverlayApp, WebApp, WebOverlayApp};
 pub use settings::{FileSettingsStore, MemorySettingsStore, Settings, SettingsStore};

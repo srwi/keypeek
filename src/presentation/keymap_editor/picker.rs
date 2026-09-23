@@ -469,9 +469,9 @@ pub fn modifier_toggle_grid(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::key_spec::Modifiers;
     use crate::key_presenter::StandardKeyPresenter;
     use crate::key_spec::HidKey;
+    use crate::key_spec::Modifiers;
 
     fn test_candidate(binding: KeySpec) -> Candidate {
         Candidate::from_action(binding, &StandardKeyPresenter, &[])

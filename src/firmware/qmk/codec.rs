@@ -865,6 +865,4 @@ mod tests {
             Err(DeviceError::Unsupported(_))
         ));
     }
-
-
 }

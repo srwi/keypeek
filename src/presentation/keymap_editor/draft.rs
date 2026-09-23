@@ -539,7 +539,6 @@ mod tests {
         assert_eq!(draft.staged(), Some(spec));
     }
 
-
     #[test]
     fn round_trip_layer_activation() {
         let spec = KeySpec::Layer {

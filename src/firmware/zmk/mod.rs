@@ -2,7 +2,6 @@ pub mod codec;
 pub mod common;
 #[cfg(feature = "desktop")]
 pub mod discovery;
-#[cfg(feature = "desktop")]
 pub mod driver;
 #[cfg(test)]
 pub(crate) mod keycode_labels;
@@ -13,6 +12,7 @@ pub mod rpc;
 #[cfg(target_arch = "wasm32")]
 pub mod web;
 
+pub use driver::ZmkProtocol;
 pub use presenter::ZmkKeyPresenter;
 pub use profile::ZmkEditorProfile;
 

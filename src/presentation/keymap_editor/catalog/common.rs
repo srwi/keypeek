@@ -2,8 +2,8 @@
 //!
 //! Provides builders for key candidate groups represented as [`KeySpec`] objects.
 
-use crate::key_spec::Modifiers;
 use crate::key_presenter::KeyPresenter;
+use crate::key_spec::Modifiers;
 use crate::key_spec::{
     AudioAction, BacklightAction, BluetoothAction, CustomBinding, CustomKind, HidKey, KeySpec,
     LayerActivation, LightingAction, MouseAction, MouseButton, OutputTarget, PowerAction,

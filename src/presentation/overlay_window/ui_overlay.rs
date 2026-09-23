@@ -60,8 +60,7 @@ pub fn draw_overlay_keys(
 
     let layout = keyboard.layout();
     let layout_size = layout.get_dimensions();
-    let overlay_space =
-        ui.allocate_space(egui::vec2(layout_size.0 * size, layout_size.1 * size));
+    let overlay_space = ui.allocate_space(egui::vec2(layout_size.0 * size, layout_size.1 * size));
     let overlay_rect = overlay_space.1;
     let window_pos = overlay_rect.min;
 
@@ -75,8 +74,7 @@ pub fn draw_overlay_keys(
     let mut hovered_key: Option<(usize, usize, usize)> = None;
 
     // Modifier state only applies to live preview on non-pinned layers.
-    let live_preview_active =
-        pinned.is_none() && settings.legend_mode == LegendMode::SingleLive;
+    let live_preview_active = pinned.is_none() && settings.legend_mode == LegendMode::SingleLive;
     let shift_held = live_preview_active && keyboard.is_shift_held();
     let ralt_held = live_preview_active && keyboard.is_ralt_held();
 

@@ -563,8 +563,6 @@ mod tests {
         }
     }
 
-
-
     #[test]
     fn test_zmk_unsupported_features_properly_rejected() {
         let tt_spec = KeySpec::Layer {

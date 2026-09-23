@@ -242,7 +242,6 @@ mod tests {
         assert!(!zmk_other.items.contains(&EditorSection::RawHex));
     }
 
-
     #[test]
     fn qmk_attaches_qmk_aliases_only() {
         let qmk = QmkEditorProfile;

@@ -6,9 +6,7 @@ use web_time::Instant;
 
 use super::state::{SettingsState, UiState};
 use super::ui_overlay::OverlayView;
-use crate::application::connection_manager::{
-    ConnectionEvent, DeviceConnectionManager,
-};
+use crate::application::connection_manager::{ConnectionEvent, DeviceConnectionManager};
 use crate::application::Keyboard;
 use crate::device_discovery::DiscoveredDevice;
 use crate::platform::web::ConnectedWebDevice;
@@ -152,7 +150,9 @@ impl WebOverlayApp {
 
         if let Some(event) = self
             .connection_mgr
-            .update(self.settings.overlay_config(), |d| ctx.request_repaint_after(d))
+            .update(self.settings.overlay_config(), |d| {
+                ctx.request_repaint_after(d)
+            })
         {
             match event {
                 ConnectionEvent::Connected => {
@@ -434,11 +434,7 @@ impl WebOverlayApp {
     }
 
     /// Top bar with title, layout switcher, legend mode, and status.
-    fn render_web_top_bar(
-        &mut self,
-        ui: &mut egui::Ui,
-        keyboard: Option<&Keyboard>,
-    ) {
+    fn render_web_top_bar(&mut self, ui: &mut egui::Ui, keyboard: Option<&Keyboard>) {
         egui::Panel::top("web_top_bar").show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new("KeyPeek").strong().size(15.0));

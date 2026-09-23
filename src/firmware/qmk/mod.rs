@@ -13,6 +13,7 @@ pub mod vial;
 #[cfg(target_arch = "wasm32")]
 pub mod web;
 
+pub use common::QmkProtocol;
 pub use presenter::QmkKeyPresenter;
 pub use profile::QmkEditorProfile;
 

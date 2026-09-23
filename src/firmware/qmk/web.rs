@@ -1,15 +1,12 @@
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc;
 use std::sync::Arc;
 
 use crate::domain::layout::KeyboardDefinition;
-use crate::key_spec::{KeySpec, KeymapSnapshot, LayerInfo};
+use crate::key_spec::{KeymapSnapshot, LayerInfo};
 use crate::platform::web_hid::WebHidTransport;
-use crate::protocols::{ActionFilter, DeviceError, DeviceEvent, KeyboardProtocol, WriteSupport};
+use crate::protocols::DeviceError;
 
 use super::codec as qmk_codec;
-use super::common::qmk_action_filter;
-use super::json_parser;
 use super::kle_parser;
 use qmk_via_api::QmkFeatures;
 
@@ -30,7 +27,6 @@ const VIAL_MAX_PROTOCOL_VERSION: u32 = 50;
 const VIA_UNHANDLED_MARKER: u8 = 0xFF;
 
 const VIA_CMD_GET_PROTOCOL_VERSION: u8 = 0x01;
-const VIA_CMD_SET_KEY: u8 = 0x05;
 const VIA_CMD_GET_LAYER_COUNT: u8 = 0x11;
 const VIA_CMD_GET_BUFFER: u8 = 0x12;
 
@@ -203,174 +199,9 @@ fn keypeek_subscribe_report(active: bool) -> [u8; crate::platform::web_hid::RAW_
     report
 }
 
-/// A connected QMK / VIA / Vial keyboard communicating over WebHID.
-pub struct WebQmkProtocol {
-    transport: Arc<WebHidTransport>,
-    definition: KeyboardDefinition,
-    snapshot: KeymapSnapshot,
-    features: QmkFeatures,
-    alive: Arc<AtomicBool>,
-}
+pub use super::common::QmkProtocol;
 
-impl Drop for WebQmkProtocol {
-    fn drop(&mut self) {
-        self.alive.store(false, Ordering::Relaxed);
-        let report = keypeek_subscribe_report(false);
-        self.transport.fire_and_forget_report(&report);
-    }
-}
-
-impl KeyboardProtocol for WebQmkProtocol {
-    fn get_layout_definition(&self) -> &KeyboardDefinition {
-        &self.definition
-    }
-
-    fn read_keymap(&self) -> Result<KeymapSnapshot, DeviceError> {
-        Ok(self.snapshot.clone())
-    }
-
-    fn subscribe_events(&mut self) -> Result<mpsc::Receiver<DeviceEvent>, DeviceError> {
-        let alive = Arc::clone(&self.alive);
-        let transport = Arc::clone(&self.transport);
-        wasm_bindgen_futures::spawn_local(async move {
-            let report = keypeek_subscribe_report(true);
-            while alive.load(Ordering::Relaxed) {
-                transport.fire_and_forget_report(&report);
-                crate::platform::web_hid::sleep_ms(1000).await;
-            }
-        });
-
-        self.transport.take_event_receiver()
-    }
-
-    fn write_support(&self) -> WriteSupport {
-        WriteSupport::Immediate
-    }
-
-    fn set_key(
-        &mut self,
-        _layer: &LayerInfo,
-        layer_index: usize,
-        row: usize,
-        col: usize,
-        spec: &KeySpec,
-    ) -> Result<(), DeviceError> {
-        let code = qmk_codec::keyspec_to_qmk(spec)?;
-        let mut report = vec![0u8; 32];
-        report[0] = VIA_CMD_SET_KEY;
-        report[1] = layer_index as u8;
-        report[2] = row as u8;
-        report[3] = col as u8;
-        report[4] = (code >> 8) as u8;
-        report[5] = (code & 0xFF) as u8;
-        self.transport.fire_and_forget_report(&report);
-
-        if let Some(layer_actions) = self.snapshot.actions.get_mut(layer_index) {
-            if let Some(row_actions) = layer_actions.get_mut(row) {
-                if let Some(cell) = row_actions.get_mut(col) {
-                    *cell = Some(spec.clone());
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn action_filter(&self) -> Option<ActionFilter> {
-        qmk_action_filter(self.features)
-    }
-
-    fn supports_live_layout_switching(&self) -> bool {
-        true
-    }
-}
-
-/// Parses a layout JSON string, supporting both VIA/Vial KLE format and QMK info.json format.
-pub fn parse_layout_json_str(
-    content: &str,
-    vid: u16,
-    pid: u16,
-) -> Result<KeyboardDefinition, DeviceError> {
-    let json: serde_json::Value = serde_json::from_str(content)
-        .map_err(|e| DeviceError::Protocol(format!("Invalid layout JSON: {e}")))?;
-
-    // 1. VIA / Vial definition format: has "matrix" and "layouts"
-    if let Some(_matrix) = json.get("matrix") {
-        if let Some(layouts) = json.get("layouts") {
-            // Case 1a: layouts.keymap is direct array
-            if layouts.get("keymap").and_then(|v| v.as_array()).is_some() {
-                return kle_parser::parse_vial_definition(&json, vid, pid).map_err(|e| {
-                    DeviceError::Protocol(format!("Failed to parse VIA/Vial definition: {e}"))
-                });
-            }
-            // Case 1b: layouts.keymap.layout is array (VIA v3)
-            if let Some(keymap) = layouts.get("keymap") {
-                if let Some(layout_arr) = keymap.get("layout").and_then(|v| v.as_array()) {
-                    let mut modified_json = json.clone();
-                    modified_json["layouts"]["keymap"] =
-                        serde_json::Value::Array(layout_arr.clone());
-                    return kle_parser::parse_vial_definition(&modified_json, vid, pid).map_err(
-                        |e| DeviceError::Protocol(format!("Failed to parse VIA definition: {e}")),
-                    );
-                }
-            }
-        }
-    }
-
-    // 2. QMK info.json format: has "layouts"
-    if let Some(layouts_obj) = json.get("layouts").and_then(|v| v.as_object()) {
-        if let Ok(def) = json_parser::parse_qmk_json_value(&json) {
-            return Ok(def);
-        }
-
-        // Fallback: parse layouts without requiring matrix_pins or usb in JSON
-        let mut parsed_layouts = Vec::new();
-        let mut max_row = 0;
-        let mut max_col = 0;
-
-        for (layout_name, raw_layout) in layouts_obj {
-            if let Ok(keys) = json_parser::collect_layout_keys(raw_layout) {
-                for key in &keys {
-                    max_row = max_row.max(key.row);
-                    max_col = max_col.max(key.col);
-                }
-                if !keys.is_empty() {
-                    parsed_layouts.push(crate::layout::KeyboardLayout {
-                        name: layout_name.clone(),
-                        keys,
-                    });
-                }
-            }
-        }
-
-        if !parsed_layouts.is_empty() {
-            let rows = json
-                .get("matrix")
-                .and_then(|m| m.get("rows"))
-                .and_then(|v| v.as_u64())
-                .map(|v| v as usize)
-                .unwrap_or(max_row + 1);
-            let cols = json
-                .get("matrix")
-                .and_then(|m| m.get("cols"))
-                .and_then(|v| v.as_u64())
-                .map(|v| v as usize)
-                .unwrap_or(max_col + 1);
-
-            return Ok(KeyboardDefinition {
-                vid,
-                pid,
-                rows,
-                cols,
-                layouts: parsed_layouts,
-            });
-        }
-    }
-
-    Err(DeviceError::Protocol(
-        "Unrecognized layout format. Expected a VIA layout JSON or QMK info.json.".to_string(),
-    ))
-}
+pub use super::json_parser::parse_layout_json_str;
 
 /// Retrieves cached layout JSON for a given VID/PID from browser localStorage.
 pub fn get_cached_layout(vid: u16, pid: u16) -> Option<String> {
@@ -418,7 +249,7 @@ async fn load_via_definition(
 
 /// Result of connecting to a WebHID QMK/Vial/VIA device.
 pub enum WebQmkOutcome {
-    Connected(WebQmkProtocol),
+    Connected(QmkProtocol),
     RequiresLayoutFile,
 }
 
@@ -453,11 +284,18 @@ pub async fn connect_web_qmk(
     let features = QmkFeatures::default();
     let alive = Arc::new(AtomicBool::new(true));
 
-    Ok(WebQmkOutcome::Connected(WebQmkProtocol {
-        transport,
-        definition,
-        snapshot,
-        features,
-        alive,
-    }))
+    let alive_clone = Arc::clone(&alive);
+    let transport_clone = Arc::clone(&transport);
+    wasm_bindgen_futures::spawn_local(async move {
+        let report = keypeek_subscribe_report(true);
+        while alive_clone.load(Ordering::Relaxed) {
+            transport_clone.fire_and_forget_report(&report);
+            crate::platform::web_hid::sleep_ms(1000).await;
+        }
+    });
+
+    let event_rx = transport.take_event_receiver()?;
+    let protocol = QmkProtocol::new_web(transport, definition, snapshot, features, event_rx, alive);
+
+    Ok(WebQmkOutcome::Connected(protocol))
 }

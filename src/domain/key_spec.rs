@@ -376,6 +376,19 @@ pub struct KeymapSnapshot {
     pub actions: Vec<Vec<Vec<Option<KeySpec>>>>,
 }
 
+impl KeymapSnapshot {
+    /// Updates a single action binding cell at (layer, row, col).
+    pub fn set_action(&mut self, layer: usize, row: usize, col: usize, action: Option<KeySpec>) {
+        if let Some(layer_actions) = self.actions.get_mut(layer) {
+            if let Some(row_actions) = layer_actions.get_mut(row) {
+                if let Some(cell) = row_actions.get_mut(col) {
+                    *cell = action;
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

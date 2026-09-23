@@ -1,22 +1,17 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use crate::domain::layout::KeyboardDefinition;
-use crate::key_spec::{KeySpec, KeymapSnapshot, LayerInfo};
 use crate::platform::web_serial::WebSerialTransport;
-use crate::protocols::{ActionFilter, DeviceError, DeviceEvent, KeyboardProtocol, WriteSupport};
+use crate::protocols::{DeviceError, DeviceEvent};
 
-use super::codec as zmk_codec;
-use super::common::{build_from_zmk_data, resolve_binding, zmk_action_filter, ZmkData};
+use super::common::{build_from_zmk_data, resolve_binding, ZmkData};
 
-use zmk_studio_api::proto::zmk::behaviors::{
-    BehaviorBindingParametersSet, GetBehaviorDetailsResponse,
-};
+use zmk_studio_api::proto::zmk::behaviors::GetBehaviorDetailsResponse;
 use zmk_studio_api::proto::zmk::core::LockState;
-use zmk_studio_api::proto::zmk::keymap::{BehaviorBinding, Keymap, PhysicalLayouts};
+use zmk_studio_api::proto::zmk::keymap::{Keymap, PhysicalLayouts};
 use zmk_studio_api::proto::zmk::studio;
-use zmk_studio_api::{role_from_display_name, Behavior, BehaviorRole, ResolvedLayer};
+use zmk_studio_api::{role_from_display_name, ResolvedLayer};
 
 /// Queries the ZMK Studio lock state over Web Serial.
 async fn query_lock_state(transport: &WebSerialTransport) -> Result<LockState, DeviceError> {
@@ -160,148 +155,7 @@ async fn query_behavior_details(
     }
 }
 
-/// Connected ZMK Studio keyboard communicating asynchronously over Web Serial and WebHID.
-pub struct WebZmkProtocol {
-    transport: Arc<WebSerialTransport>,
-    definition: KeyboardDefinition,
-    snapshot: Mutex<KeymapSnapshot>,
-    supported_behaviors: HashSet<BehaviorRole>,
-    behavior_metadata: HashMap<BehaviorRole, Vec<BehaviorBindingParametersSet>>,
-    behavior_id_by_role: HashMap<BehaviorRole, u32>,
-    event_rx: Mutex<Option<mpsc::Receiver<DeviceEvent>>>,
-    _hid_transport: Option<crate::platform::web_hid::WebHidTransport>,
-}
-
-impl KeyboardProtocol for WebZmkProtocol {
-    fn get_layout_definition(&self) -> &KeyboardDefinition {
-        &self.definition
-    }
-
-    fn read_keymap(&self) -> Result<KeymapSnapshot, DeviceError> {
-        Ok(self.snapshot.lock().unwrap().clone())
-    }
-
-    fn subscribe_events(&mut self) -> Result<mpsc::Receiver<DeviceEvent>, DeviceError> {
-        self.event_rx
-            .lock()
-            .unwrap()
-            .take()
-            .ok_or_else(|| DeviceError::Protocol("Already subscribed to ZMK events".to_string()))
-    }
-
-    fn write_support(&self) -> WriteSupport {
-        WriteSupport::Staged
-    }
-
-    fn set_key(
-        &mut self,
-        layer: &LayerInfo,
-        layer_index: usize,
-        row: usize,
-        col: usize,
-        spec: &KeySpec,
-    ) -> Result<(), DeviceError> {
-        let behavior = zmk_codec::keyspec_to_zmk(spec)?;
-        if row != 0 {
-            return Err(DeviceError::Unsupported(format!(
-                "Invalid ZMK key position {row}:{col}"
-            )));
-        }
-
-        let behavior_id = match behavior.role() {
-            Some(role) => self
-                .behavior_id_by_role
-                .get(&role)
-                .copied()
-                .ok_or_else(|| {
-                    DeviceError::Unsupported(format!("Missing role {role:?} on device"))
-                })?,
-            None => match behavior {
-                Behavior::Custom { behavior_id, .. } => behavior_id,
-                Behavior::Unknown { behavior_id, .. } => behavior_id as u32,
-                _ => {
-                    return Err(DeviceError::Unsupported(
-                        "Cannot resolve behavior ID for key binding".into(),
-                    ))
-                }
-            },
-        };
-
-        let (param1, param2) = behavior.raw_params();
-        let binding = BehaviorBinding {
-            behavior_id: behavior_id as i32,
-            param1,
-            param2,
-        };
-
-        let transport = Arc::clone(&self.transport);
-        let layer_id = layer.id;
-        let key_position = col as i32;
-
-        wasm_bindgen_futures::spawn_local(async move {
-            let req =
-                studio::request::Subsystem::Keymap(zmk_studio_api::proto::zmk::keymap::Request {
-                    request_type: Some(
-                        zmk_studio_api::proto::zmk::keymap::request::RequestType::SetLayerBinding(
-                            zmk_studio_api::proto::zmk::keymap::SetLayerBindingRequest {
-                                layer_id,
-                                key_position,
-                                binding: Some(binding),
-                            },
-                        ),
-                    ),
-                });
-            if let Err(e) = transport.call(req).await {
-                log::error!("Failed to write ZMK key binding: {e:?}");
-            }
-        });
-
-        // Update in-memory snapshot immediately
-        let mut snapshot = self.snapshot.lock().unwrap();
-        if let Some(layer_actions) = snapshot.actions.get_mut(layer_index) {
-            if let Some(row_actions) = layer_actions.get_mut(row) {
-                if let Some(cell) = row_actions.get_mut(col) {
-                    *cell = Some(spec.clone());
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn save_keymap(&mut self) -> Result<(), DeviceError> {
-        let transport = Arc::clone(&self.transport);
-        wasm_bindgen_futures::spawn_local(async move {
-            let req =
-                studio::request::Subsystem::Keymap(zmk_studio_api::proto::zmk::keymap::Request {
-                    request_type: Some(
-                        zmk_studio_api::proto::zmk::keymap::request::RequestType::SaveChanges(true),
-                    ),
-                });
-            if let Err(e) = transport.call(req).await {
-                log::error!("Failed to save ZMK changes: {e:?}");
-            }
-        });
-        Ok(())
-    }
-
-    fn acquire_edit_lock(&mut self) -> Result<(), DeviceError> {
-        Ok(())
-    }
-
-    fn release_edit_lock(&mut self) {}
-
-    fn action_filter(&self) -> Option<ActionFilter> {
-        zmk_action_filter(
-            self.supported_behaviors.clone(),
-            self.behavior_metadata.clone(),
-        )
-    }
-
-    fn supports_live_layout_switching(&self) -> bool {
-        true
-    }
-}
+pub use super::driver::ZmkProtocol;
 
 /// Connects to a ZMK Studio keyboard over Web Serial, performs handshake and keymap resolution.
 pub async fn connect_web_zmk(
@@ -309,8 +163,8 @@ pub async fn connect_web_zmk(
     vid: u16,
     pid: u16,
     event_rx: mpsc::Receiver<DeviceEvent>,
-    hid_transport: Option<crate::platform::web_hid::WebHidTransport>,
-) -> Result<WebZmkProtocol, DeviceError> {
+    _hid_transport: Option<crate::platform::web_hid::WebHidTransport>,
+) -> Result<ZmkProtocol, DeviceError> {
     let lock_state = query_lock_state(&transport).await?;
     if lock_state == LockState::ZmkStudioCoreLockStateLocked {
         return Err(DeviceError::DeviceLocked);
@@ -371,14 +225,10 @@ pub async fn connect_web_zmk(
     let layout = build_from_zmk_data(vid, pid, zmk_data)
         .map_err(|e| DeviceError::Protocol(format!("Failed to build ZMK layout: {e}")))?;
 
-    Ok(WebZmkProtocol {
+    let backend = Box::new(super::driver::WebZmkBackend::new(
         transport,
-        definition: layout.definition,
-        snapshot: layout.snapshot,
-        supported_behaviors,
-        behavior_metadata,
         behavior_id_by_role,
-        event_rx: Mutex::new(Some(event_rx)),
-        _hid_transport: hid_transport,
-    })
+    ));
+
+    Ok(ZmkProtocol::new_web(Arc::new(layout), backend, event_rx))
 }

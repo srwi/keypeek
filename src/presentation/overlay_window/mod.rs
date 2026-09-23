@@ -18,4 +18,4 @@ pub use ui_overlay::{draw_overlay_keys, OverlayView};
 pub use desktop::{DesktopApp, DesktopOverlayApp, OverlayApp};
 
 #[cfg(target_arch = "wasm32")]
-pub use web::{WebApp, WebOverlayApp, OverlayApp};
+pub use web::{OverlayApp, WebApp, WebOverlayApp};
