@@ -1,10 +1,13 @@
 name: Build and deploy to GitHub Pages
 
 on:
-  push:
-    branches:
-      - wasm
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Release version override (e.g. 0.11.0 or v0.11.0)'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -22,6 +25,24 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+            VERSION="${VERSION#v}"
+          else
+            BASE_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name=="keypeek-web") | .version')
+            SHORT_SHA=$(git rev-parse --short HEAD)
+            VERSION="${BASE_VERSION}-${SHORT_SHA}"
+          fi
+          echo "Building version: $VERSION"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+          # Update workspace package version so env!("CARGO_PKG_VERSION") reflects it
+          sed -i '0,/^version = .*/s//version = "'"$VERSION"'"/' Cargo.toml
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
