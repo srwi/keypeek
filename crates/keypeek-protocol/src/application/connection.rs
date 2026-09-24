@@ -1,8 +1,8 @@
 use crate::application::Keyboard;
-use keypeek_core::keymap_editor::EditorProfile;
-use keypeek_core::OverlayConfig;
 use crate::protocols::{ConnectionSpec, DeviceError, KeyboardProtocol, Reopener};
 use crate::ui_wake::UiWake;
+use keypeek_core::keymap_editor::EditorProfile;
+use keypeek_core::OverlayConfig;
 use std::sync::mpsc::{self, TryRecvError};
 use std::sync::Arc;
 

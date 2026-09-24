@@ -1,11 +1,11 @@
 use super::codec as qmk_codec;
-use keypeek_core::{KeySpec, KeyboardDefinition, KeymapSnapshot, LayerInfo};
 #[cfg(feature = "hidapi")]
 use crate::protocols::pump_hid_reader;
 use crate::protocols::ActionFilter;
 #[cfg(any(feature = "hidapi", test))]
 use crate::protocols::RawHidTransport;
 use crate::protocols::{DeviceError, DeviceEvent, KeyboardProtocol, WriteSupport};
+use keypeek_core::{KeySpec, KeyboardDefinition, KeymapSnapshot, LayerInfo};
 #[cfg(feature = "hidapi")]
 use qmk_via_api::api::KeyboardApi;
 pub use qmk_via_api::QmkFeatures;

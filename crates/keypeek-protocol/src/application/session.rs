@@ -1,6 +1,6 @@
-use keypeek_core::{KeyPresenter, KeySpec, KeyboardDomain};
 use crate::protocols::{ActionFilter, DeviceEvent, KeyboardProtocol, WriteSupport};
 use crate::ui_wake::UiWake;
+use keypeek_core::{KeyPresenter, KeySpec, KeyboardDomain};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};

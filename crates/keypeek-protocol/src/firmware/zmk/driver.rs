@@ -1,12 +1,12 @@
 use super::codec as zmk_codec;
 #[cfg(feature = "desktop")]
 use super::rpc::{self as zmk_rpc, ZmkStudioSession, ZmkTransport};
-use keypeek_core::{KeyboardDefinition, KeymapSnapshot, KeySpec, LayerInfo};
 #[cfg(feature = "desktop")]
 use crate::protocols::pump_hid_reader;
 #[cfg(test)]
 use crate::protocols::RawHidTransport;
 use crate::protocols::{DeviceError, DeviceEvent, KeyboardProtocol, Reopener, WriteSupport};
+use keypeek_core::{KeySpec, KeyboardDefinition, KeymapSnapshot, LayerInfo};
 #[cfg(feature = "desktop")]
 use std::error::Error;
 use std::sync::{mpsc, Arc, Mutex};

@@ -1,9 +1,9 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use keypeek_core::{KeyboardDefinition, KeymapSnapshot, LayerInfo};
 use crate::platform::web_hid::WebHidTransport;
 use crate::protocols::DeviceError;
+use keypeek_core::{KeyboardDefinition, KeymapSnapshot, LayerInfo};
 
 use super::codec as qmk_codec;
 use super::kle_parser;

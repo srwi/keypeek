@@ -1,11 +1,11 @@
 //! Codec translating between ZMK Studio [`Behavior`] and domain [`KeySpec`].
 
+use crate::protocols::DeviceError;
 use keypeek_core::{
     BacklightAction, BluetoothAction, CustomBinding, CustomKind, CustomParam, HidKey, KeySpec,
     LayerActivation, LightingAction, Modifiers, MouseAction, MouseButton, OutputTarget,
     PowerAction, RgbAction,
 };
-use crate::protocols::DeviceError;
 use zmk_studio_api::{
     BacklightCommand, Behavior, BehaviorParam, BluetoothCommand, ExternalPowerCommand, HidUsage,
     MouseButton as ZmkMouseButton, OutputSelection, UnderglowCommand,

@@ -19,9 +19,9 @@ pub use profile::QmkEditorProfile;
 
 use crate::device_discovery::DeviceDriverScanner;
 use crate::firmware::FirmwareBundle;
+use crate::protocols::{ConnectionSpec, DeviceError, KeyboardProtocol};
 use keypeek_core::keymap_editor::EditorProfile;
 use keypeek_core::KeyPresenter;
-use crate::protocols::{ConnectionSpec, DeviceError, KeyboardProtocol};
 use std::sync::Arc;
 
 pub struct QmkBundle;

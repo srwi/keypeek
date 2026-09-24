@@ -6,12 +6,12 @@ use std::time::Duration;
 use web_time::Instant;
 
 use crate::application::session::KeyboardSession;
+use crate::protocols::{KeyboardProtocol, WriteSupport};
+use crate::ui_wake::UiWake;
 use keypeek_core::{
     KeyMatrix, KeyPresenter, KeySpec, KeyboardDomain, KeyboardLayout, LayerInfo, LayoutKey,
     OverlayConfig,
 };
-use crate::protocols::{KeyboardProtocol, WriteSupport};
-use crate::ui_wake::UiWake;
 
 /// Root connected keyboard aggregate, uniting pure in-memory domain state
 /// (`KeyboardDomain`) with asynchronous communication and background threads

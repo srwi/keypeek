@@ -126,34 +126,19 @@ fn zmk_system_groups() -> &'static [CandidateGroup] {
 }
 
 const ZMK_BOOT_POWER_ACTIONS: [(PowerAction, &[&str]); 7] = [
-    (
-        PowerAction::Reset,
-        &["reset", "reboot", "sys_reset"],
-    ),
+    (PowerAction::Reset, &["reset", "reboot", "sys_reset"]),
     (
         PowerAction::Bootloader,
         &["bootloader", "dfu", "flash", "boot"],
     ),
-    (
-        PowerAction::SoftOff,
-        &["soft off", "power off", "shutdown"],
-    ),
+    (PowerAction::SoftOff, &["soft off", "power off", "shutdown"]),
     (
         PowerAction::UnlockKeymap,
         &["unlock", "keymap unlock", "studio unlock"],
     ),
-    (
-        PowerAction::Toggle,
-        &["ext pwr tog", "power toggle"],
-    ),
-    (
-        PowerAction::On,
-        &["ext pwr on", "power on"],
-    ),
-    (
-        PowerAction::Off,
-        &["ext pwr off", "power off"],
-    ),
+    (PowerAction::Toggle, &["ext pwr tog", "power toggle"]),
+    (PowerAction::On, &["ext pwr on", "power on"]),
+    (PowerAction::Off, &["ext pwr off", "power off"]),
 ];
 
 fn zmk_boot_power_groups() -> &'static [CandidateGroup] {
@@ -277,16 +262,8 @@ const ZMK_LAYER_OPS: [(&str, LayerActivation, &[&str]); 4] = [
         LayerActivation::Momentary,
         &["mo", "momentary"],
     ),
-    (
-        "Toggle",
-        LayerActivation::Toggle,
-        &["tg", "toggle"],
-    ),
-    (
-        "Switch To Layer",
-        LayerActivation::To,
-        &["to", "switch"],
-    ),
+    ("Toggle", LayerActivation::Toggle, &["tg", "toggle"]),
+    ("Switch To Layer", LayerActivation::To, &["to", "switch"]),
     (
         "Sticky Layer",
         LayerActivation::Sticky,

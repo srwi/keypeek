@@ -419,7 +419,10 @@ impl EditorState {
     ) -> EditTarget {
         let clicked = ui
             .push_id("layer_switcher", |ui| {
-                draw_layer_switcher(ui, keyboard, target.layer_index, None, style)
+                ui.horizontal(|ui| {
+                    draw_layer_switcher(ui, keyboard, Some(target.layer_index), None, style)
+                })
+                .inner
             })
             .inner;
 
@@ -525,19 +528,19 @@ impl EditorState {
     }
 }
 
-/// Draws layer switcher buttons in a horizontal row.
+/// Draws layer switcher buttons directly into the active layout row.
 ///
 /// If `button_width` is `None`, buttons expand proportionally to fill available width.
 /// Returns `Some(clicked_layer)` if a button was clicked.
 pub fn draw_layer_switcher(
     ui: &mut egui::Ui,
     keyboard: &Keyboard,
-    active_layer: usize,
+    selected_layer: Option<usize>,
     button_width: Option<f32>,
     style: &crate::key_paint::KeyPaintStyle,
 ) -> Option<usize> {
     let layer_infos = keyboard.layer_infos();
-    let mut selected_layer = None;
+    let mut clicked_layer = None;
 
     let layer_count = layer_infos.len().max(1);
     let item_spacing = ui.spacing().item_spacing.x;
@@ -545,17 +548,15 @@ pub fn draw_layer_switcher(
     let width = button_width
         .unwrap_or_else(|| ((ui.available_width() - total_spacing) / layer_count as f32).max(24.0));
 
-    ui.horizontal(|ui| {
-        for (i, info) in layer_infos.iter().enumerate() {
-            let label = info.short_name(i);
-            let is_selected = active_layer == i;
-            if layer_button(ui, &label, i, is_selected, width, style).clicked() {
-                selected_layer = Some(i);
-            }
+    for (i, info) in layer_infos.iter().enumerate() {
+        let label = info.short_name(i);
+        let is_selected = selected_layer == Some(i);
+        if layer_button(ui, &label, i, is_selected, width, style).clicked() {
+            clicked_layer = Some(i);
         }
-    });
+    }
 
-    selected_layer
+    clicked_layer
 }
 
 /// Renders a styled layer selector button matching the active theme.
@@ -567,7 +568,37 @@ pub fn layer_button(
     width: f32,
     style: &crate::key_paint::KeyPaintStyle,
 ) -> egui::Response {
-    let colors = style.colors_for(layer_index as u8, KeycodeKind::Modifier, false, selected);
+    styled_chip_button(
+        ui,
+        layer_index,
+        label,
+        layer_index as u8,
+        selected,
+        width,
+        style,
+    )
+}
+
+/// Renders the styled Auto layer button.
+pub fn auto_button(
+    ui: &mut egui::Ui,
+    selected: bool,
+    width: f32,
+    style: &crate::key_paint::KeyPaintStyle,
+) -> egui::Response {
+    styled_chip_button(ui, "auto_layer_btn", "Auto", 0, selected, width, style)
+}
+
+fn styled_chip_button(
+    ui: &mut egui::Ui,
+    id_salt: impl std::hash::Hash + std::fmt::Debug,
+    label: &str,
+    color_layer: u8,
+    selected: bool,
+    width: f32,
+    style: &crate::key_paint::KeyPaintStyle,
+) -> egui::Response {
+    let colors = style.colors_for(color_layer, KeycodeKind::Modifier, false, selected);
     let text = egui::RichText::new(label).color(colors.font).size(12.0);
 
     let stroke_width = if selected { 2.0_f32 } else { 1.0_f32 };
@@ -577,7 +608,7 @@ pub fn layer_button(
         .corner_radius(4.0)
         .min_size(egui::vec2(width, 22.0));
 
-    let response = ui.push_id(layer_index, |ui| ui.add(button)).inner;
+    let response = ui.push_id(id_salt, |ui| ui.add(button)).inner;
     if response.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         let highlight_stroke = egui::Stroke::new(stroke_width, colors.highlight_border());

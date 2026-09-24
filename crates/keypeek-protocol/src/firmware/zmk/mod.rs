@@ -18,11 +18,11 @@ pub use profile::ZmkEditorProfile;
 
 use crate::device_discovery::DeviceDriverScanner;
 use crate::firmware::FirmwareBundle;
-use keypeek_core::keymap_editor::EditorProfile;
-use keypeek_core::KeyPresenter;
 #[cfg(feature = "desktop")]
 use crate::protocols::ZmkTransportConfig;
 use crate::protocols::{ConnectionSpec, DeviceError, KeyboardProtocol};
+use keypeek_core::keymap_editor::EditorProfile;
+use keypeek_core::KeyPresenter;
 use std::sync::Arc;
 
 pub struct ZmkBundle;

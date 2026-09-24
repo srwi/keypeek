@@ -50,9 +50,7 @@ use wayland_client::{
 
 use egui_glow::glow;
 
-use keypeek_presentation::{
-    add_phosphor_to_fonts, DesktopOverlayApp, OverlayHost, SettingsStore,
-};
+use keypeek_presentation::{add_phosphor_to_fonts, DesktopOverlayApp, OverlayHost, SettingsStore};
 use keypeek_protocol::{DiscoveredDevice, UiWake};
 
 use egl::EglState;

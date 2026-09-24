@@ -2,7 +2,7 @@
 target = "index.html"
 
 [watch]
-watch = ["crates", "resources"]
+watch = ["crates", "resources", "index.html"]
 ignore = ["target"]
 
 [serve]

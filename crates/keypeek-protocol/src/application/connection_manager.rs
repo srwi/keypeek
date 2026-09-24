@@ -2,9 +2,9 @@ use super::connection::{ConnectionRequest, ConnectionTask};
 use super::device_discovery::DiscoveredDevice;
 use super::keyboard::Keyboard;
 use super::ui_wake::UiWake;
+use crate::protocols::{ConnectionSpec, DeviceError, Reopener};
 use keypeek_core::keymap_editor::EditorProfile;
 use keypeek_core::OverlayConfig;
-use crate::protocols::{ConnectionSpec, DeviceError, Reopener};
 
 use std::fmt;
 use std::sync::Arc;

@@ -155,7 +155,7 @@ where
     }
 }
 
-use keypeek_core::{KeyboardDefinition, KeymapSnapshot, KeySpec, LayerInfo};
+use keypeek_core::{KeySpec, KeyboardDefinition, KeymapSnapshot, LayerInfo};
 
 pub type ActionFilter = Arc<dyn Fn(&KeySpec) -> bool + Send + Sync>;
 

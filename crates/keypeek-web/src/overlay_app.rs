@@ -20,9 +20,9 @@ use keypeek_protocol::platform::web_hid::{
 use keypeek_protocol::platform::web_serial::{is_web_serial_supported, request_and_connect_zmk};
 use keypeek_protocol::{DeviceError, DiscoveredDevice, Keyboard, UiWake};
 
-/// Background color for the browser canvas.
-pub fn clear_color() -> egui::Rgba {
-    egui::Rgba::from_rgb(0.118, 0.118, 0.180)
+/// Background color for the browser canvas, matching egui's panel background.
+pub fn clear_color(visuals: &egui::Visuals) -> egui::Rgba {
+    visuals.panel_fill.into()
 }
 
 /// Top-level coordinator for browser execution: WebHID/WebSerial pairing,
@@ -77,13 +77,19 @@ impl WebOverlayApp {
         }
     }
 
-    /// Background color for browser mode.
-    pub fn clear_color(&self) -> egui::Rgba {
-        clear_color()
+    /// Background color for browser mode, matching active theme visuals.
+    pub fn clear_color(&self, visuals: &egui::Visuals) -> egui::Rgba {
+        clear_color(visuals)
     }
 
     pub(crate) fn is_any_window_open(&self) -> bool {
         self.editor.is_open()
+    }
+
+    /// Returns the currently pinned layer (editor target or manual web selection),
+    /// or `None` if following hardware (Auto mode).
+    pub(crate) fn effective_pinned_layer(&self) -> Option<usize> {
+        self.editor.pinned_layer().or(self.selected_layer)
     }
 
     pub(crate) fn persist_settings(&self) {
@@ -350,7 +356,7 @@ impl WebOverlayApp {
                 }
 
                 ui.vertical_centered(|ui| {
-                    let pinned_layer = self.editor.pinned_layer().or(self.selected_layer);
+                    let pinned_layer = self.effective_pinned_layer();
                     OverlayView::new(
                         keyboard,
                         &mut self.editor,
@@ -386,7 +392,9 @@ impl WebOverlayApp {
         }
 
         // 3. Bottom panel of the main panel for layer buttons and legend mode
-        self.render_web_bottom_bar(ui, keyboard_ref);
+        if let Some(keyboard) = keyboard_ref {
+            self.render_web_bottom_bar(ui, keyboard);
+        }
 
         // 4. Central panel for the keyboard overlay canvas or connection buttons
         egui::CentralPanel::default().show(ui, |ui| {
@@ -455,21 +463,36 @@ impl WebOverlayApp {
     }
 
     /// Bottom panel of the main panel: centered layer buttons and bottom-right legend mode.
-    fn render_web_bottom_bar(&mut self, ui: &mut egui::Ui, keyboard: Option<&Keyboard>) {
+    fn render_web_bottom_bar(&mut self, ui: &mut egui::Ui, kbd: &Keyboard) {
         egui::Panel::bottom("web_bottom_bar")
             .resizable(false)
             .show_separator_line(false)
             .show(ui, |ui| {
                 ui.add_space(3.0);
-                ui.horizontal(|ui| {
-                    let total_width = ui.available_width();
+                const ROW_HEIGHT: f32 = 24.0;
+                ui.allocate_ui_with_layout(
+                    egui::vec2(ui.available_width(), ROW_HEIGHT),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        ui.spacing_mut().interact_size.y = 22.0;
+                        let total_width = ui.available_width();
 
-                    // Centered layer buttons when a keyboard is connected
-                    if let Some(kbd) = keyboard {
+                        // Centered layer buttons
                         let count = kbd.layer_infos().len();
                         let spacing = ui.spacing().item_spacing.x;
+                        let is_editing = self.editor.is_open();
+
+                        const AUTO_WIDTH: f32 = 46.0;
+                        const LAYER_BTN_WIDTH: f32 = 38.0;
+
+                        let (btn_count, base_width) = if is_editing {
+                            (count, count as f32 * LAYER_BTN_WIDTH)
+                        } else {
+                            (count + 1, AUTO_WIDTH + count as f32 * LAYER_BTN_WIDTH)
+                        };
                         let center_width =
-                            count as f32 * 38.0 + count.saturating_sub(1) as f32 * spacing;
+                            base_width + btn_count.saturating_sub(1) as f32 * spacing;
+
                         let left_space = ((total_width - center_width) * 0.5)
                             .min(total_width - center_width - 170.0)
                             .max(0.0);
@@ -478,49 +501,57 @@ impl WebOverlayApp {
                             ui.add_space(left_space);
                         }
 
-                        let active_layer = self
-                            .editor
-                            .pinned_layer()
-                            .or(self.selected_layer)
-                            .unwrap_or_else(|| kbd.active_layer());
+                        let selected_layer = self.effective_pinned_layer();
                         let style = self.settings.paint_style(KEY_UNIT);
 
-                        let clicked = ui
-                            .push_id("bottom_layer_switcher", |ui| {
-                                keypeek_presentation::keymap_editor::draw_layer_switcher(
-                                    ui,
-                                    kbd,
-                                    active_layer,
-                                    Some(38.0),
-                                    &style,
-                                )
-                            })
-                            .inner;
+                        if !is_editing {
+                            let is_auto = self.selected_layer.is_none();
+                            let auto_btn = keypeek_presentation::keymap_editor::auto_button(
+                                ui, is_auto, AUTO_WIDTH, &style,
+                            );
 
-                        if let Some(layer) = clicked {
-                            self.selected_layer = Some(layer);
-                            if self.editor.is_open() {
-                                self.editor.select_layer(kbd, layer);
+                            if auto_btn.clicked() {
+                                self.selected_layer = None;
                             }
                         }
-                    }
 
-                    // Render right-aligned legends selector
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        egui::ComboBox::from_id_salt("web_legend_mode")
-                            .selected_text(self.settings.draft.legend_mode.to_string())
-                            .show_ui(ui, |ui| {
-                                for mode in LegendMode::ALL {
-                                    ui.selectable_value(
-                                        &mut self.settings.draft.legend_mode,
-                                        mode,
-                                        mode.to_string(),
-                                    );
-                                }
-                            });
-                        ui.label("Legends:");
-                    });
-                });
+                        let clicked = keypeek_presentation::keymap_editor::draw_layer_switcher(
+                            ui,
+                            kbd,
+                            selected_layer,
+                            Some(LAYER_BTN_WIDTH),
+                            &style,
+                        );
+
+                        if let Some(layer) = clicked {
+                            if is_editing {
+                                self.editor.select_layer(kbd, layer);
+                                self.selected_layer = Some(layer);
+                            } else if self.selected_layer == Some(layer) {
+                                // Toggle: clicking the already selected/pinned layer returns to Auto
+                                self.selected_layer = None;
+                            } else {
+                                self.selected_layer = Some(layer);
+                            }
+                        }
+
+                        // Render right-aligned legends selector
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            egui::ComboBox::from_id_salt("web_legend_mode")
+                                .selected_text(self.settings.draft.legend_mode.to_string())
+                                .show_ui(ui, |ui| {
+                                    for mode in LegendMode::ALL {
+                                        ui.selectable_value(
+                                            &mut self.settings.draft.legend_mode,
+                                            mode,
+                                            mode.to_string(),
+                                        );
+                                    }
+                                });
+                            ui.label("Legends:");
+                        });
+                    },
+                );
                 ui.add_space(3.0);
             });
 

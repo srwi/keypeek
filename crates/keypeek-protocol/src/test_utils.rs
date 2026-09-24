@@ -4,14 +4,14 @@ use std::sync::mpsc;
 use std::sync::Arc;
 
 use crate::application::Keyboard;
-use keypeek_core::{
-    HidKey, Key, KeyMatrix, KeySpec, KeyboardDefinition, KeyboardDomain, KeyboardLayout,
-    KeymapSnapshot, LayerActivation, LayerInfo, Modifiers, OverlayConfig,
-};
 use crate::firmware::qmk::QmkEditorProfile;
 use crate::key_presenter::StandardKeyPresenter;
 use crate::protocols::{ConnectionSpec, DeviceError, DeviceEvent, KeyboardProtocol, WriteSupport};
 use crate::ui_wake::UiWake;
+use keypeek_core::{
+    HidKey, Key, KeyMatrix, KeySpec, KeyboardDefinition, KeyboardDomain, KeyboardLayout,
+    KeymapSnapshot, LayerActivation, LayerInfo, Modifiers, OverlayConfig,
+};
 
 /// A lightweight in-memory `KeyboardProtocol` for unit tests.
 pub struct TestProtocol {

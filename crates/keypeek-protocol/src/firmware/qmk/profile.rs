@@ -109,10 +109,7 @@ const QMK_BOOT_POWER_ACTIONS: [(PowerAction, &[&str]); 3] = [
         PowerAction::Bootloader,
         &["bootloader", "dfu", "flash", "boot"],
     ),
-    (
-        PowerAction::Other(0xEE),
-        &["clear eeprom", "eeprom reset"],
-    ),
+    (PowerAction::Other(0xEE), &["clear eeprom", "eeprom reset"]),
 ];
 
 fn qmk_boot_power_groups() -> &'static [CandidateGroup] {
@@ -297,16 +294,8 @@ const QMK_LAYER_OPS: [(&str, LayerActivation, &[&str]); 6] = [
         LayerActivation::Momentary,
         &["mo", "momentary"],
     ),
-    (
-        "Toggle",
-        LayerActivation::Toggle,
-        &["tg", "toggle"],
-    ),
-    (
-        "Switch To Layer",
-        LayerActivation::To,
-        &["to", "switch"],
-    ),
+    ("Toggle", LayerActivation::Toggle, &["tg", "toggle"]),
+    ("Switch To Layer", LayerActivation::To, &["to", "switch"]),
     (
         "Sticky Layer",
         LayerActivation::Sticky,

@@ -4,9 +4,9 @@ pub mod zmk;
 use std::sync::Arc;
 
 use crate::device_discovery::DeviceDriverScanner;
+use crate::protocols::{ConnectionSpec, DeviceError, KeyboardProtocol};
 use keypeek_core::keymap_editor::EditorProfile;
 use keypeek_core::KeyPresenter;
-use crate::protocols::{ConnectionSpec, DeviceError, KeyboardProtocol};
 
 /// Cohesive bundle providing discovery scanners, visual presenter, editor profile,
 /// and hardware protocol connection for a firmware family.

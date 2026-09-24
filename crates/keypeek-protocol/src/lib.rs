@@ -38,4 +38,3 @@ pub use protocols::{
 
 #[cfg(feature = "desktop")]
 pub use platform::hid::scan_all_hid;
-

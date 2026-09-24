@@ -6,12 +6,12 @@ use web_time::Instant;
 
 use super::state::{SettingsState, UiState};
 use super::ui_overlay::OverlayView;
+use crate::overlay_host::OverlayHost;
+use crate::settings::SettingsStore;
 use keypeek_protocol::connection_manager::{
     ConnectOutcome, ConnectionEvent, DeviceConnectionManager,
 };
 use keypeek_protocol::{DiscoveredDevice, Keyboard, UiWake};
-use crate::overlay_host::OverlayHost;
-use crate::settings::SettingsStore;
 
 /// Background clear color for desktop: transparent overlay or dimmed backdrop.
 pub fn clear_color(is_any_window_open: bool) -> egui::Rgba {

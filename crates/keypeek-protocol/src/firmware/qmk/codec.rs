@@ -1,10 +1,10 @@
 //! Codec translating between QMK keycodes and domain [`KeySpec`].
 
+use crate::protocols::DeviceError;
 use keypeek_core::{
     AudioAction, BacklightAction, CustomBinding, CustomKind, HidKey, KeySpec, LayerActivation,
     LightingAction, Modifiers, MouseAction, MouseButton, PowerAction, RgbAction, RgbMatrixAction,
 };
-use crate::protocols::DeviceError;
 use qmk_via_api::keycodes::Keycode;
 use qmk_via_api::ranges::*;
 use qmk_via_api::{QmkKeycode, QmkLayerOp};

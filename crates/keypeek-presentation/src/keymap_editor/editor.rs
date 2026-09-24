@@ -416,9 +416,9 @@ impl EditorState {
                         .speed(1),
                 );
                 if drag.changed() || ui.button("Set").clicked() {
-                    let spec = KeySpec::Lighting(LightingAction::Backlight(
-                        BacklightAction::Set(self.draft.backlight_level),
-                    ));
+                    let spec = KeySpec::Lighting(LightingAction::Backlight(BacklightAction::Set(
+                        self.draft.backlight_level,
+                    )));
                     self.commit_action(ctx.keyboard, ctx.target, spec);
                 }
             });

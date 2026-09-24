@@ -1,7 +1,7 @@
 use super::common::{QmkFeatures, QmkProtocol};
 use super::kle_parser;
-use keypeek_core::KeyboardDefinition;
 use crate::protocols::DeviceError;
+use keypeek_core::KeyboardDefinition;
 use qmk_via_api::api::KeyboardApi;
 use std::error::Error;
 

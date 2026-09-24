@@ -44,8 +44,8 @@ impl WebApp {
 }
 
 impl eframe::App for WebApp {
-    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        self.app.clear_color().to_array()
+    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
+        self.app.clear_color(visuals).to_array()
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {

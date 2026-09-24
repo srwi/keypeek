@@ -11,7 +11,6 @@ pub use overlay_window::*;
 pub use settings::*;
 pub use ui_widgets::*;
 
-
 /// Registers Phosphor icons into egui font definitions.
 pub fn add_phosphor_to_fonts(fonts: &mut egui::FontDefinitions) {
     fonts.font_data.insert(

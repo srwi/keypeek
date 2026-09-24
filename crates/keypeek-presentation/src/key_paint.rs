@@ -1,7 +1,7 @@
 //! Shared key rendering engine for the overlay and keycode pickers.
 
-use keypeek_core::{BorderStyle, KeycodeKind, Label, LayoutKey};
 use crate::settings::{LegendMode, Settings, ThemeColor, ThemeSettings};
+use keypeek_core::{BorderStyle, KeycodeKind, Label, LayoutKey};
 
 /// Border color for invalid key selection in the keymap editor.
 pub const INVALID_SELECTION_BORDER: egui::Color32 = egui::Color32::from_rgb(235, 190, 40);
@@ -809,4 +809,3 @@ mod tests {
         assert_eq!(stroke.width, expected_thickness);
     }
 }
-

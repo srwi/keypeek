@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use crate::application::keyboard::Keyboard;
 use crate::device_discovery::DiscoveredDevice;
-use keypeek_core::keymap_editor::EditorProfile;
-use keypeek_core::OverlayConfig;
 use crate::protocols::{DeviceError, KeyboardProtocol};
 use crate::ui_wake::UiWake;
+use keypeek_core::keymap_editor::EditorProfile;
+use keypeek_core::OverlayConfig;
 
 pub struct ConnectedWebDevice {
     pub device: DiscoveredDevice,
