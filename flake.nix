@@ -162,6 +162,7 @@
             inherit cargoArtifacts;
             partitions = 1;
             partitionType = "count";
+            cargoNextestExtraArgs = "--workspace --no-tests=pass";
           });
 
         pre-commit-check = pre-commit.lib.${system}.run {

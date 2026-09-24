@@ -2776,9 +2776,11 @@ dependencies = [
  "serialport",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "wayland-client",
  "web-sys",
  "web-time",
  "windows 0.62.2",
+ "x11rb 0.14.0",
  "xkbcommon 0.9.0",
  "zmk-studio-api",
 ]

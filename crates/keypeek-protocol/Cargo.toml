@@ -48,6 +48,8 @@ windows = { workspace = true, features = [
 
 [target.'cfg(target_os = "linux")'.dependencies]
 xkbcommon = { workspace = true }
+x11rb = { workspace = true }
+wayland-client = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { workspace = true }
