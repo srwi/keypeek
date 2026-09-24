@@ -4,19 +4,18 @@
 
 use super::draft::{EditorSection, KeyDraft};
 use super::picker::{
-    framed_candidate_groups, modifier_toggle_grid, multi_candidate_groups, CandidateGroup,
-    SelectedKey,
+    candidate_groups, modifier_toggle_grid, multi_candidate_groups, section_headline,
+    CandidateGroup, SelectedKey, GRID_SPACING, SECTION_SPACING,
 };
 use super::profile::SidebarSection;
 use super::{EditTarget, EditorProfile, EditorState};
 use crate::key_paint::KeyPaintStyle;
-use crate::ui_widgets::titled_group;
 use keypeek_core::{BacklightAction, HidKey, KeySpec, LayerActivation, LightingAction};
 use keypeek_protocol::Keyboard;
 
 /// Width of the left category panel in pixels.
 const SIDEBAR_WIDTH: f32 = 110.0;
-/// Right margin to prevent scrollbar overlap with group borders.
+/// Right margin to prevent scrollbar overlap with key grids.
 const SCROLLBAR_GUTTER: f32 = 8.0;
 
 struct PageContext<'a> {
@@ -174,17 +173,13 @@ impl EditorState {
             (target.layer_index, current_section),
             |ui| match current_section {
                 EditorSection::Keyboard => {
-                    self.draw_modified_key_page(ui, &ctx, EditorSection::Keyboard, "kb_mods", false)
+                    self.draw_modified_key_page(ui, &ctx, EditorSection::Keyboard, "kb_mods")
                 }
-                EditorSection::KeyToggle => self.draw_modified_key_page(
-                    ui,
-                    &ctx,
-                    EditorSection::KeyToggle,
-                    "toggle_mods",
-                    false,
-                ),
+                EditorSection::KeyToggle => {
+                    self.draw_modified_key_page(ui, &ctx, EditorSection::KeyToggle, "toggle_mods")
+                }
                 EditorSection::Combo => {
-                    self.draw_modified_key_page(ui, &ctx, EditorSection::Combo, "combo_mods", true)
+                    self.draw_modified_key_page(ui, &ctx, EditorSection::Combo, "combo_mods")
                 }
                 EditorSection::ModTap => self.draw_mod_tap_page(ui, &ctx),
                 EditorSection::Layers => self.draw_layers_page(ui, &ctx),
@@ -260,19 +255,14 @@ impl EditorState {
         ctx: &PageContext<'_>,
         section: EditorSection,
         id_salt: &str,
-        require_modifier: bool,
     ) {
         let is_valid = self.draft.is_valid();
-        titled_group(ui, ctx.profile.section_label(section), |ui| {
-            self.draw_mod_grid(ui, id_salt, self.draft.modifiers, is_valid, ctx, |d, m| {
-                d.modifiers ^= m;
-            });
-            self.draw_tap_candidates(ui, ctx, false);
-
-            if require_modifier && self.draft.modifiers == 0 {
-                ui.weak("Select at least one modifier.");
-            }
+        section_headline(ui, ctx.profile.section_label(section));
+        self.draw_mod_grid(ui, id_salt, self.draft.modifiers, is_valid, ctx, |d, m| {
+            d.modifiers ^= m;
         });
+        ui.add_space(GRID_SPACING);
+        self.draw_tap_candidates(ui, ctx, false);
     }
 
     fn draw_candidate_groups_page(
@@ -283,7 +273,7 @@ impl EditorState {
     ) {
         let current_action = ctx.target.action(ctx.keyboard);
         let selected = current_action.as_ref().map(SelectedKey::valid);
-        framed_candidate_groups(
+        candidate_groups(
             ui,
             groups,
             ctx.search_query,
@@ -298,39 +288,35 @@ impl EditorState {
 
     fn draw_tap_key_picker(&mut self, ui: &mut egui::Ui, ctx: &PageContext<'_>) {
         let is_valid = self.draft.is_valid();
-        titled_group(ui, "Tap key", |ui| {
-            if ctx.profile.supports_tap_modifiers() {
-                self.draw_mod_grid(
-                    ui,
-                    "tap_mods",
-                    self.draft.tap_modifiers,
-                    is_valid,
-                    ctx,
-                    |d, m| d.tap_modifiers ^= m,
-                );
-            }
-            self.draw_tap_candidates(ui, ctx, false);
-        });
+        section_headline(ui, "Tap key");
+        if ctx.profile.supports_tap_modifiers() {
+            self.draw_mod_grid(
+                ui,
+                "tap_mods",
+                self.draft.tap_modifiers,
+                is_valid,
+                ctx,
+                |d, m| d.tap_modifiers ^= m,
+            );
+            ui.add_space(GRID_SPACING);
+        }
+        self.draw_tap_candidates(ui, ctx, false);
     }
 
     fn draw_mod_tap_page(&mut self, ui: &mut egui::Ui, ctx: &PageContext<'_>) {
         let is_valid = self.draft.is_valid();
-        titled_group(ui, "Hold modifier", |ui| {
-            self.draw_mod_grid(
-                ui,
-                "hold_mods",
-                self.draft.hold_mods,
-                is_valid,
-                ctx,
-                |d, m| d.hold_mods ^= m,
-            );
-        });
+        section_headline(ui, "Hold modifier");
+        self.draw_mod_grid(
+            ui,
+            "hold_mods",
+            self.draft.hold_mods,
+            is_valid,
+            ctx,
+            |d, m| d.hold_mods ^= m,
+        );
+        ui.add_space(SECTION_SPACING);
 
         self.draw_tap_key_picker(ui, ctx);
-
-        if self.draft.hold_mods == 0 {
-            ui.weak("Select a hold modifier.");
-        }
     }
 
     fn draw_layers_page(&mut self, ui: &mut egui::Ui, ctx: &PageContext<'_>) {
@@ -345,7 +331,7 @@ impl EditorState {
         let selected_action = self.draft.staged().or(current_action);
         let selected = selected_action.as_ref().map(SelectedKey::valid);
 
-        framed_candidate_groups(
+        candidate_groups(
             ui,
             &groups,
             ctx.search_query,
@@ -379,49 +365,43 @@ impl EditorState {
 
     fn draw_one_shot_page(&mut self, ui: &mut egui::Ui, ctx: &PageContext<'_>) {
         let is_valid = self.draft.is_valid();
-        titled_group(
+        section_headline(ui, ctx.profile.section_label(EditorSection::OneShot));
+        self.draw_mod_grid(
             ui,
-            ctx.profile.section_label(EditorSection::OneShot),
-            |ui| {
-                self.draw_mod_grid(
-                    ui,
-                    "oneshot_mods",
-                    self.draft.modifiers,
-                    is_valid,
-                    ctx,
-                    |d, m| d.modifiers ^= m,
-                );
-
-                if ctx.profile.supports_oneshot_keys() {
-                    self.draw_tap_candidates(ui, ctx, true);
-                } else if self.draft.modifiers == 0 {
-                    ui.weak("Select at least one modifier.");
-                }
-            },
+            "oneshot_mods",
+            self.draft.modifiers,
+            is_valid,
+            ctx,
+            |d, m| d.modifiers ^= m,
         );
+
+        if ctx.profile.supports_oneshot_keys() {
+            ui.add_space(GRID_SPACING);
+            self.draw_tap_candidates(ui, ctx, true);
+        }
     }
 
     fn draw_backlight_page(&mut self, ui: &mut egui::Ui, ctx: &PageContext<'_>) {
         let groups = ctx.profile.section_groups(EditorSection::Backlight);
         if !groups.is_empty() {
             self.draw_candidate_groups_page(ui, ctx, groups);
+            ui.add_space(SECTION_SPACING);
         }
 
-        titled_group(ui, "Brightness Level", |ui| {
-            ui.horizontal(|ui| {
-                ui.label("Level:");
-                let drag = ui.add(
-                    egui::DragValue::new(&mut self.draft.backlight_level)
-                        .range(0..=255)
-                        .speed(1),
-                );
-                if drag.changed() || ui.button("Set").clicked() {
-                    let spec = KeySpec::Lighting(LightingAction::Backlight(BacklightAction::Set(
-                        self.draft.backlight_level,
-                    )));
-                    self.commit_action(ctx.keyboard, ctx.target, spec);
-                }
-            });
+        section_headline(ui, "Brightness Level");
+        ui.horizontal(|ui| {
+            ui.label("Level:");
+            let drag = ui.add(
+                egui::DragValue::new(&mut self.draft.backlight_level)
+                    .range(0..=255)
+                    .speed(1),
+            );
+            if drag.changed() || ui.button("Set").clicked() {
+                let spec = KeySpec::Lighting(LightingAction::Backlight(BacklightAction::Set(
+                    self.draft.backlight_level,
+                )));
+                self.commit_action(ctx.keyboard, ctx.target, spec);
+            }
         });
     }
 
@@ -452,12 +432,14 @@ impl EditorState {
             layer: layer as u8,
             activation: LayerActivation::Momentary,
         });
-        framed_candidate_groups(
+        candidate_groups(
             ui,
             std::slice::from_ref(&group),
             ctx.search_query,
             |_| true,
-            selected_layer.as_ref().map(SelectedKey::valid),
+            selected_layer
+                .as_ref()
+                .map(|s| SelectedKey::new(s, is_valid)),
             ctx.style,
             |_, candidate| {
                 if let KeySpec::Layer { layer, .. } = &candidate.binding {
@@ -467,41 +449,37 @@ impl EditorState {
             },
         );
 
-        titled_group(ui, "Modifiers", |ui| {
-            self.draw_mod_grid(
-                ui,
-                "layermod_mods",
-                self.draft.modifiers,
-                is_valid,
-                ctx,
-                |d, m| d.modifiers ^= m,
-            );
-        });
-
-        if self.draft.modifiers == 0 {
-            ui.weak("Select at least one modifier.");
-        }
+        ui.add_space(SECTION_SPACING);
+        section_headline(ui, "Modifiers");
+        self.draw_mod_grid(
+            ui,
+            "layermod_mods",
+            self.draft.modifiers,
+            is_valid,
+            ctx,
+            |d, m| d.modifiers ^= m,
+        );
     }
 
     fn draw_raw_hex_page(&mut self, ui: &mut egui::Ui, ctx: &PageContext<'_>) {
-        titled_group(ui, "Keycode", |ui| {
-            ui.horizontal(|ui| {
-                ui.label("0x");
-                let response = ui.add(
-                    egui::TextEdit::singleline(&mut self.draft.hex)
-                        .desired_width(80.0)
-                        .char_limit(4),
-                );
-                if response.changed() {
-                    self.draft.hex.retain(|c| c.is_ascii_hexdigit());
-                }
-                if response.lost_focus() || (response.changed() && self.draft.hex.len() == 4) {
-                    self.commit_draft(ctx.keyboard, ctx.profile, ctx.target);
-                }
-            });
-            if u16::from_str_radix(&self.draft.hex, 16).is_err() {
-                ui.weak("Enter a 1–4 digit hex keycode");
+        section_headline(ui, "Keycode");
+        ui.horizontal(|ui| {
+            ui.label("0x");
+            let response = ui.add(
+                egui::TextEdit::singleline(&mut self.draft.hex)
+                    .desired_width(80.0)
+                    .char_limit(4),
+            );
+            if response.changed() {
+                self.draft.hex.retain(|c| c.is_ascii_hexdigit());
+            }
+            if response.lost_focus() || (response.changed() && self.draft.hex.len() == 4) {
+                self.commit_draft(ctx.keyboard, ctx.profile, ctx.target);
             }
         });
+        if u16::from_str_radix(&self.draft.hex, 16).is_err() {
+            ui.add_space(4.0);
+            ui.weak("Enter a 1–4 digit hex keycode");
+        }
     }
 }

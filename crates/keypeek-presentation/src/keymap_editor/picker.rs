@@ -173,12 +173,27 @@ fn render_candidate_groups(
     }
 }
 
-/// Draws multiple candidate groups inside an existing UI container,
-/// filtering all groups by the search query.
-pub fn multi_candidate_groups(
+/// Spacing between distinct sections or candidate groups in pixels.
+pub const SECTION_SPACING: f32 = 8.0;
+/// Vertical space below a grid of keys in pixels.
+pub const GRID_SPACING: f32 = 6.0;
+
+/// Draws a section headline for the edit key window, matching the sidebar section font size.
+pub fn section_headline(ui: &mut egui::Ui, text: &str) {
+    ui.label(
+        egui::RichText::new(text)
+            .text_style(egui::TextStyle::Body)
+            .strong(),
+    );
+    ui.add_space(2.0);
+}
+
+/// Helper that renders filtered candidate groups, optionally prefixing each group with a headline.
+fn render_candidate_grid_groups(
     ui: &mut egui::Ui,
     groups: &[CandidateGroup],
     search_query: &str,
+    show_headlines: bool,
     filter: impl Fn(&Candidate) -> bool,
     selected: Option<SelectedKey<'_>>,
     style: &KeyPaintStyle,
@@ -186,11 +201,41 @@ pub fn multi_candidate_groups(
 ) {
     render_candidate_groups(ui, groups, search_query, filter, |ui, gi, name, refs| {
         ui.push_id((gi, name), |ui| {
-            ui.label(name);
-            picker_grid_refs(ui, name, refs, selected, style, |c| on_select(gi, c));
-            ui.add_space(6.0);
+            if show_headlines {
+                if gi > 0 {
+                    ui.add_space(SECTION_SPACING);
+                }
+                section_headline(ui, name);
+            }
+            picker_grid_refs(ui, name, refs, selected, style, |candidate| {
+                on_select(gi, candidate)
+            });
+            ui.add_space(GRID_SPACING);
         });
     });
+}
+
+/// Draws multiple candidate groups inside an existing UI container,
+/// filtering all groups by the search query. Second-level category headers are omitted.
+pub fn multi_candidate_groups(
+    ui: &mut egui::Ui,
+    groups: &[CandidateGroup],
+    search_query: &str,
+    filter: impl Fn(&Candidate) -> bool,
+    selected: Option<SelectedKey<'_>>,
+    style: &KeyPaintStyle,
+    on_select: impl FnMut(usize, &Candidate),
+) {
+    render_candidate_grid_groups(
+        ui,
+        groups,
+        search_query,
+        false,
+        filter,
+        selected,
+        style,
+        on_select,
+    );
 }
 
 /// Draws a search input with width matching the left pane.
@@ -206,23 +251,26 @@ pub fn search_bar(ui: &mut egui::Ui, query: &mut String) -> egui::Response {
     response
 }
 
-/// Draws candidate groups in framed group boxes, filtering all groups by the search query.
-pub fn framed_candidate_groups(
+/// Draws candidate groups with section headlines, filtering all groups by the search query.
+pub fn candidate_groups(
     ui: &mut egui::Ui,
     groups: &[CandidateGroup],
     search_query: &str,
     filter: impl Fn(&Candidate) -> bool,
     selected: Option<SelectedKey<'_>>,
     style: &KeyPaintStyle,
-    mut on_select: impl FnMut(usize, &Candidate),
+    on_select: impl FnMut(usize, &Candidate),
 ) {
-    render_candidate_groups(ui, groups, search_query, filter, |ui, gi, name, refs| {
-        crate::ui_widgets::titled_group(ui, name, |ui| {
-            picker_grid_refs(ui, name, refs, selected, style, |candidate| {
-                on_select(gi, candidate)
-            });
-        });
-    });
+    render_candidate_grid_groups(
+        ui,
+        groups,
+        search_query,
+        true,
+        filter,
+        selected,
+        style,
+        on_select,
+    );
 }
 
 /// Draws a modifier key button.
