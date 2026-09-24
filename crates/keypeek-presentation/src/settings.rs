@@ -95,6 +95,14 @@ pub enum LegendMode {
     SingleLive,
 }
 
+impl LegendMode {
+    pub const ALL: [LegendMode; 3] = [
+        LegendMode::Stacked,
+        LegendMode::Single,
+        LegendMode::SingleLive,
+    ];
+}
+
 impl fmt::Display for LegendMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(

@@ -279,11 +279,7 @@ impl DesktopOverlayApp {
                                 .width(ui.available_width())
                                 .selected_text(self.settings.draft.legend_mode.to_string())
                                 .show_ui(ui, |ui| {
-                                    for mode in [
-                                        LegendMode::Stacked,
-                                        LegendMode::Single,
-                                        LegendMode::SingleLive,
-                                    ] {
+                                    for mode in LegendMode::ALL {
                                         ui.selectable_value(
                                             &mut self.settings.draft.legend_mode,
                                             mode,

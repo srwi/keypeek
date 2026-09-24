@@ -14,6 +14,7 @@ pub struct KeyColors {
     pub border_thickness: f32,
     pub font: egui::Color32,
     pub invalid: bool,
+    pub pressed: bool,
 }
 
 impl KeyColors {
@@ -25,14 +26,17 @@ impl KeyColors {
             border_thickness: 0.03 * unit,
             font: font.lerp_to_gamma(egui::Color32::WHITE, 0.4),
             invalid: false,
+            pressed: true,
         }
     }
 
     /// Returns dimmed colors for transparent and unbound keys.
     pub fn ghosted(mut self) -> Self {
         self.fill = self.fill.gamma_multiply(0.25);
-        self.border = self.fill;
-        self.border_thickness = 1.0;
+        if !self.pressed {
+            self.border = self.fill;
+            self.border_thickness = 1.0;
+        }
         self
     }
 
@@ -171,6 +175,7 @@ impl KeyPaintStyle {
             border_thickness: 1.0,
             font: font_color,
             invalid: false,
+            pressed: false,
         }
     }
 }
@@ -755,3 +760,53 @@ pub fn to_egui_color(color: ThemeColor) -> egui::Color32 {
 pub fn from_egui_color(color: egui::Color32) -> ThemeColor {
     color.into()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unpressed_ghosted_key_has_invisible_border() {
+        let bg = egui::Color32::from_rgb(100, 100, 100);
+        let font = egui::Color32::WHITE;
+        let unpressed = KeyColors {
+            fill: bg,
+            border: bg.lerp_to_gamma(egui::Color32::BLACK, 0.2),
+            border_thickness: 1.0,
+            font,
+            invalid: false,
+            pressed: false,
+        };
+        let ghosted = unpressed.ghosted();
+        assert_eq!(ghosted.fill, bg.gamma_multiply(0.25));
+        assert_eq!(ghosted.border, ghosted.fill);
+        assert_eq!(ghosted.border_thickness, 1.0);
+
+        let (style, stroke) = ghosted.border_stroke(BorderStyle::None, false, false, 60.0);
+        assert_eq!(style, BorderStyle::Solid);
+        assert_eq!(stroke.color, ghosted.fill);
+        assert_eq!(stroke.width, 1.0);
+    }
+
+    #[test]
+    fn pressed_ghosted_key_retains_selection_border() {
+        let bg = egui::Color32::from_rgb(100, 100, 100);
+        let font = egui::Color32::WHITE;
+        let unit = 60.0;
+        let pressed = KeyColors::pressed(bg, font, unit);
+        let expected_border = pressed.border;
+        let expected_thickness = pressed.border_thickness;
+
+        let ghosted = pressed.ghosted();
+        assert_eq!(ghosted.fill, pressed.fill.gamma_multiply(0.25));
+        assert_eq!(ghosted.border, expected_border);
+        assert_eq!(ghosted.border_thickness, expected_thickness);
+        assert_ne!(ghosted.border, ghosted.fill);
+
+        let (style, stroke) = ghosted.border_stroke(BorderStyle::None, true, false, unit);
+        assert_eq!(style, BorderStyle::Solid);
+        assert_eq!(stroke.color, expected_border);
+        assert_eq!(stroke.width, expected_thickness);
+    }
+}
+

@@ -9,7 +9,7 @@ pub use picker::KEY_UNIT;
 pub use profile::{EditorProfile, LayerTapTarget, SidebarSection};
 
 use egui::Window;
-use keypeek_core::{KeycodeKind, KeySpec};
+use keypeek_core::{KeySpec, KeycodeKind};
 use keypeek_protocol::{Keyboard, WriteSupport};
 use std::sync::mpsc;
 
@@ -205,6 +205,21 @@ impl EditorState {
         self.target.as_ref().map(|t| t.layer_index)
     }
 
+    /// Returns the currently active layer index (either targeted layer or hardware active layer).
+    pub fn active_layer(&self, keyboard: &Keyboard) -> usize {
+        self.pinned_layer()
+            .unwrap_or_else(|| keyboard.active_layer())
+    }
+
+    /// Switches the layer of the targeted key, if an edit target is active.
+    pub fn select_layer(&mut self, keyboard: &Keyboard, layer_index: usize) {
+        if let Some(target) = self.target {
+            if target.layer_index != layer_index {
+                self.retarget(keyboard, target.with_layer(layer_index));
+            }
+        }
+    }
+
     /// Returns `true` if the target key matches the matrix position.
     pub fn is_key_targeted(&self, row: usize, col: usize) -> bool {
         self.target
@@ -252,7 +267,7 @@ impl EditorState {
         }
     }
 
-    /// Renders the core editor body: error banner, layer switcher header, categories, and overlay.
+    /// Renders the core editor body, optionally displaying the layer switcher header.
     pub fn draw_editor_content(
         &mut self,
         ui: &mut egui::Ui,
@@ -260,6 +275,7 @@ impl EditorState {
         profile: &dyn EditorProfile,
         style: &crate::key_paint::KeyPaintStyle,
         target: EditTarget,
+        show_layer_switcher: bool,
     ) {
         if let Some(error) = &self.error {
             ui.add_space(4.0);
@@ -268,7 +284,11 @@ impl EditorState {
 
         let is_enabled = self.overlay().is_none();
         ui.add_enabled_ui(is_enabled, |ui| {
-            let target = self.draw_editor_header(ui, keyboard, target, style);
+            let target = if show_layer_switcher {
+                self.draw_editor_header(ui, keyboard, target, style)
+            } else {
+                target
+            };
 
             match keyboard.write_support() {
                 WriteSupport::None => {
@@ -311,7 +331,7 @@ impl EditorState {
             window = window.open(&mut open);
         }
         window.show(ctx, |ui| {
-            self.draw_editor_content(ui, keyboard, profile, style, target);
+            self.draw_editor_content(ui, keyboard, profile, style, target, true);
         });
 
         if !open {
@@ -333,34 +353,14 @@ impl EditorState {
 
         self.prepare_frame(ui.ctx(), keyboard);
 
-        let closing = self.closing;
-        let mut close_requested = false;
-
         egui::Panel::left(egui::Id::new("edit_key_sidebar"))
             .resizable(true)
             .default_size(450.0)
             .min_size(340.0)
             .show(ui, |ui| {
                 ui.add_space(6.0);
-                ui.horizontal(|ui| {
-                    ui.heading(self.title());
-
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if !closing && ui.button(egui_phosphor::regular::X).clicked() {
-                            close_requested = true;
-                        }
-                    });
-                });
-                ui.add_space(4.0);
-                ui.separator();
-                ui.add_space(4.0);
-
-                self.draw_editor_content(ui, keyboard, profile, style, target);
+                self.draw_editor_content(ui, keyboard, profile, style, target, false);
             });
-
-        if close_requested {
-            self.handle_close_request(Some(keyboard));
-        }
     }
 
     /// Title string reflecting whether there are unsaved pending changes.
@@ -417,32 +417,15 @@ impl EditorState {
         target: EditTarget,
         style: &crate::key_paint::KeyPaintStyle,
     ) -> EditTarget {
-        let layer_infos = keyboard.layer_infos();
-        let mut selected_layer = None;
+        let clicked = ui
+            .push_id("layer_switcher", |ui| {
+                draw_layer_switcher(ui, keyboard, target.layer_index, None, style)
+            })
+            .inner;
 
-        let layer_count = layer_infos.len().max(1);
-        let item_spacing = ui.spacing().item_spacing.x;
-        let total_spacing = (layer_count - 1) as f32 * item_spacing;
-        let button_width = ((ui.available_width() - total_spacing) / layer_count as f32).max(24.0);
-
-        ui.push_id("layer_switcher", |ui| {
-            ui.horizontal(|ui| {
-                for (i, info) in layer_infos.iter().enumerate() {
-                    let label = info.short_name(i);
-                    let is_selected = target.layer_index == i;
-                    if layer_button(ui, &label, i, is_selected, button_width, style).clicked() {
-                        selected_layer = Some(i);
-                    }
-                }
-            });
-        });
-
-        if let Some(new_layer) = selected_layer {
-            if new_layer != target.layer_index {
-                let new_target = target.with_layer(new_layer);
-                self.retarget(keyboard, new_target);
-                return new_target;
-            }
+        if let Some(new_layer) = clicked {
+            self.select_layer(keyboard, new_layer);
+            return self.target.unwrap_or(target);
         }
 
         target
@@ -542,7 +525,41 @@ impl EditorState {
     }
 }
 
-fn layer_button(
+/// Draws layer switcher buttons in a horizontal row.
+///
+/// If `button_width` is `None`, buttons expand proportionally to fill available width.
+/// Returns `Some(clicked_layer)` if a button was clicked.
+pub fn draw_layer_switcher(
+    ui: &mut egui::Ui,
+    keyboard: &Keyboard,
+    active_layer: usize,
+    button_width: Option<f32>,
+    style: &crate::key_paint::KeyPaintStyle,
+) -> Option<usize> {
+    let layer_infos = keyboard.layer_infos();
+    let mut selected_layer = None;
+
+    let layer_count = layer_infos.len().max(1);
+    let item_spacing = ui.spacing().item_spacing.x;
+    let total_spacing = (layer_count - 1) as f32 * item_spacing;
+    let width = button_width
+        .unwrap_or_else(|| ((ui.available_width() - total_spacing) / layer_count as f32).max(24.0));
+
+    ui.horizontal(|ui| {
+        for (i, info) in layer_infos.iter().enumerate() {
+            let label = info.short_name(i);
+            let is_selected = active_layer == i;
+            if layer_button(ui, &label, i, is_selected, width, style).clicked() {
+                selected_layer = Some(i);
+            }
+        }
+    });
+
+    selected_layer
+}
+
+/// Renders a styled layer selector button matching the active theme.
+pub fn layer_button(
     ui: &mut egui::Ui,
     label: &str,
     layer_index: usize,
@@ -550,12 +567,7 @@ fn layer_button(
     width: f32,
     style: &crate::key_paint::KeyPaintStyle,
 ) -> egui::Response {
-    let colors = style.colors_for(
-        layer_index as u8,
-        KeycodeKind::Modifier,
-        false,
-        selected,
-    );
+    let colors = style.colors_for(layer_index as u8, KeycodeKind::Modifier, false, selected);
     let text = egui::RichText::new(label).color(colors.font).size(12.0);
 
     let stroke_width = if selected { 2.0_f32 } else { 1.0_f32 };
@@ -708,5 +720,18 @@ mod tests {
         assert_eq!(new_target.layer_index, 3);
         assert_eq!(new_target.row, 1);
         assert_eq!(new_target.col, 2);
+    }
+
+    #[test]
+    fn test_select_layer() {
+        let keyboard = create_test_keyboard();
+        let mut editor = EditorState::new();
+        let target = EditTarget::new(0, 0, 1);
+        editor.retarget(&keyboard, target);
+        assert_eq!(editor.active_layer(&keyboard), 0);
+
+        editor.select_layer(&keyboard, 2);
+        assert_eq!(editor.target.unwrap().layer_index, 2);
+        assert_eq!(editor.active_layer(&keyboard), 2);
     }
 }

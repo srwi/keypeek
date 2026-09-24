@@ -40,6 +40,7 @@ pub struct WebOverlayApp {
     pub(crate) pending_zmk_telemetry: Option<PendingZmkTelemetry>,
     pub(crate) telemetry_hid: Option<WebHidTransport>,
     pub(crate) telemetry_rx: Option<mpsc::Receiver<Option<WebHidTransport>>>,
+    pub(crate) selected_layer: Option<usize>,
 }
 
 pub type OverlayApp = WebOverlayApp;
@@ -72,6 +73,7 @@ impl WebOverlayApp {
             pending_zmk_telemetry: None,
             telemetry_hid: None,
             telemetry_rx: None,
+            selected_layer: None,
         }
     }
 
@@ -348,6 +350,7 @@ impl WebOverlayApp {
                 }
 
                 ui.vertical_centered(|ui| {
+                    let pinned_layer = self.editor.pinned_layer().or(self.selected_layer);
                     OverlayView::new(
                         keyboard,
                         &mut self.editor,
@@ -355,8 +358,13 @@ impl WebOverlayApp {
                         key_size,
                         true,
                     )
+                    .with_pinned_layer(pinned_layer)
                     .show(ui);
                 });
+
+                if let Some(target) = self.editor.target {
+                    self.selected_layer = Some(target.layer_index);
+                }
             });
     }
 
@@ -377,7 +385,10 @@ impl WebOverlayApp {
             }
         }
 
-        // 3. Central panel for the keyboard overlay canvas or connection buttons
+        // 3. Bottom panel of the main panel for layer buttons and legend mode
+        self.render_web_bottom_bar(ui, keyboard_ref);
+
+        // 4. Central panel for the keyboard overlay canvas or connection buttons
         egui::CentralPanel::default().show(ui, |ui| {
             if let Some((keyboard, _)) = &connected {
                 self.draw_overlay_canvas(ui, keyboard);
@@ -443,7 +454,80 @@ impl WebOverlayApp {
         self.render_zmk_telemetry_modal(&ctx);
     }
 
-    /// Top bar with title, layout switcher, legend mode, and status.
+    /// Bottom panel of the main panel: centered layer buttons and bottom-right legend mode.
+    fn render_web_bottom_bar(&mut self, ui: &mut egui::Ui, keyboard: Option<&Keyboard>) {
+        egui::Panel::bottom("web_bottom_bar")
+            .resizable(false)
+            .show_separator_line(false)
+            .show(ui, |ui| {
+                ui.add_space(3.0);
+                ui.horizontal(|ui| {
+                    let total_width = ui.available_width();
+
+                    // Centered layer buttons when a keyboard is connected
+                    if let Some(kbd) = keyboard {
+                        let count = kbd.layer_infos().len();
+                        let spacing = ui.spacing().item_spacing.x;
+                        let center_width =
+                            count as f32 * 38.0 + count.saturating_sub(1) as f32 * spacing;
+                        let left_space = ((total_width - center_width) * 0.5)
+                            .min(total_width - center_width - 170.0)
+                            .max(0.0);
+
+                        if left_space > 0.0 {
+                            ui.add_space(left_space);
+                        }
+
+                        let active_layer = self
+                            .editor
+                            .pinned_layer()
+                            .or(self.selected_layer)
+                            .unwrap_or_else(|| kbd.active_layer());
+                        let style = self.settings.paint_style(KEY_UNIT);
+
+                        let clicked = ui
+                            .push_id("bottom_layer_switcher", |ui| {
+                                keypeek_presentation::keymap_editor::draw_layer_switcher(
+                                    ui,
+                                    kbd,
+                                    active_layer,
+                                    Some(38.0),
+                                    &style,
+                                )
+                            })
+                            .inner;
+
+                        if let Some(layer) = clicked {
+                            self.selected_layer = Some(layer);
+                            if self.editor.is_open() {
+                                self.editor.select_layer(kbd, layer);
+                            }
+                        }
+                    }
+
+                    // Render right-aligned legends selector
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        egui::ComboBox::from_id_salt("web_legend_mode")
+                            .selected_text(self.settings.draft.legend_mode.to_string())
+                            .show_ui(ui, |ui| {
+                                for mode in LegendMode::ALL {
+                                    ui.selectable_value(
+                                        &mut self.settings.draft.legend_mode,
+                                        mode,
+                                        mode.to_string(),
+                                    );
+                                }
+                            });
+                        ui.label("Legends:");
+                    });
+                });
+                ui.add_space(3.0);
+            });
+
+        self.sync_visual_settings();
+    }
+
+    /// Top bar with title, layout switcher, and connected status.
     fn render_web_top_bar(&mut self, ui: &mut egui::Ui, keyboard: Option<&Keyboard>) {
         egui::Panel::top("web_top_bar").show(ui, |ui| {
             ui.horizontal(|ui| {
@@ -473,27 +557,9 @@ impl WebOverlayApp {
                     }
                 }
 
-                // Controls, connection status, and alerts on the right.
+                // Connection status and alerts on the right.
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    egui::ComboBox::from_id_salt("web_legend_mode")
-                        .selected_text(self.settings.draft.legend_mode.to_string())
-                        .show_ui(ui, |ui| {
-                            for mode in [
-                                LegendMode::Stacked,
-                                LegendMode::Single,
-                                LegendMode::SingleLive,
-                            ] {
-                                ui.selectable_value(
-                                    &mut self.settings.draft.legend_mode,
-                                    mode,
-                                    mode.to_string(),
-                                );
-                            }
-                        });
-                    ui.label("Legends:");
-
                     if let Some(_kbd) = keyboard {
-                        ui.separator();
                         let dev_name = self
                             .connection_mgr
                             .selected_device()

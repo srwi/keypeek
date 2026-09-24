@@ -182,4 +182,18 @@ impl Keyboard {
     pub fn layout(&self) -> KeyboardLayout {
         self.domain.layout()
     }
+
+    pub fn layer_state(&self) -> u32 {
+        self.domain.layer_state()
+    }
+
+    /// Returns the currently active hardware layer index.
+    pub fn active_layer(&self) -> usize {
+        let state = self.layer_state();
+        if state > 0 {
+            state.trailing_zeros() as usize
+        } else {
+            0
+        }
+    }
 }

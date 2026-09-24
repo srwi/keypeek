@@ -13,6 +13,7 @@ pub struct OverlayView<'a> {
     pub settings: &'a Settings,
     pub size: f32,
     pub hit_test_enabled: bool,
+    pub pinned_layer: Option<usize>,
 }
 
 impl<'a> OverlayView<'a> {
@@ -29,18 +30,27 @@ impl<'a> OverlayView<'a> {
             settings,
             size,
             hit_test_enabled,
+            pinned_layer: None,
         }
+    }
+
+    /// Sets an explicit pinned layer to display (e.g. from a web layer switcher).
+    pub fn with_pinned_layer(mut self, pinned_layer: Option<usize>) -> Self {
+        self.pinned_layer = pinned_layer;
+        self
     }
 
     /// Renders the overlay keys into the provided UI.
     pub fn show(self, ui: &mut egui::Ui) -> egui::Response {
-        draw_overlay_keys(
+        let pinned = self.pinned_layer.or_else(|| self.editor.pinned_layer());
+        draw_overlay_keys_with_pinned(
             ui,
             self.keyboard,
             self.editor,
             self.settings,
             self.size,
             self.hit_test_enabled,
+            pinned,
         )
     }
 }
@@ -54,8 +64,28 @@ pub fn draw_overlay_keys(
     size: f32,
     hit_test_enabled: bool,
 ) -> egui::Response {
-    // Pinned while editor targets a specific layer; otherwise follows active layer.
     let pinned = editor.pinned_layer();
+    draw_overlay_keys_with_pinned(
+        ui,
+        keyboard,
+        editor,
+        settings,
+        size,
+        hit_test_enabled,
+        pinned,
+    )
+}
+
+/// Draws keyboard keys with an explicit pinned layer, active styles, layer highlighting, and hit-testing.
+pub fn draw_overlay_keys_with_pinned(
+    ui: &mut egui::Ui,
+    keyboard: &Keyboard,
+    editor: &mut EditorState,
+    settings: &Settings,
+    size: f32,
+    hit_test_enabled: bool,
+    pinned: Option<usize>,
+) -> egui::Response {
     let style = KeyPaintStyle::from_settings(settings).with_unit(size);
 
     let layout = keyboard.layout();
@@ -84,11 +114,10 @@ pub fn draw_overlay_keys(
             None => keyboard.get_effective_key_layer(key.row, key.col),
         };
 
-        // Pinned transparent slot renders dimmed empty; absent slot is plain empty.
-        let transparent = pinned.is_some()
-            && keyboard
-                .get_action(effective_layer as usize, key.row, key.col)
-                .is_some()
+        // Transparent slot renders dimmed empty; absent slot is plain empty.
+        let transparent = keyboard
+            .get_action(effective_layer as usize, key.row, key.col)
+            .is_some()
             && keyboard
                 .get_key(effective_layer as usize, key.row, key.col)
                 .is_none();
@@ -163,7 +192,11 @@ pub fn draw_overlay_keys(
 
     if hit_test_enabled && overlay_response.clicked() {
         if let Some((row, col, target_layer)) = hovered_key {
-            editor.retarget(keyboard, EditTarget::new(target_layer, row, col));
+            if editor.is_key_targeted(row, col) {
+                editor.handle_close_request(Some(keyboard));
+            } else {
+                editor.retarget(keyboard, EditTarget::new(target_layer, row, col));
+            }
         }
     }
 
