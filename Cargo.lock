@@ -2728,6 +2728,7 @@ dependencies = [
  "keypeek-presentation",
  "keypeek-protocol",
  "khronos-egl",
+ "objc2 0.6.4",
  "objc2-app-kit 0.3.2",
  "raw-window-handle",
  "smithay-client-toolkit 0.21.1",

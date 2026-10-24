@@ -30,10 +30,15 @@ struct EframeApp {
     // EWMH WMs like Mutter ignore, so re-assert it for a few frames after mapping.
     #[cfg(target_os = "linux")]
     x11_above_ticks: u32,
+    #[cfg(target_os = "macos")]
+    ns_window: Option<objc2::rc::Retained<objc2_app_kit::NSWindow>>,
 }
 
 impl eframe::App for EframeApp {
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        #[cfg(target_os = "macos")]
+        return egui::Rgba::TRANSPARENT.to_array();
+        #[cfg(not(target_os = "macos"))]
         self.app.clear_color().to_array()
     }
 
@@ -62,27 +67,58 @@ impl eframe::App for EframeApp {
 
         let mut host = EframeHost { ctx: &ctx };
         self.app.ui(&ctx, &mut host);
+
+        #[cfg(target_os = "macos")]
+        if let Some(window) = &self.ns_window {
+            if self.app.core.is_any_window_open() {
+                pass_through_transparent_areas(&ctx, window);
+            }
+        }
     }
+}
+
+// Accept clicks only on egui areas so the transparent rest of the window
+// passes them through. While passthrough is on the window gets no mouse
+// events, so the cursor is polled from AppKit and the check repeats each frame.
+#[cfg(target_os = "macos")]
+fn pass_through_transparent_areas(ctx: &egui::Context, window: &objc2_app_kit::NSWindow) {
+    let cursor = window.mouseLocationOutsideOfEventStream();
+    let height = window.frame().size.height;
+    let pos = egui::pos2(cursor.x as f32, (height - cursor.y) as f32) / ctx.zoom_factor();
+
+    // The root `Ui` is a background area spanning the whole window.
+    let over_egui = ctx
+        .layer_id_at(pos)
+        .is_some_and(|layer| layer.order != egui::Order::Background);
+    // Keep receiving events while a drag leaves the area it started on.
+    let dragging = ctx.input(|i| i.pointer.any_down());
+    ctx.send_viewport_cmd(egui::ViewportCommand::MousePassthrough(!over_egui && !dragging));
+    ctx.request_repaint_after(std::time::Duration::from_millis(16));
 }
 
 // Keep the overlay visible when switching Spaces or using fullscreen apps.
 #[cfg(target_os = "macos")]
-fn show_on_all_spaces(cc: &eframe::CreationContext<'_>) {
-    use objc2_app_kit::{NSView, NSWindowCollectionBehavior};
+fn show_on_all_spaces(window: &objc2_app_kit::NSWindow) {
+    use objc2_app_kit::NSWindowCollectionBehavior;
+
+    window.setCollectionBehavior(
+        NSWindowCollectionBehavior::CanJoinAllSpaces
+            | NSWindowCollectionBehavior::FullScreenAuxiliary,
+    );
+}
+
+#[cfg(target_os = "macos")]
+fn ns_window(
+    cc: &eframe::CreationContext<'_>,
+) -> Option<objc2::rc::Retained<objc2_app_kit::NSWindow>> {
+    use objc2_app_kit::NSView;
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
-    let Ok(handle) = cc.window_handle() else {
-        return;
+    let RawWindowHandle::AppKit(handle) = cc.window_handle().ok()?.as_raw() else {
+        return None;
     };
-    if let RawWindowHandle::AppKit(handle) = handle.as_raw() {
-        let view = unsafe { handle.ns_view.cast::<NSView>().as_ref() };
-        if let Some(window) = view.window() {
-            window.setCollectionBehavior(
-                NSWindowCollectionBehavior::CanJoinAllSpaces
-                    | NSWindowCollectionBehavior::FullScreenAuxiliary,
-            );
-        }
-    }
+    let view = unsafe { handle.ns_view.cast::<NSView>().as_ref() };
+    view.window()
 }
 
 // DWM only composites a window's per-pixel alpha when asked to via
@@ -188,7 +224,11 @@ fn run_inner(
         options,
         Box::new(move |cc| {
             #[cfg(target_os = "macos")]
-            show_on_all_spaces(cc);
+            let ns_window = ns_window(cc);
+            #[cfg(target_os = "macos")]
+            if let Some(window) = &ns_window {
+                show_on_all_spaces(window);
+            }
             #[cfg(target_os = "windows")]
             enable_dwm_per_pixel_alpha(cc);
 
@@ -218,6 +258,8 @@ fn run_inner(
                 sized_to_monitor: false,
                 #[cfg(target_os = "linux")]
                 x11_above_ticks: 10,
+                #[cfg(target_os = "macos")]
+                ns_window,
             }))
         }),
     )
