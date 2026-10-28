@@ -219,7 +219,7 @@ pub struct QmkProtocol {
     definition: KeyboardDefinition,
     snapshot: Mutex<KeymapSnapshot>,
     features: QmkFeatures,
-    event_rx: Mutex<Option<EventSubscription>>,
+    event_rx: Mutex<Option<Result<EventSubscription, DeviceError>>>,
     _keepalive: Option<mpsc::Sender<()>>,
     stop_signal: StopSignal,
 }
@@ -244,12 +244,11 @@ impl QmkProtocol {
             definition.vid,
             definition.pid,
             stop_signal.clone(),
-        )
-        .ok();
+        );
 
         let (event_rx, keepalive) = match subscription {
-            Some(sub) => (Some(sub.events), sub.keepalive),
-            None => (None, None),
+            Ok(sub) => (Ok(sub.events), sub.keepalive),
+            Err(e) => (Err(e), None),
         };
 
         Self {
@@ -257,7 +256,7 @@ impl QmkProtocol {
             definition,
             snapshot: Mutex::new(snapshot),
             features,
-            event_rx: Mutex::new(event_rx),
+            event_rx: Mutex::new(Some(event_rx)),
             _keepalive: keepalive,
             stop_signal,
         }
@@ -281,7 +280,7 @@ impl QmkProtocol {
             definition,
             snapshot: Mutex::new(snapshot),
             features,
-            event_rx: Mutex::new(Some(sub)),
+            event_rx: Mutex::new(Some(Ok(sub))),
             _keepalive: None,
             stop_signal,
         }
@@ -306,7 +305,7 @@ impl KeyboardProtocol for QmkProtocol {
             .lock()
             .unwrap()
             .take()
-            .ok_or_else(|| DeviceError::Protocol("Already subscribed to QMK events".to_string()))
+            .ok_or_else(|| DeviceError::Protocol("Already subscribed to QMK events".to_string()))?
     }
 
     fn write_support(&self) -> WriteSupport {

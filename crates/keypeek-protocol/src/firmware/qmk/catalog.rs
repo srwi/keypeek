@@ -19,11 +19,13 @@ pub fn cache_stem(vid: u16, pid: u16) -> String {
     format!("{vid:04X}_{pid:04X}")
 }
 
-pub fn resolve_vendor_product_ids(
-    json: &Value,
-    fallback_vid: u16,
-    fallback_pid: u16,
-) -> (u16, u16) {
+pub fn resolve_vendor_product_ids(json: &Value, target_vid: u16, target_pid: u16) -> (u16, u16) {
+    // When connected to a physical device, the hardware USB IDs take precedence
+    // over any vendorId/productId metadata embedded within the layout JSON.
+    if target_vid != 0 || target_pid != 0 {
+        return (target_vid, target_pid);
+    }
+
     let vid = json
         .get("vendorId")
         .and_then(Value::as_str)
@@ -33,7 +35,7 @@ pub fn resolve_vendor_product_ids(
                 .and_then(Value::as_u64)
                 .map(|id| (id >> 16) as u16)
         })
-        .unwrap_or(fallback_vid);
+        .unwrap_or(0);
 
     let pid = json
         .get("productId")
@@ -44,7 +46,7 @@ pub fn resolve_vendor_product_ids(
                 .and_then(Value::as_u64)
                 .map(|id| (id & 0xffff) as u16)
         })
-        .unwrap_or(fallback_pid);
+        .unwrap_or(0);
 
     (vid, pid)
 }
@@ -239,6 +241,11 @@ mod tests {
         assert_eq!(
             resolve_vendor_product_ids(&from_vpid, 0, 0),
             (0x1234, 0x5678)
+        );
+
+        assert_eq!(
+            resolve_vendor_product_ids(&from_hex, 0xAAAA, 0xBBBB),
+            (0xAAAA, 0xBBBB)
         );
 
         let fallback = json!({});
