@@ -143,6 +143,12 @@ jobs:
       - name: Build app bundle
         run: cargo bundle --release -p keypeek-desktop --target ${{ matrix.target }}
 
+      - name: Verify Info.plist extensions
+        run: |
+          app_path=$(find target/${{ matrix.target }}/release/bundle/osx -name '*.app' | head -n 1)
+          plutil -extract NSBluetoothAlwaysUsageDescription raw "$app_path/Contents/Info.plist"
+          plutil -extract LSUIElement raw "$app_path/Contents/Info.plist"
+
       - name: Get version
         id: get_version
         run: echo "VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name=="keypeek-desktop") | .version')" >> $GITHUB_OUTPUT
