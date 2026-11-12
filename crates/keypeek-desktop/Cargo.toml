@@ -60,7 +60,9 @@ name = "KeyPeek"
 identifier = "dev.srwi.keypeek"
 
 [package.metadata.bundle.osx]
-info_plist_exts = ["../../resources/macos-info-plist-ext.xml"]
+# cargo-bundle resolves this relative to the working directory, not this crate,
+# so it must be relative to the workspace root where `cargo bundle` is run.
+info_plist_exts = ["resources/macos-info-plist-ext.xml"]
 
 [package.metadata.appimage]
 auto_link = true
