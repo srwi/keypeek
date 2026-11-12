@@ -30,6 +30,10 @@ struct EframeApp {
     // EWMH WMs like Mutter ignore, so re-assert it for a few frames after mapping.
     #[cfg(target_os = "linux")]
     x11_above_ticks: u32,
+    // Windows can drop the overlay out of the topmost band, or cover it, while it
+    // runs; this puts it back (see `keep_on_top`).
+    #[cfg(target_os = "windows")]
+    keep_on_top: Option<super::keep_on_top::KeepOnTop>,
 }
 
 impl eframe::App for EframeApp {
@@ -62,6 +66,11 @@ impl eframe::App for EframeApp {
 
         let mut host = EframeHost { ctx: &ctx };
         self.app.ui(&ctx, &mut host);
+
+        #[cfg(target_os = "windows")]
+        if let Some(keep_on_top) = &mut self.keep_on_top {
+            keep_on_top.update(self.app.is_overlay_visible());
+        }
     }
 }
 
@@ -191,6 +200,8 @@ fn run_inner(
             show_on_all_spaces(cc);
             #[cfg(target_os = "windows")]
             enable_dwm_per_pixel_alpha(cc);
+            #[cfg(target_os = "windows")]
+            let keep_on_top = super::keep_on_top::KeepOnTop::new(cc);
 
             egui_extras::install_image_loaders(&cc.egui_ctx);
 
@@ -218,6 +229,8 @@ fn run_inner(
                 sized_to_monitor: false,
                 #[cfg(target_os = "linux")]
                 x11_above_ticks: 10,
+                #[cfg(target_os = "windows")]
+                keep_on_top,
             }))
         }),
     )

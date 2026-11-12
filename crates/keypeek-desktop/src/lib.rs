@@ -6,6 +6,7 @@ use keypeek_presentation::SettingsStore;
 use keypeek_protocol::DiscoveredDevice;
 
 pub mod eframe_host;
+mod keep_on_top;
 pub mod tray;
 
 #[cfg(target_os = "linux")]
