@@ -10,7 +10,7 @@ members = [
 default-members = ["crates/keypeek-desktop"]
 
 [workspace.package]
-version = "0.11.0"
+version = "0.11.1"
 edition = "2021"
 authors = ["Stephan Rumswinkel"]
 license = "GPL-3.0-only"
