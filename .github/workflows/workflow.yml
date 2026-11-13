@@ -25,8 +25,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # Pin Rust to 1.99.1 because a type inference change in rustc 1.100 breaks bluer/bluest (see https://github.com/rust-lang/rust/issues/148922)
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.99.1
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -81,9 +84,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
+      
+      # Pin Rust to 1.99.1 because a type inference change in rustc 1.100 breaks bluer/bluest (see https://github.com/rust-lang/rust/issues/148922)
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.99.1
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -128,6 +134,7 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: 1.99.1
           targets: ${{ matrix.target }}
 
       - name: Cache Rust dependencies
