@@ -105,6 +105,8 @@ Using the desktop overlay requires a small firmware change because stock QMK, Vi
    CONFIG_ZMK_STUDIO=y
    ```
    
+   If your keymap does not include a `&studio_unlock` key, also add `CONFIG_ZMK_STUDIO_LOCKING=n` to allow connecting without unlocking.
+   
    If your keyboard does not support ZMK Studio yet, adding support is described in the [ZMK documentation](https://zmk.dev/docs/features/studio#adding-zmk-studio-support-to-a-keyboard).
 
 KeyPeek will read layout and keymap directly from the device for ZMK without requiring additional configuration.

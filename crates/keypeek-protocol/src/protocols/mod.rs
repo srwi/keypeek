@@ -24,14 +24,16 @@ pub enum DeviceError {
     Unsupported(String),
 }
 
+impl DeviceError {
+    /// Guidance shown when a device is locked and needs to be unlocked before connecting.
+    pub const LOCKED_GUIDANCE: &'static str =
+        "Unlock it on the keyboard (e.g. via &studio_unlock for ZMK) and try again, or set CONFIG_ZMK_STUDIO_LOCKING=n in your .conf file if your keymap doesn't have an unlock key.";
+}
+
 impl fmt::Display for DeviceError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::DeviceLocked => write!(
-                f,
-                "Device is locked. Unlock it on the keyboard (e.g. with its unlock key \
-                 combination), then try again."
-            ),
+            Self::DeviceLocked => write!(f, "Device is locked. {}", Self::LOCKED_GUIDANCE),
             Self::LayoutFileRequired => write!(f, "Layout definition file is required"),
             Self::Transport(msg) => write!(f, "Transport error: {msg}"),
             Self::Protocol(msg) => write!(f, "Protocol error: {msg}"),

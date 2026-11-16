@@ -856,10 +856,7 @@ impl WebOverlayApp {
         let mut is_locked = false;
 
         if let ConnectionState::Locked { device } = self.connection_mgr.state() {
-            error_msg = Some(format!(
-                "{} is locked. Please unlock it on the keyboard.",
-                device.base_name
-            ));
+            error_msg = Some(device.lock_message());
             is_locked = true;
         } else if let ConnectionState::Error(err) = self.connection_mgr.state() {
             error_msg = Some(err.clone());

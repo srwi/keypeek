@@ -3,7 +3,7 @@
 //! Scans for devices using registered [`DeviceDriverScanner`] implementations,
 //! sharing transport snapshots (for example USB HID devices) across scanners.
 
-use crate::protocols::ConnectionSpec;
+use crate::protocols::{ConnectionSpec, DeviceError};
 use std::collections::HashSet;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -28,8 +28,9 @@ impl DiscoveredDevice {
     /// User-friendly message explaining that the keyboard is locked and how to unlock it.
     pub fn lock_message(&self) -> String {
         format!(
-            "Device '{}' is locked. Please unlock it on the keyboard (e.g. with its unlock key combination) and try again.",
-            self.base_name
+            "Device '{}' is locked. {}",
+            self.base_name,
+            DeviceError::LOCKED_GUIDANCE
         )
     }
 
