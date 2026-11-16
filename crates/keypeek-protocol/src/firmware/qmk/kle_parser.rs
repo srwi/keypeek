@@ -1,6 +1,7 @@
 use keypeek_core::geometry::flattened_top_left_after_center_rotation;
 use keypeek_core::{Key, KeyboardDefinition, KeyboardLayout};
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::error::Error;
 
 pub fn parse_vial_definition(
@@ -10,7 +11,7 @@ pub fn parse_vial_definition(
 ) -> Result<KeyboardDefinition, Box<dyn Error>> {
     let keymap = find_kle_keymap(json)
         .ok_or_else(|| Box::<dyn Error>::from("No 'keymap' found in definition"))?;
-    parse_kle_definition(json, keymap, vid, pid)
+    parse_kle_definition_with_prefix(json, keymap, vid, pid, "Vial")
 }
 
 use super::catalog::resolve_vendor_product_ids;
@@ -20,6 +21,23 @@ pub fn parse_kle_definition(
     keymap: &[Value],
     vid: u16,
     pid: u16,
+) -> Result<KeyboardDefinition, Box<dyn Error>> {
+    let prefix = if json.get("lighting").and_then(Value::as_str) == Some("vialrgb")
+        || json.get("vial").is_some()
+    {
+        "Vial"
+    } else {
+        "VIA"
+    };
+    parse_kle_definition_with_prefix(json, keymap, vid, pid, prefix)
+}
+
+fn parse_kle_definition_with_prefix(
+    json: &Value,
+    keymap: &[Value],
+    vid: u16,
+    pid: u16,
+    prefix: &str,
 ) -> Result<KeyboardDefinition, Box<dyn Error>> {
     let (vid, pid) = resolve_vendor_product_ids(json, vid, pid);
     let matrix = json
@@ -36,19 +54,20 @@ pub fn parse_kle_definition(
         .and_then(|v| v.as_u64())
         .ok_or_else(|| Box::<dyn Error>::from("No 'cols' in matrix"))? as usize;
 
-    let keys = parse_kle_keymap(keymap)?;
+    let labels = json
+        .get("layouts")
+        .and_then(|l| l.get("labels"))
+        .or_else(|| json.get("labels"));
 
-    let layout = KeyboardLayout {
-        name: "default".to_string(),
-        keys,
-    };
+    let (base_keys, option_groups) = parse_kle_keymap_elements(keymap, labels)?;
+    let layouts = build_layout_variants(base_keys, &option_groups, prefix);
 
     Ok(KeyboardDefinition {
         vid,
         pid,
         rows,
         cols,
-        layouts: vec![layout],
+        layouts,
     })
 }
 
@@ -113,7 +132,7 @@ pub fn parse_via_definition(
 
     let base_keys = parse_via_keys(raw_keys)?;
     let option_groups = parse_via_option_groups(layouts, layouts.get("labels"))?;
-    let layouts = build_via_layouts(base_keys, &option_groups);
+    let layouts = build_layout_variants(base_keys, &option_groups, "VIA");
 
     Ok(KeyboardDefinition {
         vid,
@@ -168,7 +187,11 @@ fn parse_via_option_groups(
     Ok(option_groups)
 }
 
-fn build_via_layouts(base_keys: Vec<Key>, option_groups: &[ViaOptionGroup]) -> Vec<KeyboardLayout> {
+fn build_layout_variants(
+    base_keys: Vec<Key>,
+    option_groups: &[ViaOptionGroup],
+    prefix: &str,
+) -> Vec<KeyboardLayout> {
     if option_groups.is_empty() {
         return vec![KeyboardLayout {
             name: "default".to_string(),
@@ -229,7 +252,7 @@ fn build_via_layouts(base_keys: Vec<Key>, option_groups: &[ViaOptionGroup]) -> V
             }
 
             layouts.push(KeyboardLayout {
-                name: format!("VIA ({})", non_default_names.join(", ")),
+                name: format!("{prefix} ({})", non_default_names.join(", ")),
                 keys,
             });
         }
@@ -249,7 +272,7 @@ fn build_via_layouts(base_keys: Vec<Key>, option_groups: &[ViaOptionGroup]) -> V
                     }
                 }
                 layouts.push(KeyboardLayout {
-                    name: format!("VIA ({})", opt.name),
+                    name: format!("{prefix} ({})", opt.name),
                     keys,
                 });
             }
@@ -342,8 +365,15 @@ fn parse_via_keys(raw_keys: &[Value]) -> Result<Vec<Key>, Box<dyn Error>> {
     Ok(keys)
 }
 
-fn parse_kle_keymap(keymap: &[Value]) -> Result<Vec<Key>, Box<dyn Error>> {
-    let mut keys = Vec::new();
+fn parse_kle_keymap_elements(
+    keymap: &[Value],
+    labels: Option<&Value>,
+) -> Result<(Vec<Key>, Vec<ViaOptionGroup>), Box<dyn Error>> {
+    let mut base_keys = Vec::new();
+    // group -> choice -> (physical keys, bounding-box top-left for aligning alternatives to choice 0)
+    let mut groups: BTreeMap<usize, BTreeMap<usize, (Vec<Key>, Option<(f32, f32)>)>> =
+        BTreeMap::new();
+
     let mut current_y: f32 = 0.0;
     let mut rotation_angle: f32 = 0.0;
     let mut rotation_x: f32 = 0.0;
@@ -358,6 +388,7 @@ fn parse_kle_keymap(keymap: &[Value]) -> Result<Vec<Key>, Box<dyn Error>> {
         let mut current_x: f32 = 0.0;
         let mut current_w: f32 = 1.0;
         let mut current_h: f32 = 1.0;
+        let mut current_decal = false;
 
         for item in row_array {
             if let Some(obj) = item.as_object() {
@@ -394,10 +425,14 @@ fn parse_kle_keymap(keymap: &[Value]) -> Result<Vec<Key>, Box<dyn Error>> {
                 if let Some(y) = obj.get("y").and_then(|v| v.as_f64()) {
                     current_y += y as f32;
                 }
+                if let Some(d) = obj.get("d").and_then(|v| v.as_bool()) {
+                    current_decal = d;
+                }
             } else if let Some(label) = item.as_str() {
-                // This is a key with a label
-                if let Some((row, col)) = parse_matrix_label(label) {
-                    // Normalize KLE-relative coordinates to absolute space, then flatten rotation.
+                // Skip rotary encoder rotation controls before tracking option positions
+                // so encoder decals/controls never skew switch bounding boxes.
+                let is_encoder = label.split('\n').nth(9).map(str::trim) == Some("e");
+                if !is_encoder {
                     let absolute_x = rotation_x + current_x;
                     let absolute_y = rotation_y + current_y;
                     let (final_x, final_y) = flattened_top_left_after_center_rotation(
@@ -410,28 +445,82 @@ fn parse_kle_keymap(keymap: &[Value]) -> Result<Vec<Key>, Box<dyn Error>> {
                         rotation_y,
                     );
 
-                    keys.push(Key {
-                        row,
-                        col,
-                        x: final_x,
-                        y: final_y,
-                        w: current_w,
-                        h: current_h,
-                        r: rotation_angle,
-                    });
+                    let key = (!current_decal)
+                        .then(|| {
+                            parse_matrix_label(label).map(|(row, col)| Key {
+                                row,
+                                col,
+                                x: final_x,
+                                y: final_y,
+                                w: current_w,
+                                h: current_h,
+                                r: rotation_angle,
+                            })
+                        })
+                        .flatten();
+
+                    if let Some((grp, opt)) = parse_option_choice(label) {
+                        let (keys, min_pos) =
+                            groups.entry(grp).or_default().entry(opt).or_default();
+                        *min_pos = Some(match *min_pos {
+                            Some((mx, my)) => (mx.min(final_x), my.min(final_y)),
+                            None => (final_x, final_y),
+                        });
+                        if let Some(key) = key {
+                            keys.push(key);
+                        }
+                    } else if let Some(key) = key {
+                        base_keys.push(key);
+                    }
                 }
 
                 current_x += current_w;
 
                 current_w = 1.0;
                 current_h = 1.0;
+                current_decal = false;
             }
         }
 
         current_y += 1.0;
     }
 
-    Ok(keys)
+    let mut option_groups = Vec::new();
+    for (grp, mut choices) in groups {
+        choices.entry(0).or_default();
+        let c0_min = choices.get(&0).and_then(|(_, min)| *min);
+
+        let mut parsed_options = Vec::new();
+        for (choice_idx, (mut keys, cn_min)) in choices {
+            if choice_idx > 0 {
+                if let (Some((c0_x, c0_y)), Some((cn_x, cn_y))) = (c0_min, cn_min) {
+                    let shift_x = cn_x - c0_x;
+                    let shift_y = cn_y - c0_y;
+                    for key in &mut keys {
+                        key.x -= shift_x;
+                        key.y -= shift_y;
+                    }
+                }
+            }
+
+            let opt_name = resolve_via_option_name(labels, grp, choice_idx)
+                .unwrap_or_else(|| format!("{grp}={choice_idx}"));
+            parsed_options.push(ViaOption {
+                index: choice_idx,
+                name: opt_name,
+                keys,
+            });
+        }
+
+        if parsed_options.iter().any(|opt| !opt.keys.is_empty()) {
+            option_groups.push(ViaOptionGroup {
+                index: grp,
+                options: parsed_options,
+            });
+        }
+    }
+
+    Ok((base_keys, option_groups))
 }
 
 fn parse_matrix_label(label: &str) -> Option<(usize, usize)> {
@@ -445,4 +534,10 @@ fn parse_matrix_label(label: &str) -> Option<(usize, usize)> {
     }
 
     None
+}
+
+fn parse_option_choice(label: &str) -> Option<(usize, usize)> {
+    let slot = label.split('\n').nth(3)?.trim();
+    let (opt, choice) = slot.split_once(',')?;
+    Some((opt.trim().parse().ok()?, choice.trim().parse().ok()?))
 }
